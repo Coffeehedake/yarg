@@ -35,6 +35,70 @@ namespace YARG.Editor
             Measure().Forget();
         }
 
+        /// <summary>
+        /// Reads the status of a real server and prints what it found, so the settings row's
+        /// numbers can be checked against the server's own answer rather than trusted.
+        /// </summary>
+        /// <remarks>
+        /// Separate entry point because it needs a reachable server. YARG_SONG_SERVER
+        /// overrides the address.
+        /// </remarks>
+        public static void RunAgainstServer()
+        {
+            MeasureAgainstServer().Forget();
+        }
+
+        private static async UniTaskVoid MeasureAgainstServer()
+        {
+            int exitCode = 1;
+
+            try
+            {
+                string url = Environment.GetEnvironmentVariable("YARG_SONG_SERVER");
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    url = "http://vault2:8099";
+                }
+
+                // The override rather than SettingsManager.Settings, which is null outside a
+                // running game - and whose null reference is swallowed by the fire-and-forget
+                // call in Describe(), which is how the first version of this probe passed
+                // without ever reaching the code it claimed to test.
+                SongServerStatus.Invalidate();
+                await SongServerStatus.Refresh(url);
+
+                string described = SongServerStatus.Describe();
+                Debug.Log($"PROBE INFO: state={SongServerStatus.Current} " +
+                    $"songs={SongServerStatus.Songs} problems={SongServerStatus.ServerProblems}");
+                Debug.Log($"PROBE INFO: row reads '{described}'");
+
+                if (SongServerStatus.Current != SongServerStatus.State.Reachable)
+                {
+                    Debug.LogError($"PROBE FAIL: {url} was not reachable: {SongServerStatus.Error}");
+                }
+                else if (SongServerStatus.Songs <= 0)
+                {
+                    Debug.LogError("PROBE FAIL: reachable but reported no songs");
+                }
+                else if (!described.Contains(SongServerStatus.Songs.ToString()))
+                {
+                    Debug.LogError($"PROBE FAIL: the row does not show the song count: '{described}'");
+                }
+                else
+                {
+                    Debug.Log("PROBE PASS: status row reports a real server's own numbers");
+                    exitCode = 0;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("PROBE FAIL: probe itself threw: " + e);
+            }
+
+            Debug.Log(exitCode == 0 ? "PROBE RESULT: PASS" : "PROBE RESULT: FAIL");
+            EditorApplication.Exit(exitCode);
+        }
+
         private static async UniTaskVoid Measure()
         {
             int exitCode = 1;

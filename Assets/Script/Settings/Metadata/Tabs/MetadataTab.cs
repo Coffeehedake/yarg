@@ -18,6 +18,13 @@ namespace YARG.Settings.Metadata
         private static GameObject _textPrefab;
 
         private Dictionary<string, BaseSettingVisual> _settingVisuals = new();
+
+        /// <summary>
+        /// Text rows whose content is produced at draw time. Kept because
+        /// <see cref="OnSettingChanged"/> only walks <see cref="_settingVisuals"/>, and a
+        /// status line that never redraws would be stuck on "checking..." forever.
+        /// </summary>
+        private readonly List<(TextMetadata Metadata, TextMeshProUGUI Label)> _liveTextRows = new();
         private readonly List<AbstractMetadata> _settings = new();
 
         public IReadOnlyList<AbstractMetadata> Settings => _settings;
@@ -30,6 +37,7 @@ namespace YARG.Settings.Metadata
         public override void BuildSettingTab(Transform container, NavigationGroup navGroup)
         {
             _settingVisuals.Clear();
+            _liveTextRows.Clear();
 
             var showAdvanced = SettingsMenu.Instance.ShowAdvanced;
             var settingIndex = 0;
@@ -90,9 +98,16 @@ namespace YARG.Settings.Metadata
                         // Spawn in the header
                         var go = Object.Instantiate(_textPrefab, container);
 
-                        // Set text
-                        go.GetComponentInChildren<TextMeshProUGUI>().text =
-                            Localize.Key("Settings.Text", text.TextName);
+                        var label = go.GetComponentInChildren<TextMeshProUGUI>();
+                        if (text.LiveText != null)
+                        {
+                            label.text = text.LiveText();
+                            _liveTextRows.Add((text, label));
+                        }
+                        else
+                        {
+                            label.text = Localize.Key("Settings.Text", text.TextName);
+                        }
 
                         break;
                     }
@@ -118,6 +133,15 @@ namespace YARG.Settings.Metadata
 
         public override void OnSettingChanged()
         {
+            foreach (var (metadata, label) in _liveTextRows)
+            {
+                // The row can outlive its tab if the menu was rebuilt underneath us.
+                if (label != null)
+                {
+                    label.text = metadata.LiveText();
+                }
+            }
+
             foreach (var pair in _settingVisuals)
             {
                 var setting = SettingsManager.GetSettingByName(pair.Key);

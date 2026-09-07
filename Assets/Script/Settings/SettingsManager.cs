@@ -10,6 +10,7 @@ using YARG.Core.Logging;
 using YARG.Core.Utility;
 using YARG.Helpers;
 using YARG.Settings.Metadata;
+using YARG.Song.RemoteLibrary;
 using YARG.Settings.Types;
 
 namespace YARG.Settings
@@ -114,6 +115,7 @@ namespace YARG.Settings
                 nameof(Settings.RequireAllDifficulties),
                 new HeaderMetadata("SongServer"),
                 nameof(Settings.SongServerUrl),
+                new TextMetadata(SongServerStatus.Describe),
                 nameof(Settings.SyncOnStartup),
                 new ButtonRowMetadata(nameof(Settings.SyncFromSongServer)),
             },

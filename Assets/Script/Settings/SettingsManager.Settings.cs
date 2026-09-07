@@ -149,7 +149,11 @@ namespace YARG.Settings
             /// form is unchanged - a setting writes its bare value - so an existing
             /// settings.json still reads back.
             /// </remarks>
-            public UrlSetting SongServerUrl { get; } = new(defaultValue: string.Empty, allowEmpty: true);
+            public UrlSetting SongServerUrl { get; } = new(defaultValue: string.Empty,
+                // A changed URL makes the previous verdict meaningless, and showing a
+                // corrected typo's old "not reachable" would read as the correction failing.
+                onChange: _ => SongServerStatus.Invalidate(),
+                allowEmpty: true);
 
             /// <summary>
             /// Whether to mirror from the song server automatically when the game starts.
@@ -696,6 +700,8 @@ namespace YARG.Settings
                     // an earlier run that never got scanned.
                     await SongContainer.RunRefresh(false, context);
 
+                    SongServerStatus.RecordSync(result);
+
                     if (result.Failures.Count > 0)
                     {
                         DialogManager.Instance.ShowMessage("Song Server Sync Finished With Errors",
@@ -706,6 +712,7 @@ namespace YARG.Settings
                 catch (Exception e)
                 {
                     YargLogger.LogException(e, "Song server sync failed");
+                    SongServerStatus.RecordSyncFailure(e.Message);
                     DialogManager.Instance.ShowMessage("Song Server Sync Failed", e.Message);
                 }
             }

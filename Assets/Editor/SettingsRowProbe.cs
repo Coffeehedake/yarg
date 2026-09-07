@@ -49,6 +49,7 @@ namespace YARG.Editor
                 CheckSetting();
                 CheckTypedFilter();
                 CheckStartupSync();
+                CheckStatusRow();
             }
             catch (Exception e)
             {
@@ -377,6 +378,84 @@ namespace YARG.Editor
             else
             {
                 Pass("startup sync is wired, fails fast, and leaves the manual path alone");
+            }
+        }
+
+        /// <summary>
+        /// The live status row: it is on the tab, it renders without a server, and asking for
+        /// it does not recurse.
+        /// </summary>
+        /// <remarks>
+        /// The interesting failure is not "wrong text" but "no text ever". Describe() starts
+        /// its own check as a side effect of being called, and that check redraws the menu,
+        /// which calls Describe() again - so an ordering mistake here is an infinite loop or a
+        /// row permanently stuck on "checking...", neither of which the compiler can see.
+        /// </remarks>
+        private static void CheckStatusRow()
+        {
+            var tab = SettingsManager.DisplayedSettingsTabs
+                .OfType<MetadataTab>()
+                .FirstOrDefault(t => t.Name == "SongManager");
+
+            if (tab == null)
+            {
+                Fail("no SongManager tab");
+                return;
+            }
+
+            var live = tab.Settings.OfType<TextMetadata>().Where(t => t.LiveText != null).ToList();
+            if (live.Count == 0)
+            {
+                Fail("the SongManager tab has no live text row, so no server status is shown");
+                return;
+            }
+
+            // With no URL configured this must settle immediately and say so, rather than
+            // hanging or reporting a server that is not there.
+            SongServerStatus.Invalidate();
+            string text = live[0].LiveText();
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                Fail("the status row rendered empty");
+            }
+            else if (!text.Contains("Song server"))
+            {
+                Fail($"the status row does not name what it describes: '{text}'");
+            }
+            else
+            {
+                Pass($"status row renders with no server configured: '{text}'");
+            }
+
+            // Calling it repeatedly must be free and must not wedge the state machine.
+            for (int i = 0; i < 5; i++)
+            {
+                live[0].LiveText();
+            }
+
+            if (SongServerStatus.Current == SongServerStatus.State.Checking)
+            {
+                Fail("the status row is stuck in Checking with no URL set");
+            }
+            else
+            {
+                Pass("repeated draws leave the status state settled");
+            }
+
+            // The check above is only meaningful if Describe() actually RAN. It used to
+            // throw inside a fire-and-forget task before setting any state, which left
+            // Current at Unknown and made both assertions pass vacuously. Refreshing with an
+            // explicit empty URL exercises the same path with nothing to swallow an error.
+            SongServerStatus.Refresh(string.Empty).GetAwaiter().GetResult();
+
+            if (SongServerStatus.Current != SongServerStatus.State.Unknown)
+            {
+                Fail($"an empty URL left the status at {SongServerStatus.Current}, not Unknown");
+            }
+            else
+            {
+                Pass("an empty URL settles to Unknown without throwing");
             }
         }
     }
