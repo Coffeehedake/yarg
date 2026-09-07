@@ -9,6 +9,7 @@ using YARG.Menu.Settings.Visuals;
 using YARG.Settings;
 using YARG.Settings.Metadata;
 using YARG.Settings.Types;
+using YARG.Song.RemoteLibrary;
 
 namespace YARG.Editor
 {
@@ -47,6 +48,7 @@ namespace YARG.Editor
                 CheckPrefab();
                 CheckSetting();
                 CheckTypedFilter();
+                CheckStartupSync();
             }
             catch (Exception e)
             {
@@ -300,6 +302,81 @@ namespace YARG.Editor
                 {
                     UnityEngine.Object.DestroyImmediate(instance);
                 }
+            }
+        }
+
+        /// <summary>
+        /// The startup auto-sync wiring: the setting exists, is reachable from the menu, and
+        /// the sync can actually be told to fail fast.
+        /// </summary>
+        /// <remarks>
+        /// The behaviour these guard is asymmetric and easy to regress silently. A startup
+        /// sync that cannot time out quickly turns "my Pi is off" into a 30 s freeze on every
+        /// launch, and a Sync overload that loses its timeout parameter would compile
+        /// perfectly while doing exactly that.
+        /// </remarks>
+        private static void CheckStartupSync()
+        {
+            var prop = typeof(SettingsManager.SettingContainer).GetProperty("SyncOnStartup");
+            if (prop == null)
+            {
+                Fail("SettingContainer has no SyncOnStartup property");
+                return;
+            }
+
+            if (prop.PropertyType != typeof(ToggleSetting))
+            {
+                Fail($"SyncOnStartup is a {prop.PropertyType.Name}, not a ToggleSetting");
+                return;
+            }
+
+            var tab = SettingsManager.DisplayedSettingsTabs
+                .OfType<MetadataTab>()
+                .FirstOrDefault(t => t.Name == "SongManager");
+
+            if (tab == null || !tab.Settings.OfType<FieldMetadata>().Any(f => f.FieldName == "SyncOnStartup"))
+            {
+                Fail("SyncOnStartup is not listed on the SongManager tab, so it never renders");
+            }
+
+            string langPath = Path.Combine(Application.streamingAssetsPath, "lang", "en-US.json");
+            if (File.Exists(langPath))
+            {
+                var root = JObject.Parse(File.ReadAllText(langPath));
+                foreach (string key in new[] { "Name", "Description" })
+                {
+                    if (root.SelectToken($"Settings.Setting.SyncOnStartup.{key}") == null)
+                    {
+                        Fail($"Settings.Setting.SyncOnStartup.{key} is not in en-US.json");
+                    }
+                }
+            }
+
+            // The startup budget must be a real fail-fast, and must be shorter than the
+            // ordinary one rather than accidentally equal to it.
+            int startup = SongServerSync.STARTUP_REACHABILITY_TIMEOUT_SECONDS;
+            if (startup <= 0 || startup > 10)
+            {
+                Fail($"STARTUP_REACHABILITY_TIMEOUT_SECONDS is {startup}s; that is not a fail-fast");
+            }
+
+            // Sync must still ACCEPT a shorter timeout. Reflection rather than a call,
+            // because calling it needs a server.
+            var sync = typeof(SongServerSync).GetMethod("Sync");
+            var timeoutParam = sync?.GetParameters().FirstOrDefault(x => x.Name == "listTimeoutSeconds");
+            if (timeoutParam == null)
+            {
+                Fail("SongServerSync.Sync no longer takes listTimeoutSeconds, so the startup " +
+                    "path cannot fail fast");
+            }
+            else if (!timeoutParam.HasDefaultValue || (int) timeoutParam.DefaultValue != 30)
+            {
+                Fail($"listTimeoutSeconds default changed to {timeoutParam.DefaultValue}; the " +
+                    "manual sync path relies on the longer one");
+            }
+            else
+            {
+                Pass("startup sync is wired, fails fast, and leaves the manual path alone");
             }
         }
     }

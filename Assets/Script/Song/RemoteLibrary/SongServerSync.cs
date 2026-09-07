@@ -58,6 +58,18 @@ namespace YARG.Song.RemoteLibrary
         private const int MULTIPLE_CHOICES = 300;
 
         private const int LIST_TIMEOUT_SECONDS = 30;
+
+        /// <summary>
+        /// How long the startup sync waits to find out whether the server is even there.
+        /// </summary>
+        /// <remarks>
+        /// Short on purpose, and it answers a different question from how long a download
+        /// may take. A server that is off - the Pi unplugged, the laptop off the LAN - is
+        /// an ordinary case rather than an exceptional one, and every launch would
+        /// otherwise sit on a frozen loading screen for the full 30 s before the game
+        /// started. Downloads stay unbounded once something is known to be listening.
+        /// </remarks>
+        public const int STARTUP_REACHABILITY_TIMEOUT_SECONDS = 5;
         private const int SONG_TIMEOUT_SECONDS = 600;
 
         public sealed class Result
@@ -90,7 +102,8 @@ namespace YARG.Song.RemoteLibrary
         /// the songs it does, and answering it wrong costs somebody their library.
         /// </remarks>
         public static async UniTask<Result> Sync(string serverUrl, string destination,
-            LoadingContext context = null, CancellationToken token = default)
+            LoadingContext context = null, CancellationToken token = default,
+            int listTimeoutSeconds = LIST_TIMEOUT_SECONDS)
         {
             if (string.IsNullOrWhiteSpace(serverUrl))
             {
@@ -104,7 +117,7 @@ namespace YARG.Song.RemoteLibrary
             var have = Inventory(destination, result);
 
             context?.SetLoadingText("Asking the song server what is missing...");
-            var missing = await AskWhatIsMissing(root, have, result, token);
+            var missing = await AskWhatIsMissing(root, have, result, token, listTimeoutSeconds);
 
             for (int i = 0; i < missing.Count; i++)
             {
@@ -173,7 +186,7 @@ namespace YARG.Song.RemoteLibrary
         /// server answers with everything we do not.
         /// </summary>
         private static async UniTask<List<string>> AskWhatIsMissing(string root, List<string> have,
-            Result result, CancellationToken token)
+            Result result, CancellationToken token, int timeoutSeconds)
         {
             string body = JsonConvert.SerializeObject(new { chart_hashes = have });
 
@@ -182,7 +195,7 @@ namespace YARG.Song.RemoteLibrary
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
             request.SetRequestHeader("User-Agent", "YARG");
-            request.timeout = LIST_TIMEOUT_SECONDS;
+            request.timeout = timeoutSeconds;
 
             await request.SendWebRequest().WithCancellation(token);
 

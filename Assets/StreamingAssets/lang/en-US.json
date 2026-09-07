@@ -1815,6 +1815,10 @@
               "Name": "Song Server URL",
               "Description": "Address of a yarg-song-server to mirror songs from, for example http://192.168.1.10:8080. Leave blank to disable. Only http and https addresses are accepted."
             },
+            "SyncOnStartup": {
+              "Name": "Sync On Startup",
+              "Description": "Mirror new songs from the song server automatically when YARG starts. Does nothing if no server URL is set, and never interrupts startup if the server cannot be reached."
+            },
             "DMXKeyframeChannel": {
                 "Name": "DMX Keyframe",
                 "Description": "This channel receives the Next (3), Previous (13), and First (23) keyframe calls."

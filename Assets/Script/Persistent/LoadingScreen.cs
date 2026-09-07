@@ -13,6 +13,7 @@ using YARG.Menu.Persistent;
 using YARG.Player;
 using YARG.Settings;
 using YARG.Song;
+using YARG.Song.RemoteLibrary;
 
 namespace YARG
 {
@@ -86,8 +87,68 @@ namespace YARG
                 });
             }
 
-            // Fast scan (cache read) on startup
-            await SongContainer.RunRefresh(true, context);
+            // Mirror from the song server BEFORE scanning, so anything fetched lands in
+            // this same library load rather than being invisible until the player refreshes.
+            bool fetchedSomething = await TrySyncFromSongServer(context);
+
+            // Fast scan (cache read) on startup - EXCEPT when the sync just downloaded
+            // something. A quick scan only deserialises songcache.bin and never walks the
+            // filesystem (CacheHandler.QuickScan; it falls through to a full scan only when
+            // it parses zero entries), so new archives would sit on disk unseen and the
+            // sync would look broken. Paying for a full scan only when there is something
+            // new to find keeps the ordinary launch fast.
+            await SongContainer.RunRefresh(!fetchedSomething, context);
+        }
+
+        /// <summary>
+        /// Runs the startup mirror, if one is configured. Returns whether anything arrived.
+        /// </summary>
+        /// <remarks>
+        /// Startup is the one place this must never be loud. A song server is somebody's Pi
+        /// or NAS and it will be off, asleep or on the wrong side of a dropped Wi-Fi link a
+        /// good fraction of the time; a modal in front of the loading screen every one of
+        /// those times would make the feature worse than not having it. So every failure
+        /// here is logged and swallowed, and the game starts with whatever is already on
+        /// disk. The manual button in Settings still reports failures properly, because
+        /// there a person is waiting on an answer.
+        /// </remarks>
+        private static async UniTask<bool> TrySyncFromSongServer(LoadingContext context)
+        {
+            if (!SettingsManager.Settings.SyncOnStartup.Value)
+            {
+                return false;
+            }
+
+            string url = SettingsManager.Settings.SongServerUrl.Value;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                // No server configured: return before opening a socket, so the default-on
+                // setting costs nothing for players who never set one.
+                return false;
+            }
+
+            try
+            {
+                context.SetLoadingText("Checking the song server...");
+
+                var result = await SongServerSync.Sync(url, PathHelper.ServerLibraryPath, context,
+                    listTimeoutSeconds: SongServerSync.STARTUP_REACHABILITY_TIMEOUT_SECONDS);
+
+                if (result.Failures.Count > 0)
+                {
+                    YargLogger.LogFormatWarning(
+                        "Startup song server sync: {0} song(s) could not be fetched.",
+                        result.Failures.Count);
+                }
+
+                return result.Downloaded.Count > 0;
+            }
+            catch (Exception e)
+            {
+                YargLogger.LogException(e, "Startup song server sync failed; starting with the " +
+                    "songs already on disk.");
+                return false;
+            }
         }
 
         private static async UniTask UpdateSourcesAndGenres(LoadingContext context)

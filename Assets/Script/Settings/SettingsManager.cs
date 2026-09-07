@@ -114,6 +114,7 @@ namespace YARG.Settings
                 nameof(Settings.RequireAllDifficulties),
                 new HeaderMetadata("SongServer"),
                 nameof(Settings.SongServerUrl),
+                nameof(Settings.SyncOnStartup),
                 new ButtonRowMetadata(nameof(Settings.SyncFromSongServer)),
             },
             new MetadataTab("Sound", icon: "Sound")

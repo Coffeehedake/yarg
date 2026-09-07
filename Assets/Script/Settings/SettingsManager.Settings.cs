@@ -150,6 +150,22 @@ namespace YARG.Settings
             /// settings.json still reads back.
             /// </remarks>
             public UrlSetting SongServerUrl { get; } = new(defaultValue: string.Empty, allowEmpty: true);
+
+            /// <summary>
+            /// Whether to mirror from the song server automatically when the game starts.
+            /// </summary>
+            /// <remarks>
+            /// Defaults to on, which costs nothing until a URL is set: with no server
+            /// configured the startup path returns before it opens a socket. The point of a
+            /// centralised library is that a machine which plays does not have to be
+            /// administered, and a sync you have to remember to press is one you forget.
+            ///
+            /// A server that is off does not delay startup meaningfully - see
+            /// <see cref="SongServerSync.STARTUP_REACHABILITY_TIMEOUT_SECONDS"/> - and a
+            /// startup sync never shows an error dialog, because a modal in front of the
+            /// loading screen is a worse outcome than a library that is one song short.
+            /// </remarks>
+            public ToggleSetting SyncOnStartup { get; } = new(true);
             public string LastWasapiDevice = string.Empty;
 
             public SortAttribute LibrarySort = SortAttribute.Name;
