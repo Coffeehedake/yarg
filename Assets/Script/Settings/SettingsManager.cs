@@ -124,6 +124,7 @@ namespace YARG.Settings
                 nameof(Settings.PlayAShowTimeout),
                 nameof(Settings.RequireAllDifficulties),
                 new HeaderMetadata("SongServer"),
+                nameof(Settings.SongServerUrl),
                 new ButtonRowMetadata(nameof(Settings.SyncFromSongServer)),
             },
             new MetadataTab("Sound", icon: "Sound")
