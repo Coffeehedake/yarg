@@ -1124,6 +1124,7 @@
             "Experimental": "Experimental"
         },
         "Header": {
+            "SongServer": "Song Server",
             "Other": "Other",
             "Display": "Display",
             "Volume": "Volume",
@@ -1167,6 +1168,7 @@
             "NoTiers": "  (No tiers created. Click '+ Add Tier' above)"
         },
         "Button": {
+            "SyncFromSongServer": "Sync From Song Server",
             "CopyCurrentSongJsonFilePath": "Copy Current Song Json File Path",
             "CopyCurrentSongTextFilePath": "Copy Current Song Text File Path",
             "ExportSongsJson": "Ouvert (JSON)",
