@@ -51,6 +51,12 @@ namespace YARG.Song.RemoteLibrary
             "notes.mid", "notes.midi", "notes.chart", "notes.txt"
         };
 
+        /// <summary>
+        /// HTTP 300. Not an error here: it is the server declining to pick between packages
+        /// that share a chart hash, which is the client's decision to make.
+        /// </summary>
+        private const int MULTIPLE_CHOICES = 300;
+
         private const int LIST_TIMEOUT_SECONDS = 30;
         private const int SONG_TIMEOUT_SECONDS = 600;
 
@@ -206,6 +212,7 @@ namespace YARG.Song.RemoteLibrary
         {
             string part = Path.Combine(destination, hash + ".sng.part");
             string final = Path.Combine(destination, hash + ".sng");
+            bool multipleChoices = false;
 
             try
             {
@@ -217,19 +224,41 @@ namespace YARG.Song.RemoteLibrary
 
                     await request.SendWebRequest().WithCancellation(token);
 
-                    if (request.responseCode == 300)
+                    if (request.responseCode == MULTIPLE_CHOICES)
                     {
-                        // Several packages share this chart hash and the server refuses to
-                        // choose, because choosing would hand different clients different
-                        // audio for the same request. Picking one is the CLIENT's business,
-                        // and it is not this increment's.
-                        throw new Exception("chart hash is shared by several packages; " +
-                            "picking one is not implemented yet");
+                        multipleChoices = true;
                     }
-
-                    if (request.result != UnityWebRequest.Result.Success)
+                    else if (request.result != UnityWebRequest.Result.Success)
                     {
                         throw new Exception($"download failed: {request.error}");
+                    }
+                }
+
+                if (multipleChoices)
+                {
+                    // The server will not choose between packages that share this chart
+                    // hash, because choosing would hand different clients different audio
+                    // for the same request. So the client chooses, and does it the same way
+                    // every time - see ChoosePackage.
+                    //
+                    // The first request wrote the 300's JSON body into the .part file rather
+                    // than a song, so it is discarded and the choices are asked for again
+                    // with a handler that can hold them. Three requests in a case that is
+                    // rare, one in the case that is not.
+                    File.Delete(part);
+                    string package = await ChoosePackage(root, hash, token);
+
+                    using var retry = new UnityWebRequest(
+                        $"{root}/song/{hash}.sng?package={package}", UnityWebRequest.kHttpVerbGET);
+                    retry.downloadHandler = new DownloadHandlerFile(part);
+                    retry.SetRequestHeader("User-Agent", "YARG");
+                    retry.timeout = SONG_TIMEOUT_SECONDS;
+
+                    await retry.SendWebRequest().WithCancellation(token);
+
+                    if (retry.result != UnityWebRequest.Result.Success)
+                    {
+                        throw new Exception($"download failed after choosing package {package}: {retry.error}");
                     }
                 }
 
@@ -255,6 +284,60 @@ namespace YARG.Song.RemoteLibrary
                 }
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Picks one of the packages sharing a chart hash - the same one, every time.
+        /// </summary>
+        /// <remarks>
+        /// The smallest package hash, ordinally. The rule itself does not matter; that it is
+        /// TOTAL and DETERMINISTIC does. Two players syncing the same library must end up
+        /// with the same audio, and a client that picked "the first one the server listed"
+        /// would be at the mercy of map ordering on the far side.
+        ///
+        /// This matches yarg-sync, deliberately: the two clients choosing differently would
+        /// be a difference nobody would think to look for until two people compared scores
+        /// on what they believed was the same song.
+        /// </remarks>
+        private static async UniTask<string> ChoosePackage(string root, string hash, CancellationToken token)
+        {
+            using var request = UnityWebRequest.Get($"{root}/song/{hash}.sng");
+            request.SetRequestHeader("User-Agent", "YARG");
+            request.timeout = LIST_TIMEOUT_SECONDS;
+
+            await request.SendWebRequest().WithCancellation(token);
+
+            if (request.responseCode != MULTIPLE_CHOICES)
+            {
+                throw new Exception(
+                    $"expected 300 listing the packages, got {request.responseCode}");
+            }
+
+            var packages = JObject.Parse(request.downloadHandler.text).Value<JArray>("packages");
+            if (packages == null || packages.Count == 0)
+            {
+                throw new Exception("server reported several packages but listed none");
+            }
+
+            string best = null;
+            foreach (var package in packages)
+            {
+                string candidate = package.Value<string>("package_hash");
+                if (candidate == null)
+                {
+                    continue;
+                }
+                if (best == null || string.CompareOrdinal(candidate, best) < 0)
+                {
+                    best = candidate;
+                }
+            }
+
+            if (best == null)
+            {
+                throw new Exception("server listed packages with no package_hash");
+            }
+            return best;
         }
 
         /// <summary>
