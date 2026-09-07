@@ -4,42 +4,18 @@ using System.Net.Sockets;
 
 namespace YARG.Settings.Types
 {
-    public class IPv4Setting : AbstractSetting<string>
+    public class IPv4Setting : TextSetting
     {
-        public override string AddressableName => "Setting/IPv4";
-
-        private readonly string _defaultValue;
-
-        public bool AllowEmpty { get; }
-
-        public IPv4Setting(string defaultValue, Action<string> onChange = null, bool allowEmpty = false) : base(onChange)
+        public IPv4Setting(string defaultValue, Action<string> onChange = null, bool allowEmpty = false)
+            : base(defaultValue, onChange, allowEmpty)
         {
-            _defaultValue = defaultValue;
-            AllowEmpty = allowEmpty;
-            _value = defaultValue;
         }
 
-        protected override void SetValue(string value)
+        protected override string Sanitize(string value)
         {
-            if (AllowEmpty && string.IsNullOrEmpty(value))
-            {
-                _value = string.Empty;
-                return;
-            }
-
-            if (!IsValidIPv4(value))
-            {
-                _value = _defaultValue;
-            }
-            else
-            {
-                _value = value;
-            }
-        }
-
-        public override bool ValueEquals(string value)
-        {
-            return value == Value;
+            // IPAddress.Parse normalises - "010.1.1.1" and "10.1.1.1" are the same address
+            // written differently - so the PARSED form is stored rather than what was typed.
+            return IPAddress.TryParse(value, out var ip) && IsValidIPv4(ip) ? ip.ToString() : null;
         }
 
         public static bool IsValidIPv4(string ip)
