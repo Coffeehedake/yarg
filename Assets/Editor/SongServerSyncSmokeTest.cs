@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
+using YARG.Core.Song.Cache;
+using YARG.Helpers;
 using YARG.Song.RemoteLibrary;
 
 namespace Editor
@@ -93,7 +96,12 @@ namespace Editor
                     return;
                 }
 
-                Console.WriteLine($"[SMOKE] PASS - {onDisk} songs mirrored and verified, " +
+                if (!ScanFinds(destination, result.ServerTotal))
+                {
+                    return;
+                }
+
+                Console.WriteLine($"[SMOKE] PASS - {onDisk} songs mirrored, verified and SCANNED, " +
                     "second run downloaded nothing");
                 EditorApplication.Exit(0);
             }
@@ -101,6 +109,64 @@ namespace Editor
             {
                 Fail(e.ToString());
             }
+        }
+
+        /// <summary>
+        /// Runs YARG's own scanner over the mirrored folder and checks it finds the songs.
+        /// </summary>
+        /// <remarks>
+        /// This is the assertion that actually matters, and everything above it is a
+        /// prerequisite. "The files arrived and their hashes check out" is not the same claim
+        /// as "YARG will play them" — the mirror could produce perfectly valid archives that
+        /// the scanner ignores for some reason nothing else here would notice, and the whole
+        /// design rests on the scanner treating this folder like any other.
+        ///
+        /// It scans the mirror folder ALONE, into throwaway cache and badsongs paths, so it
+        /// says nothing about the player's real library and cannot disturb it.
+        /// </remarks>
+        private static bool ScanFinds(string destination, int expected)
+        {
+            string scratch = Path.Combine(Path.GetTempPath(), "yarg-smoketest-scan");
+            Directory.CreateDirectory(scratch);
+            string cachePath = Path.Combine(scratch, "songcache.bin");
+            string badSongsPath = Path.Combine(scratch, "badsongs.txt");
+            foreach (string stale in new[] { cachePath, badSongsPath })
+            {
+                if (File.Exists(stale))
+                {
+                    // A stale cache read as this run's verdict is the exact mistake the
+                    // server-side oracle script exists to prevent. Same rule here.
+                    File.Delete(stale);
+                }
+            }
+
+            var cache = CacheHandler.RunScan(false, cachePath, badSongsPath, false,
+                new List<string> { destination });
+
+            int found = 0;
+            foreach (var entries in cache.Entries.Values)
+            {
+                found += entries.Count;
+            }
+
+            Console.WriteLine($"[SMOKE] scan of the mirror folder found {found} song(s), " +
+                $"{cache.Entries.Count} distinct chart hash(es)");
+
+            if (File.Exists(badSongsPath))
+            {
+                Console.WriteLine("[SMOKE] badsongs.txt:");
+                Console.WriteLine(File.ReadAllText(badSongsPath));
+                Fail("the scanner rejected at least one mirrored song");
+                return false;
+            }
+
+            if (found != expected)
+            {
+                Fail($"scanner found {found} song(s), server offered {expected}");
+                return false;
+            }
+
+            return true;
         }
 
         private static void Fail(string message)
