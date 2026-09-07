@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -112,6 +112,8 @@ namespace YARG.Settings
                 nameof(Settings.EnablePlayAShow),
                 nameof(Settings.PlayAShowTimeout),
                 nameof(Settings.RequireAllDifficulties),
+                new HeaderMetadata("SongServer"),
+                new ButtonRowMetadata(nameof(Settings.SyncFromSongServer)),
             },
             new MetadataTab("Sound", icon: "Sound")
             {

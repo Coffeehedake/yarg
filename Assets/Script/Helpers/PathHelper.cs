@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -46,6 +46,17 @@ namespace YARG.Helpers
         /// The file to write the bad songs list to.
         /// </summary>
         public static string BadSongsPath { get; private set; }
+
+        /// <summary>
+        /// A songs folder this game manages itself, mirrored from a song server.
+        /// </summary>
+        /// <remarks>
+        /// It is scanned like any other song folder, and for the same reason
+        /// <see cref="SetlistPath"/> is: the player did not add it, something else fills it,
+        /// and the scanner does not need to know which. Nothing but the mirror writes here,
+        /// so anything a player drops in is left strictly alone.
+        /// </remarks>
+        public static string ServerLibraryPath { get; private set; }
 
         /// <summary>
         /// YARC Launcher path.
@@ -131,6 +142,7 @@ namespace YARG.Helpers
             // Get song scanning paths
             SongCachePath = Path.Combine(PersistentDataPath, "songcache.bin");
             BadSongsPath = Path.Combine(PersistentDataPath, "badsongs.txt");
+            ServerLibraryPath = Path.Combine(PersistentDataPath, "ServerLibrary");
 
             // Get the launcher paths
 #if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX

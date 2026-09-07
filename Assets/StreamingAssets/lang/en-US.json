@@ -1062,6 +1062,7 @@
             "Experimental": "Experimental"
         },
         "Header": {
+            "SongServer": "Song Server",
             "Other": "Other",
             "Display": "Display",
             "Volume": "Volume",
@@ -1099,6 +1100,7 @@
             "Accessibility": "Accessibility"
         },
         "Button": {
+            "SyncFromSongServer": "Sync From Song Server",
             "CopyCurrentSongJsonFilePath": "Copy Current Song Json File Path",
             "CopyCurrentSongTextFilePath": "Copy Current Song Text File Path",
             "ExportSongsJson": "Ouvert (JSON)",

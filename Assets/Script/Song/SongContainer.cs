@@ -1,6 +1,7 @@
 ﻿using Cysharp.Threading.Tasks;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UniRx;
 using YARG.Core;
@@ -155,6 +156,16 @@ namespace YARG.Song
             if (!string.IsNullOrEmpty(setlistPath) && !directories.Contains(setlistPath))
             {
                 directories.Add(setlistPath);
+            }
+
+            // The song-server mirror, on exactly the same terms as the setlist above: a
+            // folder the player never added, filled by something other than them, and
+            // skipped cleanly when it does not exist. Scanning it needs no new concept.
+            string serverLibraryPath = PathHelper.ServerLibraryPath;
+            if (!string.IsNullOrEmpty(serverLibraryPath) && Directory.Exists(serverLibraryPath) &&
+                !directories.Contains(serverLibraryPath))
+            {
+                directories.Add(serverLibraryPath);
             }
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();

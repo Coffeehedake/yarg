@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Threading.Tasks;
@@ -27,6 +27,7 @@ using YARG.Settings.Metadata;
 using YARG.Settings.Types;
 using YARG.Song;
 using YARG.Song.Exporters;
+using YARG.Song.RemoteLibrary;
 using YARG.Venue;
 using CharacterType = YARG.Venue.Characters.VenueCharacter.CharacterType;
 using Object = UnityEngine.Object;
@@ -134,6 +135,19 @@ namespace YARG.Settings
             [JsonProperty("LastWindowsAudioDevice")]
             public string LastSharedAudioDevice = "Default";
             public string LastAsioDevice = string.Empty;
+
+            /// <summary>
+            /// Base URL of a yarg-song-server to mirror songs from, e.g. http://pi.local:8080.
+            /// Empty disables the mirror entirely.
+            /// </summary>
+            /// <remarks>
+            /// Hidden for now, and that is a deliberate first step rather than an oversight:
+            /// there is no AbstractSetting&lt;string&gt; visual in this project except the
+            /// IPv4 one, so a URL row in the settings menu means a new setting type AND a
+            /// new prefab. This lands the working half first; the row can follow without
+            /// changing anything below it.
+            /// </remarks>
+            public string SongServerUrl = string.Empty;
             public string LastWasapiDevice = string.Empty;
 
             public SortAttribute LibrarySort = SortAttribute.Name;
@@ -633,6 +647,49 @@ namespace YARG.Settings
             public void OpenExecutablePath()
             {
                 FileExplorerHelper.OpenFolder(PathHelper.ExecutablePath);
+            }
+
+            /// <summary>
+            /// Pulls everything the song server has that we do not, then rescans.
+            /// </summary>
+            /// <remarks>
+            /// Downloads only. It never deletes, so a server going away or dropping a song
+            /// cannot cost the player their library - deciding what to do about a song the
+            /// server no longer offers is a separate question, and answering it wrong is
+            /// expensive in a way that answering it late is not.
+            /// </remarks>
+            public async void SyncFromSongServer()
+            {
+                string url = SongServerUrl;
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    DialogManager.Instance.ShowMessage("No Song Server",
+                        "Set SongServerUrl in settings.json to the address of a song server, " +
+                        "for example http://192.168.1.10:8080");
+                    return;
+                }
+
+                try
+                {
+                    using var context = new LoadingContext();
+                    var result = await SongServerSync.Sync(url, PathHelper.ServerLibraryPath, context);
+
+                    // Rescan even when nothing arrived: the folder may have been populated by
+                    // an earlier run that never got scanned.
+                    await SongContainer.RunRefresh(false, context);
+
+                    if (result.Failures.Count > 0)
+                    {
+                        DialogManager.Instance.ShowMessage("Song Server Sync Finished With Errors",
+                            $"Downloaded {result.Downloaded.Count} song(s). " +
+                            $"{result.Failures.Count} could not be fetched; see the log for which.");
+                    }
+                }
+                catch (Exception e)
+                {
+                    YargLogger.LogException(e, "Song server sync failed");
+                    DialogManager.Instance.ShowMessage("Song Server Sync Failed", e.Message);
+                }
             }
 
             public async void RemoveRemoteContent()
