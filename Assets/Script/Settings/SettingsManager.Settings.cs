@@ -141,13 +141,15 @@ namespace YARG.Settings
             /// Empty disables the mirror entirely.
             /// </summary>
             /// <remarks>
-            /// Hidden for now, and that is a deliberate first step rather than an oversight:
-            /// there is no AbstractSetting&lt;string&gt; visual in this project except the
-            /// IPv4 one, so a URL row in the settings menu means a new setting type AND a
-            /// new prefab. This lands the working half first; the row can follow without
-            /// changing anything below it.
+            /// A trailing slash is stripped and anything that is not an absolute http/https
+            /// URL is rejected on entry, so a typo shows up as the field reverting rather
+            /// than as a network error at sync time.
+            ///
+            /// This was a plain string field until the settings row existed. The serialized
+            /// form is unchanged - a setting writes its bare value - so an existing
+            /// settings.json still reads back.
             /// </remarks>
-            public string SongServerUrl = string.Empty;
+            public UrlSetting SongServerUrl { get; } = new(defaultValue: string.Empty, allowEmpty: true);
             public string LastWasapiDevice = string.Empty;
 
             public SortAttribute LibrarySort = SortAttribute.Name;
@@ -660,11 +662,11 @@ namespace YARG.Settings
             /// </remarks>
             public async void SyncFromSongServer()
             {
-                string url = SongServerUrl;
+                string url = SongServerUrl.Value;
                 if (string.IsNullOrWhiteSpace(url))
                 {
                     DialogManager.Instance.ShowMessage("No Song Server",
-                        "Set SongServerUrl in settings.json to the address of a song server, " +
+                        "Set the Song Server URL above to the address of a song server, " +
                         "for example http://192.168.1.10:8080");
                     return;
                 }

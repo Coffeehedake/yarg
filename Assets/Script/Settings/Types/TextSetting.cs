@@ -30,6 +30,19 @@ namespace YARG.Settings.Types
         public override string AddressableName => "Setting/IPv4";
 
         /// <summary>
+        /// A regex matching the characters the field will let the player type, or null to
+        /// accept anything.
+        /// </summary>
+        /// <remarks>
+        /// This is here rather than on the prefab because the prefab is shared. It shipped
+        /// with the IPv4 filter <c>[\d.]</c> baked in, which silently makes a URL
+        /// untypeable - the field simply swallows the letters and looks broken. Restricting
+        /// input is part of what a setting considers valid, so the setting states it and the
+        /// visual applies it.
+        /// </remarks>
+        public virtual string InputRegex => null;
+
+        /// <summary>
         /// What to fall back to when the player types something invalid.
         /// </summary>
         protected readonly string _defaultValue;
