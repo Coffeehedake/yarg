@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -46,6 +47,120 @@ namespace YARG.Song.RemoteLibrary
 
         /// <summary>Outcome of the last sync run in this session, or null if none.</summary>
         public static string LastSyncSummary { get; private set; }
+
+        /// <summary>Whether a sync is running right now, from anywhere.</summary>
+        public static bool IsSyncing => _running != null;
+
+        private static CancellationTokenSource _running;
+        private static int _fetched;
+        private static int _toFetch;
+        private static long _bytes;
+
+        /// <summary>
+        /// Registers a sync so the menu can show progress and offer to stop it.
+        /// </summary>
+        /// <remarks>
+        /// Returns the token the sync must honour. A second concurrent sync is refused
+        /// rather than queued: two runs writing the same folder would race over the same
+        /// .part files, and the second one is never what anybody meant.
+        /// </remarks>
+        public static CancellationToken BeginSync()
+        {
+            if (_running != null)
+            {
+                throw new InvalidOperationException("A song server sync is already running.");
+            }
+
+            _running = new CancellationTokenSource();
+            _fetched = 0;
+            _toFetch = 0;
+            _bytes = 0;
+            Redraw();
+            return _running.Token;
+        }
+
+        public static void EndSync()
+        {
+            _running?.Dispose();
+            _running = null;
+            Redraw();
+        }
+
+        /// <summary>Stops the running sync, if any. Safe to call when none is running.</summary>
+        public static void CancelSync()
+        {
+            if (_running == null)
+            {
+                return;
+            }
+
+            LastSyncSummary = "Last sync: cancelled";
+            _running.Cancel();
+            Redraw();
+        }
+
+        public static void ReportProgress(int fetched, int toFetch, long bytes)
+        {
+            _fetched = fetched;
+            _toFetch = toFetch;
+            _bytes = bytes;
+            Redraw();
+        }
+
+        /// <summary>
+        /// What the mirror folder holds, read from the folder itself rather than from a
+        /// state file that could disagree with it.
+        /// </summary>
+        public static string DescribeMirror(string folderOverride = null)
+        {
+            if (IsSyncing)
+            {
+                return _toFetch > 0
+                    ? $"Syncing: {_fetched} of {_toFetch} fetched ({FormatBytes(_bytes)})"
+                    : "Syncing: asking the server what is missing...";
+            }
+
+            try
+            {
+                string folder = folderOverride ?? Helpers.PathHelper.ServerLibraryPath;
+                if (!Directory.Exists(folder))
+                {
+                    return "Mirrored: nothing yet";
+                }
+
+                int count = 0;
+                long bytes = 0;
+                foreach (string path in Directory.EnumerateFiles(folder, "*.sng"))
+                {
+                    count++;
+                    bytes += new FileInfo(path).Length;
+                }
+
+                string line = $"Mirrored: {count} song{(count == 1 ? "" : "s")}, {FormatBytes(bytes)} on disk";
+                if (Current == State.Reachable && Songs > count)
+                {
+                    line += $" — {Songs - count} still to fetch";
+                }
+                return line;
+            }
+            catch (Exception e)
+            {
+                return $"Mirrored: could not read the folder ({e.Message})";
+            }
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            if (bytes >= 1024L * 1024 * 1024)
+            {
+                return $"{bytes / (1024.0 * 1024 * 1024):F1} GB";
+            }
+            if (bytes >= 1024 * 1024)
+            {
+                return $"{bytes / (1024.0 * 1024):F0} MB";
+            }
+            return $"{bytes / 1024.0:F0} KB";
+        }
 
         private const int TIMEOUT_SECONDS = SongServerSync.STARTUP_REACHABILITY_TIMEOUT_SECONDS;
 

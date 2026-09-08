@@ -1115,6 +1115,7 @@
             "Engine": "Engine",
             "Sound": "Sound",
             "SongManager": "Songs",
+            "SongServer": "Song Server",
             "Presets": "Presets",
             "Advanced": "Advanced",
             "AllSettings": "All Settings",
@@ -1169,6 +1170,7 @@
         },
         "Button": {
             "SyncFromSongServer": "Sync From Song Server",
+            "CancelSongServerSync": "Cancel Sync",
             "CopyCurrentSongJsonFilePath": "Copy Current Song Json File Path",
             "CopyCurrentSongTextFilePath": "Copy Current Song Text File Path",
             "ExportSongsJson": "Ouvert (JSON)",

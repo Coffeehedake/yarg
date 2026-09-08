@@ -50,6 +50,7 @@ namespace YARG.Editor
                 CheckTypedFilter();
                 CheckStartupSync();
                 CheckStatusRow();
+                CheckSongServerTab();
             }
             catch (Exception e)
             {
@@ -149,19 +150,19 @@ namespace YARG.Editor
 
             var tab = SettingsManager.DisplayedSettingsTabs
                 .OfType<MetadataTab>()
-                .FirstOrDefault(t => t.Name == "SongManager");
+                .FirstOrDefault(t => t.Name == "SongServer");
 
             if (tab == null)
             {
-                Fail("no SongManager tab");
+                Fail("no SongServer tab");
             }
             else if (!tab.Settings.OfType<FieldMetadata>().Any(f => f.FieldName == "SongServerUrl"))
             {
-                Fail("the SongManager tab does not list SongServerUrl, so the row never renders");
+                Fail("the SongServer tab does not list SongServerUrl, so the row never renders");
             }
             else
             {
-                Pass("SongServerUrl is listed on the SongManager tab");
+                Pass("SongServerUrl is listed on the SongServer tab");
             }
 
             // The localization key landing in the wrong section is a mistake this project
@@ -333,11 +334,11 @@ namespace YARG.Editor
 
             var tab = SettingsManager.DisplayedSettingsTabs
                 .OfType<MetadataTab>()
-                .FirstOrDefault(t => t.Name == "SongManager");
+                .FirstOrDefault(t => t.Name == "SongServer");
 
             if (tab == null || !tab.Settings.OfType<FieldMetadata>().Any(f => f.FieldName == "SyncOnStartup"))
             {
-                Fail("SyncOnStartup is not listed on the SongManager tab, so it never renders");
+                Fail("SyncOnStartup is not listed on the SongServer tab, so it never renders");
             }
 
             string langPath = Path.Combine(Application.streamingAssetsPath, "lang", "en-US.json");
@@ -395,11 +396,11 @@ namespace YARG.Editor
         {
             var tab = SettingsManager.DisplayedSettingsTabs
                 .OfType<MetadataTab>()
-                .FirstOrDefault(t => t.Name == "SongManager");
+                .FirstOrDefault(t => t.Name == "SongServer");
 
             if (tab == null)
             {
-                Fail("no SongManager tab");
+                Fail("no SongServer tab");
                 return;
             }
 
@@ -456,6 +457,124 @@ namespace YARG.Editor
             else
             {
                 Pass("an empty URL settles to Unknown without throwing");
+            }
+        }
+
+        /// <summary>
+        /// The Song Server tab as a whole: it exists, its icon is a sprite that is really in
+        /// the atlas, and it offers both a sync and a way out of one.
+        /// </summary>
+        /// <remarks>
+        /// The icon check is the one worth having. Tab icons are Addressables sprite-atlas
+        /// lookups by string - <c>TabIcons[Import]</c> - so a name that is not in the atlas
+        /// compiles, runs, and produces a tab with no icon that nobody notices until a
+        /// screenshot.
+        /// </remarks>
+        private static void CheckSongServerTab()
+        {
+            var tab = SettingsManager.DisplayedSettingsTabs
+                .OfType<MetadataTab>()
+                .FirstOrDefault(t => t.Name == "SongServer");
+
+            if (tab == null)
+            {
+                Fail("there is no SongServer settings tab");
+                return;
+            }
+
+            var atlas = AssetDatabase.LoadAllAssetsAtPath("Assets/Art/Menu/Common/Icons/TabIcons.png")
+                .OfType<Sprite>()
+                .Select(x => x.name)
+                .ToList();
+
+            if (atlas.Count == 0)
+            {
+                Debug.Log("PROBE INCONCLUSIVE: the tab icon atlas could not be read");
+            }
+            else if (!atlas.Contains(tab.Icon))
+            {
+                Fail($"tab icon '{tab.Icon}' is not a sprite in TabIcons; the tab renders blank. " +
+                    $"Available: {string.Join(", ", atlas)}");
+            }
+            else
+            {
+                Pass($"the SongServer tab uses a real atlas sprite ('{tab.Icon}')");
+            }
+
+            var buttons = tab.Settings.OfType<ButtonRowMetadata>().SelectMany(b => b.Buttons).ToList();
+            foreach (string name in new[] { "SyncFromSongServer", "CancelSongServerSync" })
+            {
+                if (!buttons.Contains(name))
+                {
+                    Fail($"the SongServer tab has no {name} button");
+                }
+                else if (typeof(SettingsManager.SettingContainer).GetMethod(name) == null)
+                {
+                    Fail($"{name} is on the tab but is not a public method, so pressing it throws");
+                }
+            }
+
+            // Both live rows must be present: reachability and what this machine holds
+            // answer different questions and one is not a substitute for the other.
+            if (tab.Settings.OfType<TextMetadata>().Count(t => t.LiveText != null) < 2)
+            {
+                Fail("the SongServer tab is missing a live row (status and mirror are both needed)");
+            }
+
+            string mirror = SongServerStatus.DescribeMirror();
+            if (string.IsNullOrWhiteSpace(mirror) || !mirror.Contains("Mirrored"))
+            {
+                Fail($"the mirror row does not describe the mirror: '{mirror}'");
+            }
+            else
+            {
+                Pass($"mirror row renders with an empty mirror: '{mirror}'");
+            }
+
+            // Counting against a folder that really holds songs, rather than trusting that
+            // the empty case generalises. The smoke test leaves 23 verified archives here.
+            string populated = Path.Combine(Path.GetTempPath(), "yarg-song-server-smoketest");
+            if (!Directory.Exists(populated))
+            {
+                Debug.Log("PROBE INCONCLUSIVE: no mirrored corpus on disk to count " +
+                    "(run Editor.SongServerSyncSmokeTest.Run first)");
+            }
+            else
+            {
+                int onDisk = Directory.GetFiles(populated, "*.sng").Length;
+                string counted = SongServerStatus.DescribeMirror(populated);
+
+                if (!counted.Contains(onDisk.ToString()))
+                {
+                    Fail($"the mirror row counted wrong: folder has {onDisk}, row says '{counted}'");
+                }
+                else if (counted.Contains("0 KB"))
+                {
+                    Fail($"the mirror row reports no bytes for {onDisk} real files: '{counted}'");
+                }
+                else
+                {
+                    Pass($"mirror row counts a real mirror: '{counted}' ({onDisk} files on disk)");
+                }
+            }
+
+            // Cancelling when nothing is running must be a no-op, not a crash: the button is
+            // always on screen.
+            SongServerStatus.CancelSync();
+
+            var langRoot = JObject.Parse(File.ReadAllText(
+                Path.Combine(Application.streamingAssetsPath, "lang", "en-US.json")));
+            foreach (string token in new[] { "Settings.Tab.SongServer", "Settings.Button.CancelSongServerSync" })
+            {
+                if (langRoot.SelectToken(token) == null)
+                {
+                    Fail($"{token} is not in en-US.json, so it renders as a raw key");
+                }
+            }
+
+            if (_failures == 0)
+            {
+                Pass("the SongServer tab is complete and localized");
             }
         }
     }
