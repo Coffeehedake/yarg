@@ -86,6 +86,28 @@ namespace YARG.Editor
                 string choiceHash = Path.GetFileNameWithoutExtension(sources[2]);
                 byte[] choiceBytes = File.ReadAllBytes(sources[2]);
 
+                // Names that are not chart hashes at all. Each one becomes a filename via
+                // Path.Combine, so these are write primitives if the client trusts them -
+                // and the absolute one is the worst, because Path.Combine DISCARDS its first
+                // argument when the second is rooted, putting the file wherever the server
+                // said rather than under the mirror.
+                string escapeDir = Path.Combine(Path.GetTempPath(), "yarg-probe-escape");
+                if (Directory.Exists(escapeDir))
+                {
+                    Directory.Delete(escapeDir, true);
+                }
+                Directory.CreateDirectory(escapeDir);
+
+                var hostileNames = new[]
+                {
+                    "../../../../yarg-probe-escape/traversal",
+                    "..\\..\\..\\..\\yarg-probe-escape\\traversal-win",
+                    Path.Combine(escapeDir, "absolute").Replace('\\', '/'),
+                    "not-a-hash",
+                    "",
+                    "0000000000000000000000000000000000000001EXTRA",
+                };
+
                 var responses = new Dictionary<string, Reply>
                 {
                     // A real archive, but announced under a hash that is not its own. This is
@@ -100,9 +122,22 @@ namespace YARG.Editor
                     [choiceHash] = Reply.MultipleChoices(choiceBytes),
                 };
 
+                // The hostile names must be SERVED, not 404'd, or the test proves only that
+                // the client tried a path it should not have - not that anything reached the
+                // disk. Garbage bytes are the worst case on purpose: the download succeeds,
+                // so the file is written at the attacker's path; verification then rejects
+                // it; and the cleanup delete is the one that cannot succeed, because
+                // YARG.Core keeps a non-.sng file locked. That chain is how a transient
+                // write becomes a permanent one.
+                foreach (string name in hostileNames)
+                {
+                    responses[name] = Reply.Body(Encoding.ASCII.GetBytes(new string('x', 2048)));
+                }
+
                 // Order matters: the good one is last, so arriving proves the four failures
                 // before it did not abandon the run.
-                var order = new[] { wrongHash, errorHash, garbageHash, truncHash, choiceHash, goodHash };
+                var order = new[] { wrongHash, errorHash, garbageHash, truncHash, choiceHash, goodHash }
+                    .Concat(hostileNames).ToArray();
 
                 if (Directory.Exists(destination))
                 {
@@ -142,6 +177,10 @@ namespace YARG.Editor
                     Pass("a song offered as multiple packages was fetched by choosing one");
                 }
 
+                // Four download failures. The hostile names are refused before any request is
+                // made, so they are rejections rather than failures - a distinction worth
+                // keeping, because one means the server is broken and the other means it is
+                // lying about what it holds.
                 if (result.Failures.Count != 4)
                 {
                     Fail($"expected 4 collected failures, got {result.Failures.Count}");
@@ -171,6 +210,40 @@ namespace YARG.Editor
                 else
                 {
                     Pass($"a cut-off download explains itself: '{truncFailure.Reason}'");
+                }
+
+                // ---- names that are not chart hashes must never reach the disk ----
+                if (result.RejectedNames != hostileNames.Length)
+                {
+                    Fail($"the client accepted {hostileNames.Length - result.RejectedNames} of " +
+                        $"{hostileNames.Length} names that are not chart hashes");
+                }
+                else
+                {
+                    Pass($"all {hostileNames.Length} non-hash names were refused before becoming a path");
+                }
+
+                var escaped = Directory.Exists(escapeDir)
+                    ? Directory.GetFileSystemEntries(escapeDir)
+                    : Array.Empty<string>();
+                if (escaped.Length > 0)
+                {
+                    Fail($"the server wrote {escaped.Length} file(s) OUTSIDE the mirror: " +
+                        string.Join(", ", escaped.Select(Path.GetFileName)));
+                }
+                else
+                {
+                    Pass("nothing was written outside the mirror folder");
+                }
+
+                // Every file that did land must be named like one of ours.
+                foreach (string path in Directory.GetFileSystemEntries(destination))
+                {
+                    string name = Path.GetFileName(path);
+                    if (!name.EndsWith(".sng") && !name.EndsWith(".part"))
+                    {
+                        Fail($"an unexpected file appeared in the mirror: {name}");
+                    }
                 }
 
                 // ---- the failure reasons must be the REAL ones ----
@@ -430,7 +503,7 @@ namespace YARG.Editor
                     }
 
                     string json = "{\"library_total\":" + _order.Length + ",\"missing\":[" +
-                        string.Join(",", _order.Select(h => "\"" + h + "\"")) + "]}";
+                        string.Join(",", _order.Select(h => "\"" + JsonEscape(h) + "\"")) + "]}";
                     Write(stream, 200, Encoding.UTF8.GetBytes(json), "application/json", false);
                     return;
                 }
@@ -463,6 +536,38 @@ namespace YARG.Editor
                 }
 
                 Write(stream, 404, Array.Empty<byte>(), "text/plain", false);
+            }
+
+            /// <summary>
+            /// Escapes a string for a JSON literal. Needed because the whole point here is to
+            /// send names containing backslashes, which a hand-rolled encoder gets wrong -
+            /// and did, on the first run.
+            /// </summary>
+            private static string JsonEscape(string value)
+            {
+                var sb = new StringBuilder(value.Length + 8);
+                foreach (char c in value)
+                {
+                    switch (c)
+                    {
+                        case '"': sb.Append("\\\""); break;
+                        case '\\': sb.Append("\\\\"); break;
+                        case '\n': sb.Append("\\n"); break;
+                        case '\r': sb.Append("\\r"); break;
+                        case '\t': sb.Append("\\t"); break;
+                        default:
+                            if (c < 0x20)
+                            {
+                                sb.Append("\\u").Append(((int) c).ToString("x4"));
+                            }
+                            else
+                            {
+                                sb.Append(c);
+                            }
+                            break;
+                    }
+                }
+                return sb.ToString();
             }
 
             private static int ContentLength(string head)
