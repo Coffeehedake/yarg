@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -86,6 +86,24 @@ namespace YARG.Editor
                 string choiceHash = Path.GetFileNameWithoutExtension(sources[2]);
                 byte[] choiceBytes = File.ReadAllBytes(sources[2]);
 
+                // The package list is server-supplied and the chosen value goes straight into
+                // a query string, so it gets the same treatment the missing-list got. The
+                // hostile entry sorts BELOW every hex string ('.' is 0x2E, '0' is 0x30), so a
+                // client that skipped the check would pick it - this fails loudly rather than
+                // by luck. The two valid entries keep the determinism assertion honest.
+                string lowPackage = new string('a', 64);
+                var choicePackages = new[]
+                {
+                    "../../../../yarg-probe-escape/package",
+                    lowPackage,
+                    new string('b', 64),
+                };
+
+                // A 300 whose every choice is unusable. No real song is needed: a correct
+                // client never gets as far as asking for one.
+                const string allBadChoiceHash = "0000000000000000000000000000000000000004";
+                var allBadPackages = new[] { "../../etc/passwd", "not-hex", "" };
+
                 // Names that are not chart hashes at all. Each one becomes a filename via
                 // Path.Combine, so these are write primitives if the client trusts them -
                 // and the absolute one is the worst, because Path.Combine DISCARDS its first
@@ -119,7 +137,8 @@ namespace YARG.Editor
                     // Content-Length promises the whole file; the socket closes halfway.
                     [truncHash] = Reply.Truncated(truncSource),
                     [goodHash] = Reply.Body(goodBytes),
-                    [choiceHash] = Reply.MultipleChoices(choiceBytes),
+                    [choiceHash] = Reply.MultipleChoices(choiceBytes, choicePackages),
+                    [allBadChoiceHash] = Reply.MultipleChoices(Array.Empty<byte>(), allBadPackages),
                 };
 
                 // The hostile names must be SERVED, not 404'd, or the test proves only that
@@ -136,7 +155,11 @@ namespace YARG.Editor
 
                 // Order matters: the good one is last, so arriving proves the four failures
                 // before it did not abandon the run.
-                var order = new[] { wrongHash, errorHash, garbageHash, truncHash, choiceHash, goodHash }
+                var order = new[]
+                    {
+                        wrongHash, errorHash, garbageHash, truncHash, allBadChoiceHash,
+                        choiceHash, goodHash,
+                    }
                     .Concat(hostileNames).ToArray();
 
                 if (Directory.Exists(destination))
@@ -177,17 +200,60 @@ namespace YARG.Editor
                     Pass("a song offered as multiple packages was fetched by choosing one");
                 }
 
+                // ---- the CHOSEN package must be one the server could have meant ----
+                // A package hash reaches a URL, not a filename, so this is a smaller hole
+                // than the missing-list was - but it was the last server-supplied string the
+                // client used without looking at it.
+                List<string> asked;
+                lock (server.RequestedPackages)
+                {
+                    asked = server.RequestedPackages.ToList();
+                }
+                Debug.Log($"PROBE INFO: the client asked for package(s): " +
+                    string.Join(", ", asked.Select(a => a.Length > 12 ? a[..12] + "\u2026" : a)));
+
+                if (asked.Count != 1)
+                {
+                    Fail($"expected exactly one ?package= request, saw {asked.Count} " +
+                        $"({string.Join(", ", asked)})");
+                }
+                else if (asked[0] != lowPackage)
+                {
+                    Fail($"the client asked for package '{asked[0]}', which is not the lowest " +
+                        "WELL-FORMED hash it was offered");
+                }
+                else
+                {
+                    Pass("the client skipped the malformed package hash and chose the lowest " +
+                        "well-formed one");
+                }
+
+                var allBad = result.Failures.FirstOrDefault(f => f.ChartHash == allBadChoiceHash);
+                if (allBad.Reason == null)
+                {
+                    Fail("a 300 listing nothing but malformed package hashes did not fail");
+                }
+                else if (!allBad.Reason.Contains("package_hash"))
+                {
+                    Fail($"a 300 listing nothing but malformed package hashes failed with " +
+                        $"'{allBad.Reason}', which does not say what was wrong");
+                }
+                else
+                {
+                    Pass($"a 300 with no usable package hash is refused: '{allBad.Reason}'");
+                }
+
                 // Four download failures. The hostile names are refused before any request is
                 // made, so they are rejections rather than failures - a distinction worth
                 // keeping, because one means the server is broken and the other means it is
                 // lying about what it holds.
-                if (result.Failures.Count != 4)
+                if (result.Failures.Count != 5)
                 {
-                    Fail($"expected 4 collected failures, got {result.Failures.Count}");
+                    Fail($"expected 5 collected failures, got {result.Failures.Count}");
                 }
                 else
                 {
-                    Pass("all four bad songs were collected as failures, not thrown");
+                    Pass("all five bad songs were collected as failures, not thrown");
                     foreach (var (hash, reason) in result.Failures)
                     {
                         Debug.Log($"PROBE INFO:   {hash[^4..]} -> {reason}");
@@ -273,7 +339,8 @@ namespace YARG.Editor
                 var landed = Directory.GetFiles(destination, "*.sng")
                     .Select(Path.GetFileNameWithoutExtension).ToList();
 
-                foreach (string bad in new[] { wrongHash, errorHash, garbageHash, truncHash })
+                foreach (string bad in new[]
+                    { wrongHash, errorHash, garbageHash, truncHash, allBadChoiceHash })
                 {
                     if (landed.Contains(bad))
                     {
@@ -402,20 +469,28 @@ namespace YARG.Editor
             public readonly int Status;
             public readonly byte[] Bytes;
             public readonly bool CutInHalf;
+            public readonly string[] Packages;
 
-            private Reply(int status, byte[] bytes, bool cut)
+            private Reply(int status, byte[] bytes, bool cut, string[] packages = null)
             {
                 Status = status;
                 Bytes = bytes;
                 CutInHalf = cut;
+                Packages = packages;
             }
 
             public static Reply Body(byte[] bytes) => new(200, bytes, false);
             public static Reply JustStatus(int status) => new(status, Array.Empty<byte>(), false);
             public static Reply Truncated(byte[] bytes) => new(200, bytes, true);
 
-            /// <summary>Answers 300 with a package list until asked for one by name.</summary>
-            public static Reply MultipleChoices(byte[] bytes) => new(300, bytes, false);
+            /// <summary>
+            /// Answers 300 with a package list until asked for one by name. The list is
+            /// supplied by the caller because a package hash is a server-supplied string the
+            /// client puts straight into a URL - so what is IN the list is the thing under
+            /// test, not scenery.
+            /// </summary>
+            public static Reply MultipleChoices(byte[] bytes, params string[] packages) =>
+                new(300, bytes, false, packages);
         }
 
         /// <summary>
@@ -425,6 +500,9 @@ namespace YARG.Editor
         /// </summary>
         private sealed class HostileServer : IDisposable
         {
+            /// <summary>Every value the client sent as ?package=, in the order it asked.</summary>
+            public readonly List<string> RequestedPackages = new();
+
             private readonly TcpListener _listener;
             private readonly Dictionary<string, Reply> _replies;
             private readonly string[] _order;
@@ -519,12 +597,24 @@ namespace YARG.Editor
 
                     if (_replies.TryGetValue(hash, out var reply))
                     {
-                        if (reply.Status == 300 && !path.Contains("package=", StringComparison.Ordinal))
+                        int q = path.IndexOf("package=", StringComparison.Ordinal);
+                        if (q >= 0)
+                        {
+                            // Recorded rather than assumed: the only way to know WHICH
+                            // package the client picked is to watch what it asks for.
+                            lock (RequestedPackages)
+                            {
+                                RequestedPackages.Add(path[(q + "package=".Length)..]);
+                            }
+                        }
+                        else if (reply.Status == 300)
                         {
                             // Decline to choose, and say what the choices are - the shape the
                             // real server uses when two packages share a chart hash.
-                            string body = "{\"packages\":[{\"package_hash\":\"bbbb\"}," +
-                                "{\"package_hash\":\"aaaa\"}]}";
+                            string body = "{\"packages\":[" + string.Join(",",
+                                (reply.Packages ?? Array.Empty<string>())
+                                    .Select(x => "{\"package_hash\":\"" + JsonEscape(x) + "\"}")) +
+                                "]}";
                             Write(stream, 300, Encoding.UTF8.GetBytes(body), "application/json", false);
                             return;
                         }

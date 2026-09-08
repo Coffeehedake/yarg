@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -61,6 +61,23 @@ namespace YARG.Song.RemoteLibrary
         /// been given the same treatment.
         /// </remarks>
         private static readonly Regex ChartHash = new(@"^[0-9a-f]{40}$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// What a package hash may look like: hex, and nothing else.
+        /// </summary>
+        /// <remarks>
+        /// The 300 response is the last place the server names something this client then
+        /// uses - the chosen hash goes straight into the query string of the request that
+        /// follows. It is checked for the same reason chart hashes are, and it is a shape
+        /// check rather than a length assertion so it does not break if the server ever
+        /// changes hash function: package hashes are SHA-256 today, and the server enforces
+        /// the same pattern on its own side before opening a cached archive.
+        ///
+        /// The damage here is far smaller than the chart-hash case - a bad value cannot
+        /// name a file, and VerifyChartHash still catches a wrong song - but an unchecked
+        /// server string reaching a URL is worth closing anyway.
+        /// </remarks>
+        private static readonly Regex PackageHash = new(@"^[0-9a-f]{16,128}$", RegexOptions.Compiled);
 
         /// <summary>
         /// Chart filenames, in the order YARG resolves them. First match wins HARD - a song
@@ -456,6 +473,9 @@ namespace YARG.Song.RemoteLibrary
                     File.Delete(part);
                     string package = await ChoosePackage(root, hash, token);
 
+                    // Interpolated without escaping only because ChoosePackage has already
+                    // refused anything that is not hex: nothing here can carry a "&" or a
+                    // "#" into the query.
                     using var retry = new UnityWebRequest(
                         $"{root}/song/{hash}.sng?package={package}", UnityWebRequest.kHttpVerbGET);
                     retry.downloadHandler = new DownloadHandlerFile(part);
@@ -554,12 +574,18 @@ namespace YARG.Song.RemoteLibrary
                 throw new Exception("server reported several packages but listed none");
             }
 
+            // Dropped rather than fatal, matching how a malformed name from /have is
+            // handled: one bad entry must not cost a song the server can otherwise serve.
+            // yarg-sync skips too, so a server sending a bad entry still leaves the two
+            // clients choosing the same package - which is the whole point of this method.
             string best = null;
             foreach (var package in packages)
             {
                 string candidate = package.Value<string>("package_hash");
-                if (candidate == null)
+                if (candidate == null || !PackageHash.IsMatch(candidate))
                 {
+                    YargLogger.LogWarning("Song server listed something that is not a package " +
+                        $"hash; refusing it: {Sanitize(candidate ?? string.Empty)}");
                     continue;
                 }
                 if (best == null || string.CompareOrdinal(candidate, best) < 0)
@@ -570,7 +596,7 @@ namespace YARG.Song.RemoteLibrary
 
             if (best == null)
             {
-                throw new Exception("server listed packages with no package_hash");
+                throw new Exception("server listed no usable package_hash");
             }
             return best;
         }
