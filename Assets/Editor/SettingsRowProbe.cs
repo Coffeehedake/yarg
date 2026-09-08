@@ -51,6 +51,7 @@ namespace YARG.Editor
                 CheckStartupSync();
                 CheckStatusRow();
                 CheckSongServerTab();
+                CheckMirrorFilter();
             }
             catch (Exception e)
             {
@@ -575,6 +576,84 @@ namespace YARG.Editor
             if (_failures == 0)
             {
                 Pass("the SongServer tab is complete and localized");
+            }
+        }
+
+        /// <summary>
+        /// The "server:" search filter's two pieces of real logic, exercised directly.
+        /// </summary>
+        /// <remarks>
+        /// Both are the kind of thing that is obviously correct and quietly is not. Prefix
+        /// containment says a song in "ServerLibraryOld" lives in "ServerLibrary" unless the
+        /// separator is checked, and query splitting has to hand back the REST of the query
+        /// intact or typing "artist:queen;server:yes" silently drops the artist term.
+        /// </remarks>
+        private static void CheckMirrorFilter()
+        {
+            // Path containment.
+            var pathCases = new (string Path, string Root, bool Expected, string Why)[]
+            {
+                (@"C:\x\ServerLibrary\a.sng",    @"C:\x\ServerLibrary", true,  "a file directly inside"),
+                (@"C:\x\ServerLibrary\s\a.sng", @"C:\x\ServerLibrary", true,  "a file nested deeper"),
+                (@"C:/x/ServerLibrary/a.sng",       @"C:\x\ServerLibrary", true,  "mixed separators"),
+                (@"c:\X\serverlibrary\a.sng",    @"C:\x\ServerLibrary", true,  "different case"),
+                (@"C:\x\ServerLibrary",           @"C:\x\ServerLibrary", true,  "the root itself"),
+                (@"C:\x\ServerLibraryOld\a.sng", @"C:\x\ServerLibrary", false, "a sibling sharing a prefix"),
+                (@"C:\x\Other\a.sng",            @"C:\x\ServerLibrary", false, "an unrelated folder"),
+                (null,                              @"C:\x\ServerLibrary", false, "a null path"),
+            };
+
+            int pathFailures = 0;
+            foreach (var (path, root, expected, why) in pathCases)
+            {
+                if (MirroredSongs.IsUnder(path, root) != expected)
+                {
+                    Fail($"path containment wrong for {why}: '{path}' under '{root}' " +
+                        $"should be {expected}");
+                    pathFailures++;
+                }
+            }
+
+            if (pathFailures == 0)
+            {
+                Pass($"mirror path containment holds for {pathCases.Length} cases incl. a prefix sibling");
+            }
+
+            // Query extraction. The remaining query matters as much as the verdict.
+            var queryCases = new (string Query, MirroredSongs.Want Want, string Remaining)[]
+            {
+                ("server:yes",              MirroredSongs.Want.Mirrored,    ""),
+                ("server:no",               MirroredSongs.Want.NotMirrored, ""),
+                ("server:local",            MirroredSongs.Want.NotMirrored, ""),
+                ("server:",                 MirroredSongs.Want.Mirrored,    ""),
+                ("SERVER:YES",              MirroredSongs.Want.Mirrored,    ""),
+                ("artist:queen;server:yes", MirroredSongs.Want.Mirrored,    "artist:queen"),
+                ("server:yes;artist:queen", MirroredSongs.Want.Mirrored,    "artist:queen"),
+                ("artist:queen",            MirroredSongs.Want.Either,      "artist:queen"),
+                ("",                        MirroredSongs.Want.Either,      ""),
+                ("observer:x",              MirroredSongs.Want.Either,      "observer:x"),
+            };
+
+            int queryFailures = 0;
+            foreach (var (query, expectedWant, expectedRemaining) in queryCases)
+            {
+                var want = MirroredSongs.ExtractWant(query, out string remaining);
+                if (want != expectedWant)
+                {
+                    Fail($"'{query}' gave want={want}, expected {expectedWant}");
+                    queryFailures++;
+                }
+                if (remaining.Trim() != expectedRemaining)
+                {
+                    Fail($"'{query}' left '{remaining}', expected '{expectedRemaining}'");
+                    queryFailures++;
+                }
+            }
+
+            if (queryFailures == 0)
+            {
+                Pass($"'server:' extraction holds for {queryCases.Length} queries, " +
+                    "including one that only looks like it ('observer:')");
             }
         }
     }
