@@ -42,6 +42,27 @@ namespace YARG.Song.RemoteLibrary
         private static readonly Regex ManagedName = new(@"^[0-9a-f]{40}\.sng$", RegexOptions.Compiled);
 
         /// <summary>
+        /// A chart hash exactly as YARG defines one: forty lower-case hex characters.
+        /// </summary>
+        /// <remarks>
+        /// EVERY hash the server sends is checked against this before it is used, because
+        /// each one becomes both a URL and a FILENAME. Without the check,
+        /// <c>Path.Combine(destination, hash + ".sng")</c> is a write primitive the server
+        /// controls: "../../.." escapes the mirror folder, and an ABSOLUTE path is worse
+        /// still, because Path.Combine discards its first argument entirely when the second
+        /// is rooted - so "C:/Windows/Tasks/x" would be written there and not under the
+        /// mirror at all.
+        ///
+        /// "The player chose this server" is not an answer. The connection is plain HTTP on
+        /// a LAN by design, so anything on the path can supply this list; and a server that
+        /// is trusted for CONTENT still should not be trusted to name files on the disk of
+        /// every machine that syncs from it. The server-side scanner already refuses
+        /// traversal entries inside archives for exactly this reason - the client had never
+        /// been given the same treatment.
+        /// </remarks>
+        private static readonly Regex ChartHash = new(@"^[0-9a-f]{40}$", RegexOptions.Compiled);
+
+        /// <summary>
         /// Chart filenames, in the order YARG resolves them. First match wins HARD - a song
         /// holding both notes.mid and notes.chart is a notes.mid song, and the loser is not
         /// consulted.
@@ -82,6 +103,8 @@ namespace YARG.Song.RemoteLibrary
             public int ServerTotal;
             /// <summary>Dead .part files from earlier failed downloads, removed on the way in.</summary>
             public int SweptPartials;
+            /// <summary>Entries the server offered that were not chart hashes, and were refused.</summary>
+            public int RejectedNames;
             public readonly List<string> Downloaded = new();
             /// <summary>Songs that could not be fetched, and why. One failure never abandons the run.</summary>
             public readonly List<(string ChartHash, string Reason)> Failures = new();
@@ -91,7 +114,7 @@ namespace YARG.Song.RemoteLibrary
             {
                 return $"server={ServerTotal} had={AlreadyHad} downloaded={Downloaded.Count} " +
                     $"failed={Failures.Count} unmanaged={Unmanaged} swept={SweptPartials} " +
-                    $"bytes={BytesFetched}";
+                    $"rejected={RejectedNames} bytes={BytesFetched}";
             }
         }
 
@@ -152,6 +175,34 @@ namespace YARG.Song.RemoteLibrary
             onProgress?.Invoke(result.Downloaded.Count, missing.Count, result.BytesFetched);
             YargLogger.LogInfo($"Song server sync finished: {result}");
             return result;
+        }
+
+        /// <summary>
+        /// Makes an untrusted string safe to put in a log line or a dialog.
+        /// </summary>
+        /// <remarks>
+        /// The rejected name came from the network, so it is exactly as trustworthy as the
+        /// thing that sent it. Truncated, and stripped of the control characters that would
+        /// let it forge extra log lines.
+        /// </remarks>
+        private static string Sanitize(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return "(empty)";
+            }
+
+            var clean = new StringBuilder(Math.Min(value.Length, 64));
+            foreach (char c in value)
+            {
+                if (clean.Length >= 64)
+                {
+                    clean.Append('\u2026');
+                    break;
+                }
+                clean.Append(char.IsControl(c) ? '?' : c);
+            }
+            return clean.ToString();
         }
 
         /// <summary>
@@ -234,7 +285,20 @@ namespace YARG.Song.RemoteLibrary
             var missing = new List<string>();
             foreach (var entry in json.Value<JArray>("missing") ?? new JArray())
             {
-                missing.Add(entry.ToString());
+                string candidate = entry.ToString();
+                if (!ChartHash.IsMatch(candidate))
+                {
+                    // Dropped rather than thrown: one malformed entry must not cost a sync
+                    // of ten thousand good ones. Counted and logged so it is visible, since
+                    // a server sending these is either broken or hostile and both are worth
+                    // noticing.
+                    result.RejectedNames++;
+                    YargLogger.LogWarning("Song server offered a name that is not a chart hash; " +
+                        $"refusing it: {Sanitize(candidate)}");
+                    continue;
+                }
+
+                missing.Add(candidate);
             }
             return missing;
         }
@@ -317,6 +381,14 @@ namespace YARG.Song.RemoteLibrary
         private static async UniTask<long> FetchOne(string root, string hash, string destination,
             CancellationToken token)
         {
+            // Checked again here, not only where the list is parsed. This is the line that
+            // would do the damage, and it should not depend on a caller elsewhere having
+            // been careful.
+            if (!ChartHash.IsMatch(hash))
+            {
+                throw new Exception($"refusing to fetch a name that is not a chart hash: {Sanitize(hash)}");
+            }
+
             string part = Path.Combine(destination, hash + ".sng.part");
             string final = Path.Combine(destination, hash + ".sng");
             bool multipleChoices = false;
