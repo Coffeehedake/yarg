@@ -256,6 +256,64 @@ namespace YARG.Song.RemoteLibrary
         /// and random bytes: no bad archive is ever named, and one good song still arrives
         /// after four consecutive failures.
         /// </remarks>
+        /// <summary>
+        /// What went wrong, in terms somebody could act on.
+        /// </summary>
+        /// <remarks>
+        /// UnityWebRequest reports a connection dropped mid-body as literally
+        /// <c>"Unknown Error"</c>, which is what a player would find in the log after a sync
+        /// failed. Measured against a server that cuts a body in half: the request does fail,
+        /// but the message names neither the cause nor anything to check. The response code
+        /// and how much of the promised body actually arrived are both known here.
+        /// </remarks>
+        private static string DescribeFailure(UnityWebRequest request, string part)
+        {
+            string error = string.IsNullOrEmpty(request.error) ? "unknown transport error" : request.error;
+            long expected = ContentLength(request);
+            long got = File.Exists(part) ? new FileInfo(part).Length : 0;
+
+            if (expected > 0 && got < expected)
+            {
+                return $"{error} - the connection ended after {got} of {expected} bytes " +
+                    $"(HTTP {request.responseCode})";
+            }
+
+            return $"{error} (HTTP {request.responseCode})";
+        }
+
+        /// <summary>The body length the server promised, or -1 if it did not say.</summary>
+        private static long ContentLength(UnityWebRequest request)
+        {
+            string header = request.GetResponseHeader("Content-Length");
+            return header != null && long.TryParse(header, out long length) ? length : -1;
+        }
+
+        /// <summary>
+        /// Checks the file on disk is as long as the server said it would be.
+        /// </summary>
+        /// <remarks>
+        /// Defence in depth rather than the main guard - the chart hash check is that, and it
+        /// catches a short read too. This exists because whether a cut-off transfer is
+        /// reported as an error at all is the HTTP stack's decision, and it varies by
+        /// platform; a length that disagrees with the header is the same defect stated in
+        /// terms the caller can print.
+        /// </remarks>
+        private static void VerifyLength(UnityWebRequest request, string part)
+        {
+            long expected = ContentLength(request);
+            if (expected < 0 || !File.Exists(part))
+            {
+                return;
+            }
+
+            long actual = new FileInfo(part).Length;
+            if (actual != expected)
+            {
+                throw new Exception(
+                    $"download ended early: got {actual} of {expected} bytes the server promised");
+            }
+        }
+
         private static async UniTask<long> FetchOne(string root, string hash, string destination,
             CancellationToken token)
         {
@@ -271,15 +329,44 @@ namespace YARG.Song.RemoteLibrary
                     request.SetRequestHeader("User-Agent", "YARG");
                     request.timeout = SONG_TIMEOUT_SECONDS;
 
-                    await request.SendWebRequest().WithCancellation(token);
+                    // Both outcomes are handled because UnityWebRequest reports these two
+                    // cases differently and the difference is not obvious:
+                    //
+                    //   - A 4xx/5xx or a dropped connection makes UniTask THROW
+                    //     UnityWebRequestException. Code after the await never runs, so an
+                    //     `if (request.result != Success)` check written there is dead - which
+                    //     is what this was, and why a cut-off download reported a bare
+                    //     "Unknown Error" with nothing to act on.
+                    //   - A 300 comes back as SUCCESS with responseCode 300, because there is
+                    //     no Location header to follow and Unity does not treat it as an
+                    //     error. So the duplicate-package case must be checked after a
+                    //     NORMAL return.
+                    //
+                    // Getting that backwards makes every song that exists in two packages
+                    // permanently unfetchable, which is exactly what happened when this was
+                    // first restructured. Both paths check for 300 so neither assumption is
+                    // load-bearing.
+                    try
+                    {
+                        await request.SendWebRequest().WithCancellation(token);
 
-                    if (request.responseCode == MULTIPLE_CHOICES)
-                    {
-                        multipleChoices = true;
+                        if (request.responseCode == MULTIPLE_CHOICES)
+                        {
+                            multipleChoices = true;
+                        }
+                        else
+                        {
+                            VerifyLength(request, part);
+                        }
                     }
-                    else if (request.result != UnityWebRequest.Result.Success)
+                    catch (UnityWebRequestException)
                     {
-                        throw new Exception($"download failed: {request.error}");
+                        if (request.responseCode != MULTIPLE_CHOICES)
+                        {
+                            throw new Exception($"download failed: {DescribeFailure(request, part)}");
+                        }
+
+                        multipleChoices = true;
                     }
                 }
 
@@ -303,12 +390,17 @@ namespace YARG.Song.RemoteLibrary
                     retry.SetRequestHeader("User-Agent", "YARG");
                     retry.timeout = SONG_TIMEOUT_SECONDS;
 
-                    await retry.SendWebRequest().WithCancellation(token);
-
-                    if (retry.result != UnityWebRequest.Result.Success)
+                    try
                     {
-                        throw new Exception($"download failed after choosing package {package}: {retry.error}");
+                        await retry.SendWebRequest().WithCancellation(token);
                     }
+                    catch (UnityWebRequestException)
+                    {
+                        throw new Exception($"download failed after choosing package {package}: " +
+                            DescribeFailure(retry, part));
+                    }
+
+                    VerifyLength(retry, part);
                 }
 
                 VerifyChartHash(part, hash);
