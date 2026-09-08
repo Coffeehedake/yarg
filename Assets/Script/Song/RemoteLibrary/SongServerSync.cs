@@ -80,6 +80,8 @@ namespace YARG.Song.RemoteLibrary
             public int Unmanaged;
             /// <summary>How many songs the server says it has.</summary>
             public int ServerTotal;
+            /// <summary>Dead .part files from earlier failed downloads, removed on the way in.</summary>
+            public int SweptPartials;
             public readonly List<string> Downloaded = new();
             /// <summary>Songs that could not be fetched, and why. One failure never abandons the run.</summary>
             public readonly List<(string ChartHash, string Reason)> Failures = new();
@@ -88,7 +90,8 @@ namespace YARG.Song.RemoteLibrary
             public override string ToString()
             {
                 return $"server={ServerTotal} had={AlreadyHad} downloaded={Downloaded.Count} " +
-                    $"failed={Failures.Count} unmanaged={Unmanaged} bytes={BytesFetched}";
+                    $"failed={Failures.Count} unmanaged={Unmanaged} swept={SweptPartials} " +
+                    $"bytes={BytesFetched}";
             }
         }
 
@@ -172,11 +175,29 @@ namespace YARG.Song.RemoteLibrary
                 }
 
                 // A leftover .part is ours but incomplete: neither inventory nor a
-                // stranger's file, so it is counted as neither.
-                if (!name.EndsWith(".part", StringComparison.Ordinal))
+                // stranger's file, so it is counted as neither - and it is swept here,
+                // because the run that created it may not have been able to delete it. It
+                // cannot be mistaken for a song (only "<40 hex>.sng" is ours) but left
+                // alone it accumulates one dead file per failed download, forever.
+                if (name.EndsWith(".part", StringComparison.Ordinal))
                 {
-                    result.Unmanaged++;
+                    try
+                    {
+                        File.Delete(path);
+                        result.SweptPartials++;
+                    }
+                    catch (Exception e)
+                    {
+                        // Still locked, or not ours to delete. Neither is worth failing a
+                        // sync over.
+                        // Interpolated, not LogFormatDebug: the caller-info overloads make a
+                        // two-argument format call ambiguous (CS0121).
+                        YargLogger.LogDebug($"Could not sweep {name}: {e.Message}");
+                    }
+                    continue;
                 }
+
+                result.Unmanaged++;
             }
 
             have.Sort(StringComparer.Ordinal);
@@ -223,6 +244,18 @@ namespace YARG.Song.RemoteLibrary
         /// name. A crash or a dropped link mid-download therefore cannot leave a truncated
         /// archive under a name the scanner will trust.
         /// </summary>
+        /// <remarks>
+        /// That guarantee is about the NAME, and it is the only one made here. A failed
+        /// download can still leave a .part behind - it is deleted on the way out where
+        /// possible and swept by <see cref="Inventory"/> on the next run where not - but a
+        /// .part is never a song, because the scanner is pointed at a folder in which only
+        /// "&lt;40 hex&gt;.sng" means anything.
+        ///
+        /// Verified by <c>Editor/HostileServerProbe.cs</c> against a server that serves a
+        /// body cut in half mid-transfer, a real archive under someone else's hash, a 500,
+        /// and random bytes: no bad archive is ever named, and one good song still arrives
+        /// after four consecutive failures.
+        /// </remarks>
         private static async UniTask<long> FetchOne(string root, string hash, string destination,
             CancellationToken token)
         {
@@ -294,10 +327,32 @@ namespace YARG.Song.RemoteLibrary
             }
             catch
             {
-                if (File.Exists(part))
+                // The delete gets its own guard because IT CAN THROW, and when it does it
+                // replaces the real reason with a file-locking message that says nothing
+                // about why the download was rejected.
+                //
+                // Measured: a .part holding bytes that are not a .sng cannot be deleted here
+                // at all on Windows. YARG.Core's SngFile.TryLoadFromFile opens a FileStream
+                // and, on the path where the file fails its SNGPKG tag check, returns
+                // `default` WITHOUT ever handing that stream to the tracker that would
+                // dispose it - so the file stays locked until the finalizer runs. Reported
+                // upstream; see docs/UPSTREAM.md.
+                //
+                // A leftover .part is safe on its own: it can never be mistaken for a song,
+                // because only "<40 hex>.sng" is. Inventory sweeps it on the next sync.
+                try
                 {
-                    File.Delete(part);
+                    if (File.Exists(part))
+                    {
+                        File.Delete(part);
+                    }
                 }
+                catch (Exception cleanup)
+                {
+                    YargLogger.LogWarning($"Could not remove the partial download " +
+                        $"{Path.GetFileName(part)} ({cleanup.Message}); it will be swept on the next sync.");
+                }
+
                 throw;
             }
         }
@@ -371,26 +426,39 @@ namespace YARG.Song.RemoteLibrary
         /// </remarks>
         private static void VerifyChartHash(string path, string expected)
         {
-            using var sng = SngFile.TryLoadFromFile(path, false);
+            // NOT `using var`, and that is load-bearing. A failed load returns `default`,
+            // whose Dispose() calls _tracker.Dispose() on a null tracker and throws a
+            // NullReferenceException - which then REPLACES the clear message below as the
+            // stack unwinds, so "this file is not a .sng" reaches the player as "Object
+            // reference not set to an instance of an object". Measured, and reported
+            // upstream; see docs/UPSTREAM.md.
+            var sng = SngFile.TryLoadFromFile(path, false);
             if (!sng.IsLoaded)
             {
                 throw new Exception("downloaded file is not a readable .sng");
             }
 
-            foreach (string chartName in ChartFileNames)
+            try
             {
-                if (!sng.TryGetListing(chartName, out var listing))
+                foreach (string chartName in ChartFileNames)
                 {
-                    continue;
-                }
+                    if (!sng.TryGetListing(chartName, out var listing))
+                    {
+                        continue;
+                    }
 
-                using var data = sng.LoadAllBytes(in listing);
-                string actual = HashWrapper.Hash(data.ReadOnlySpan).ToString();
-                if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new Exception($"chart hash mismatch: expected {expected}, got {actual}");
+                    using var data = sng.LoadAllBytes(in listing);
+                    string actual = HashWrapper.Hash(data.ReadOnlySpan).ToString();
+                    if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new Exception($"chart hash mismatch: expected {expected}, got {actual}");
+                    }
+                    return;
                 }
-                return;
+            }
+            finally
+            {
+                sng.Dispose();
             }
 
             throw new Exception("downloaded .sng contains no chart file");
