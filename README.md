@@ -1,3 +1,12 @@
+> [!NOTE]
+> **This is a MODIFIED FORK of YARG, maintained by FatalException — not the official
+> project.** Modified since 2026-09-07. Everything below this line is upstream's README,
+> unchanged. What was changed here, and when, is in [`FORK-NOTICE.md`](FORK-NOTICE.md).
+>
+> Upstream: <https://github.com/YARC-Official/YARG>. Same licence, LGPL-3.0-or-later.
+
+---
+
 <p align="center">
   <picture>
     <img alt="YARG Gameplay" src="./Images/Banner.png" width="100%">
