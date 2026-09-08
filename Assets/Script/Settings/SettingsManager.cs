@@ -113,11 +113,16 @@ namespace YARG.Settings
                 nameof(Settings.EnablePlayAShow),
                 nameof(Settings.PlayAShowTimeout),
                 nameof(Settings.RequireAllDifficulties),
+            },
+            new SongServerTab("SongServer", icon: "Import")
+            {
                 new HeaderMetadata("SongServer"),
                 nameof(Settings.SongServerUrl),
                 new TextMetadata(SongServerStatus.Describe),
+                new TextMetadata(() => SongServerStatus.DescribeMirror()),
                 nameof(Settings.SyncOnStartup),
-                new ButtonRowMetadata(nameof(Settings.SyncFromSongServer)),
+                new ButtonRowMetadata(nameof(Settings.SyncFromSongServer),
+                    nameof(Settings.CancelSongServerSync)),
             },
             new MetadataTab("Sound", icon: "Sound")
             {

@@ -691,10 +691,19 @@ namespace YARG.Settings
                     return;
                 }
 
+                if (SongServerStatus.IsSyncing)
+                {
+                    DialogManager.Instance.ShowMessage("Already Syncing",
+                        "A sync is already running. Wait for it to finish, or cancel it.");
+                    return;
+                }
+
                 try
                 {
+                    var token = SongServerStatus.BeginSync();
                     using var context = new LoadingContext();
-                    var result = await SongServerSync.Sync(url, PathHelper.ServerLibraryPath, context);
+                    var result = await SongServerSync.Sync(url, PathHelper.ServerLibraryPath, context,
+                        token, onProgress: SongServerStatus.ReportProgress);
 
                     // Rescan even when nothing arrived: the folder may have been populated by
                     // an earlier run that never got scanned.
@@ -709,12 +718,31 @@ namespace YARG.Settings
                             $"{result.Failures.Count} could not be fetched; see the log for which.");
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    // Cancelling is a choice, not a failure. The songs already fetched are
+                    // on disk and valid - each one is renamed into place only after its
+                    // chart hash verifies - so a cancelled sync simply resumes next time.
+                    YargLogger.LogInfo("Song server sync cancelled.");
+                }
                 catch (Exception e)
                 {
                     YargLogger.LogException(e, "Song server sync failed");
                     SongServerStatus.RecordSyncFailure(e.Message);
                     DialogManager.Instance.ShowMessage("Song Server Sync Failed", e.Message);
                 }
+                finally
+                {
+                    SongServerStatus.EndSync();
+                }
+            }
+
+            /// <summary>
+            /// Stops a running sync. Whatever already arrived stays.
+            /// </summary>
+            public void CancelSongServerSync()
+            {
+                SongServerStatus.CancelSync();
             }
 
             public async void RemoveRemoteContent()

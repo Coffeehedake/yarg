@@ -103,7 +103,8 @@ namespace YARG.Song.RemoteLibrary
         /// </remarks>
         public static async UniTask<Result> Sync(string serverUrl, string destination,
             LoadingContext context = null, CancellationToken token = default,
-            int listTimeoutSeconds = LIST_TIMEOUT_SECONDS)
+            int listTimeoutSeconds = LIST_TIMEOUT_SECONDS,
+            Action<int, int, long> onProgress = null)
         {
             if (string.IsNullOrWhiteSpace(serverUrl))
             {
@@ -125,6 +126,7 @@ namespace YARG.Song.RemoteLibrary
 
                 string hash = missing[i];
                 context?.SetSubText($"Downloading song {i + 1} of {missing.Count}");
+                onProgress?.Invoke(i, missing.Count, result.BytesFetched);
 
                 try
                 {
@@ -144,6 +146,7 @@ namespace YARG.Song.RemoteLibrary
                 }
             }
 
+            onProgress?.Invoke(result.Downloaded.Count, missing.Count, result.BytesFetched);
             YargLogger.LogInfo($"Song server sync finished: {result}");
             return result;
         }
