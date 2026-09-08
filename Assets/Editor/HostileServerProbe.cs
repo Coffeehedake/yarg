@@ -59,9 +59,9 @@ namespace YARG.Editor
                     ? Directory.GetFiles(corpus, "*.sng").OrderBy(x => x).ToList()
                     : new List<string>();
 
-                if (sources.Count < 2)
+                if (sources.Count < 3)
                 {
-                    Debug.LogError("PROBE FAIL: need at least 2 real .sng files in " + corpus +
+                    Debug.LogError("PROBE FAIL: need at least 3 real .sng files in " + corpus +
                         " (run Editor.SongServerSyncSmokeTest.Run first)");
                     EditorApplication.Exit(1);
                     return;
@@ -78,6 +78,14 @@ namespace YARG.Editor
                 const string errorHash = "0000000000000000000000000000000000000002";
                 const string garbageHash = "0000000000000000000000000000000000000003";
 
+                // The duplicate-package case. The corpus on the live server has
+                // duplicate_packages=0, so this path had never met a real 300 - and a 300 is
+                // a non-success result, which is exactly what UniTask turns into an
+                // exception. sources[2] is served under its own hash, so a correct client
+                // ends up with a file that verifies.
+                string choiceHash = Path.GetFileNameWithoutExtension(sources[2]);
+                byte[] choiceBytes = File.ReadAllBytes(sources[2]);
+
                 var responses = new Dictionary<string, Reply>
                 {
                     // A real archive, but announced under a hash that is not its own. This is
@@ -89,11 +97,12 @@ namespace YARG.Editor
                     // Content-Length promises the whole file; the socket closes halfway.
                     [truncHash] = Reply.Truncated(truncSource),
                     [goodHash] = Reply.Body(goodBytes),
+                    [choiceHash] = Reply.MultipleChoices(choiceBytes),
                 };
 
                 // Order matters: the good one is last, so arriving proves the four failures
                 // before it did not abandon the run.
-                var order = new[] { wrongHash, errorHash, garbageHash, truncHash, goodHash };
+                var order = new[] { wrongHash, errorHash, garbageHash, truncHash, choiceHash, goodHash };
 
                 if (Directory.Exists(destination))
                 {
@@ -110,14 +119,27 @@ namespace YARG.Editor
                 Debug.Log($"PROBE INFO: {result}");
 
                 // ---- what the sync reported ----
-                if (result.Downloaded.Count != 1 || !result.Downloaded.Contains(goodHash))
+                if (!result.Downloaded.Contains(goodHash))
                 {
-                    Fail($"expected exactly the good song to download, got " +
-                        $"[{string.Join(", ", result.Downloaded)}]");
+                    Fail("the good song did not arrive after four consecutive failures");
                 }
                 else
                 {
-                    Pass("the one good song arrived, after four consecutive failures");
+                    Pass("the good song arrived, after four consecutive failures");
+                }
+
+                // The duplicate-package path: a 300 is not a failure, it is the server
+                // asking the client to choose. Getting this wrong means every song that
+                // exists in two packages is permanently unfetchable.
+                if (!result.Downloaded.Contains(choiceHash))
+                {
+                    var why = result.Failures.FirstOrDefault(f => f.ChartHash == choiceHash);
+                    Fail("a song offered as multiple packages was never fetched" +
+                        (why.Reason == null ? "" : $": {why.Reason}"));
+                }
+                else
+                {
+                    Pass("a song offered as multiple packages was fetched by choosing one");
                 }
 
                 if (result.Failures.Count != 4)
@@ -131,6 +153,24 @@ namespace YARG.Editor
                     {
                         Debug.Log($"PROBE INFO:   {hash[^4..]} -> {reason}");
                     }
+                }
+
+                // A reason nobody can act on is barely better than no reason. The cut-off
+                // body is the case that produced a bare "Unknown Error" from
+                // UnityWebRequest, which names neither the cause nor anything to check.
+                var truncFailure = result.Failures.FirstOrDefault(f => f.ChartHash == truncHash);
+                if (truncFailure.Reason == null)
+                {
+                    Fail("the truncated download did not fail at all");
+                }
+                else if (!truncFailure.Reason.Contains("bytes"))
+                {
+                    Fail($"a cut-off download says '{truncFailure.Reason}', which gives the " +
+                        "player nothing to act on - it should say how much arrived");
+                }
+                else
+                {
+                    Pass($"a cut-off download explains itself: '{truncFailure.Reason}'");
                 }
 
                 // ---- the failure reasons must be the REAL ones ----
@@ -228,14 +268,14 @@ namespace YARG.Editor
                         $"{stillThere.Count}, against a server that keeps failing)");
                 }
 
-                if (second.AlreadyHad != 1)
+                if (second.AlreadyHad != 2)
                 {
-                    Fail($"the second sync should have found the one good song already there, " +
+                    Fail($"the second sync should have found both good songs already there, " +
                         $"saw {second.AlreadyHad}");
                 }
                 else
                 {
-                    Pass("the second sync re-used the good song rather than re-downloading it");
+                    Pass("the second sync re-used what it already had rather than re-downloading");
                 }
             }
             catch (Exception e)
@@ -300,6 +340,9 @@ namespace YARG.Editor
             public static Reply Body(byte[] bytes) => new(200, bytes, false);
             public static Reply JustStatus(int status) => new(status, Array.Empty<byte>(), false);
             public static Reply Truncated(byte[] bytes) => new(200, bytes, true);
+
+            /// <summary>Answers 300 with a package list until asked for one by name.</summary>
+            public static Reply MultipleChoices(byte[] bytes) => new(300, bytes, false);
         }
 
         /// <summary>
@@ -403,8 +446,18 @@ namespace YARG.Editor
 
                     if (_replies.TryGetValue(hash, out var reply))
                     {
-                        Write(stream, reply.Status, reply.Bytes, "application/octet-stream",
-                            reply.CutInHalf);
+                        if (reply.Status == 300 && !path.Contains("package=", StringComparison.Ordinal))
+                        {
+                            // Decline to choose, and say what the choices are - the shape the
+                            // real server uses when two packages share a chart hash.
+                            string body = "{\"packages\":[{\"package_hash\":\"bbbb\"}," +
+                                "{\"package_hash\":\"aaaa\"}]}";
+                            Write(stream, 300, Encoding.UTF8.GetBytes(body), "application/json", false);
+                            return;
+                        }
+
+                        Write(stream, reply.Status == 300 ? 200 : reply.Status, reply.Bytes,
+                            "application/octet-stream", reply.CutInHalf);
                         return;
                     }
                 }
