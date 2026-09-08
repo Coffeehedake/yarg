@@ -1,4 +1,4 @@
-using Cysharp.Text;
+﻿using Cysharp.Text;
 using UnityEngine;
 using YARG.Core.Game;
 using YARG.Core.Song;
@@ -7,6 +7,7 @@ using YARG.Player;
 using YARG.Playlists;
 using YARG.Scores;
 using YARG.Song;
+using YARG.Song.RemoteLibrary;
 
 namespace YARG.Menu.MusicLibrary
 {
@@ -51,8 +52,46 @@ namespace YARG.Menu.MusicLibrary
 
         public override string GetSecondaryText(bool selected)
         {
-            return FormatAs(SongEntry.Artist, TextType.Secondary, selected);
+            return WithServerBadge(
+                FormatAs(SongEntry.Artist, TextType.Secondary, selected), SongEntry);
         }
+
+        /// <summary>
+        /// Marks a song that came from the song server mirror.
+        /// </summary>
+        /// <remarks>
+        /// It rides on the ARTIST line rather than getting a control of its own, and that is
+        /// a deliberate limit rather than a first draft. A real badge would be a new object
+        /// on the song-row prefab, and a prefab change cannot be verified from batchmode -
+        /// it can only be looked at. Rich text can, so this is the version of the feature
+        /// that can be MEASURED, and it costs the player nothing to read.
+        ///
+        /// Static and pure on purpose: a SongViewType needs a MusicLibraryMenu to exist, so
+        /// an instance method here would be untestable headless. This one takes the already
+        /// formatted text and the entry, and a probe can call it against entries produced by
+        /// a real scan of the real mirror folder.
+        ///
+        /// Known trade-off, stated rather than discovered later: a player whose whole library
+        /// comes from one server sees the tag on every row, where it says nothing. It is small
+        /// and dim for that reason. If that turns out to be the common case, the answer is a
+        /// setting, not a louder badge.
+        /// </remarks>
+        public static string WithServerBadge(string secondaryText, SongEntry entry)
+        {
+            if (!MirroredSongs.IsMirrored(entry))
+            {
+                return secondaryText;
+            }
+
+            // Appended AFTER the formatted text, never inside it: FormatAs closes its own
+            // <color> and <font-weight>, and nesting a second colour inside them would leave
+            // the badge inheriting the artist's weight on some rows and not others.
+            return ZString.Concat(secondaryText, BadgeMarkup);
+        }
+
+        /// <summary>The badge itself, so a probe can look for exactly this and nothing else.</summary>
+        public const string BadgeMarkup =
+            "  <size=75%><color=#7cc4ff88>\u25cf server</color></size>";
 
 #nullable enable
         public override Sprite? GetIcon()
