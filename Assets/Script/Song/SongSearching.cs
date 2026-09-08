@@ -9,6 +9,7 @@ using YARG.Core.Utility;
 using YARG.Helpers.Extensions;
 using YARG.Player;
 using YARG.Settings;
+using YARG.Song.RemoteLibrary;
 
 namespace YARG.Song
 {
@@ -25,6 +26,11 @@ namespace YARG.Song
 
         public SongCategory[] Search(string value, SortAttribute sort)
         {
+            // "server:" is pulled out before the ordinary pipeline runs, because that
+            // pipeline keys every filter on SortAttribute and "came from the mirror" can
+            // never be a sort order. See MirroredSongs.ExtractWant.
+            var want = MirroredSongs.ExtractWant(value, out value);
+
             var filters = GetFilters(value.Split(';'));
             int filterIndex = 0;
 
@@ -103,7 +109,38 @@ namespace YARG.Song
             {
                 searches.RemoveRange(filterIndex, searches.Count - filterIndex);
             }
-            return searches.Count > 0 ? searches[^1].Nodes[^1].Songs : _baseList;
+            var result = searches.Count > 0 ? searches[^1].Nodes[^1].Songs : _baseList;
+            return ApplyMirrorFilter(result, want);
+        }
+
+        /// <summary>
+        /// Keeps only songs on the wanted side of the mirror, dropping categories that end
+        /// up empty so the library does not show a header with nothing under it.
+        /// </summary>
+        /// <remarks>
+        /// Runs last, over an already-narrowed list, and returns the input untouched when no
+        /// "server:" term was given - which is every ordinary search.
+        /// </remarks>
+        private static SongCategory[] ApplyMirrorFilter(SongCategory[] categories,
+            MirroredSongs.Want want)
+        {
+            if (want == MirroredSongs.Want.Either || categories == null)
+            {
+                return categories;
+            }
+
+            var kept = new List<SongCategory>(categories.Length);
+            foreach (var category in categories)
+            {
+                var songs = category.Songs.Where(song => MirroredSongs.Matches(song, want)).ToArray();
+                if (songs.Length > 0)
+                {
+                    kept.Add(new SongCategory(category.Category, songs, category.CategoryGroup,
+                        category.Collapsed));
+                }
+            }
+
+            return kept.ToArray();
         }
 
         public bool IsUnspecified()
