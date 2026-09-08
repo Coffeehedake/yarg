@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using UnityEditor;
@@ -168,6 +169,21 @@ namespace YARG.Editor
                 }
                 Directory.CreateDirectory(destination);
 
+                // Files that are NOT ours, in the folder we sweep. The sweep used to take any
+                // name ending ".part", which was broader than the guarantee this client makes -
+                // that anything not named like ours belongs to the player. Both of these end in
+                // ".part" and neither is a name FetchOne can write.
+                var strangers = new[]
+                {
+                    Path.Combine(destination, "stranger.part"),
+                    Path.Combine(destination, "not-a-hash.sng.part"),
+                    Path.Combine(destination, "0000000000000000000000000000000000000005.sng.part.bak"),
+                };
+                foreach (string strangerPath in strangers)
+                {
+                    File.WriteAllText(strangerPath, "the player put this here");
+                }
+
                 server = new HostileServer(responses, order);
                 server.Start();
                 Debug.Log($"PROBE INFO: hostile server on port {server.Port}, serving {order.Length} songs");
@@ -289,6 +305,28 @@ namespace YARG.Editor
                     Pass($"all {hostileNames.Length} non-hash names were refused before becoming a path");
                 }
 
+                // ---- a file that is not ours is not ours, even when it ends in .part ----
+                var eaten = strangers.Where(x => !File.Exists(x)).Select(Path.GetFileName).ToList();
+                if (eaten.Count > 0)
+                {
+                    Fail($"the sweep deleted {eaten.Count} file(s) that were not ours: " +
+                        string.Join(", ", eaten));
+                }
+                else
+                {
+                    Pass($"all {strangers.Length} of the player's own .part-suffixed files survived");
+                }
+
+                if (result.Unmanaged != strangers.Length)
+                {
+                    Fail($"the player's {strangers.Length} file(s) were counted as " +
+                        $"{result.Unmanaged} unmanaged");
+                }
+                else
+                {
+                    Pass($"the player's files were counted as {result.Unmanaged} unmanaged, not as ours");
+                }
+
                 var escaped = Directory.Exists(escapeDir)
                     ? Directory.GetFileSystemEntries(escapeDir)
                     : Array.Empty<string>();
@@ -303,9 +341,14 @@ namespace YARG.Editor
                 }
 
                 // Every file that did land must be named like one of ours.
+                var strangerNames = strangers.Select(Path.GetFileName).ToHashSet();
                 foreach (string path in Directory.GetFileSystemEntries(destination))
                 {
                     string name = Path.GetFileName(path);
+                    if (strangerNames.Contains(name))
+                    {
+                        continue; // the player's, and asserted above
+                    }
                     if (!name.EndsWith(".sng") && !name.EndsWith(".part"))
                     {
                         Fail($"an unexpected file appeared in the mirror: {name}");
@@ -333,7 +376,7 @@ namespace YARG.Editor
                 // A leftover .part is tolerated: on Windows a rejected download can still be
                 // locked by YARG.Core (see SngFile.TryLoadFromFile). What must be true is
                 // that it is not a song and that it does not accumulate.
-                var leftovers = Directory.GetFiles(destination, "*.part").ToList();
+                var leftovers = OurPartials(destination);
                 Debug.Log($"PROBE INFO: {leftovers.Count} .part file(s) after the first sync");
 
                 var landed = Directory.GetFiles(destination, "*.sng")
@@ -385,7 +428,7 @@ namespace YARG.Editor
                 // leaves a fresh .part. An empty folder is therefore the WRONG expectation -
                 // what must be true is that dead partials do not ACCUMULATE, one per failed
                 // download, forever.
-                var stillThere = Directory.GetFiles(destination, "*.part").ToList();
+                var stillThere = OurPartials(destination);
 
                 if (leftovers.Count > 0 && second.SweptPartials < leftovers.Count)
                 {
@@ -430,6 +473,21 @@ namespace YARG.Editor
             Debug.Log(_failures == 0 ? "PROBE RESULT: PASS" : $"PROBE RESULT: FAIL ({_failures})");
             EditorApplication.Exit(_failures == 0 ? 0 : 1);
         }
+
+        /// <summary>
+        /// The dead partials that are OURS - the only ones the sweep is entitled to.
+        /// </summary>
+        /// <remarks>
+        /// Not `GetFiles("*.part")`. That also returns the player's own files, and once the
+        /// probe started planting some it made "3 were there to sweep, 1 was swept" look like a
+        /// defect in the sweep when it was a defect in the measurement. Same shape as every
+        /// other wrong-instrument finding in this project: the code was right and the ruler
+        /// was not.
+        /// </remarks>
+        private static List<string> OurPartials(string destination) =>
+            Directory.GetFiles(destination)
+                .Where(p => Regex.IsMatch(Path.GetFileName(p), @"^[0-9a-f]{40}\.sng\.part$"))
+                .ToList();
 
         /// <summary>
         /// The chart hash a .sng really carries, computed from YARG.Core directly so this is
