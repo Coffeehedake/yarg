@@ -42,6 +42,20 @@ namespace YARG.Song.RemoteLibrary
         private static readonly Regex ManagedName = new(@"^[0-9a-f]{40}\.sng$", RegexOptions.Compiled);
 
         /// <summary>
+        /// A partial download this client could have created: exactly "&lt;40 hex&gt;.sng.part".
+        /// </summary>
+        /// <remarks>
+        /// The sweep used to take ANY name ending ".part", which is broader than the guarantee
+        /// this class makes one paragraph away - that anything not named like ours belongs to
+        /// the player and is never touched. The mirror folder is one the game owns, so the odds
+        /// of a stranger's ".part" being in it are low; the claim was still wrong, and a
+        /// guarantee that is true "almost always" is not one. FetchOne writes exactly this
+        /// name, so this is the complete set of files the sweep can be entitled to.
+        /// </remarks>
+        private static readonly Regex ManagedPartial =
+            new(@"^[0-9a-f]{40}\.sng\.part$", RegexOptions.Compiled);
+
+        /// <summary>
         /// A chart hash exactly as YARG defines one: forty lower-case hex characters.
         /// </summary>
         /// <remarks>
@@ -247,7 +261,7 @@ namespace YARG.Song.RemoteLibrary
                 // because the run that created it may not have been able to delete it. It
                 // cannot be mistaken for a song (only "<40 hex>.sng" is ours) but left
                 // alone it accumulates one dead file per failed download, forever.
-                if (name.EndsWith(".part", StringComparison.Ordinal))
+                if (ManagedPartial.IsMatch(name))
                 {
                     try
                     {
