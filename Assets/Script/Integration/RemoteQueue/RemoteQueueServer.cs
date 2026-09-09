@@ -8,6 +8,7 @@ using System.Threading;
 using Newtonsoft.Json;
 using UnityEngine;
 using YARG.Core.Logging;
+using YARG.Settings;
 
 namespace YARG.Integration.RemoteQueue
 {
@@ -138,6 +139,11 @@ namespace YARG.Integration.RemoteQueue
             }
 
             _thread = null;
+
+            // Votes are for the party that was happening. Keeping them across a
+            // stop would mean a room that reconvenes inherits an argument.
+            RemoteQueueVotes.Reset();
+
             YargLogger.LogInfo("Remote queue: stopped");
         }
 
@@ -200,6 +206,26 @@ namespace YARG.Integration.RemoteQueue
 
                     case "/api/queue":
                         HandleQueue(ctx, method);
+                        return;
+
+                    case "/api/board":
+                        if (method != "GET") { SendStatus(ctx, 405, "GET only"); return; }
+                        SendJson(ctx, 200, RemoteQueueBridge.GetBoard(VotesNeeded, VotingEnabled));
+                        return;
+
+                    case "/api/suggest":
+                        if (method != "POST") { SendStatus(ctx, 405, "POST only"); return; }
+                        HandleSuggest(ctx);
+                        return;
+
+                    case "/api/vote":
+                        if (method != "POST") { SendStatus(ctx, 405, "POST only"); return; }
+                        HandleVote(ctx);
+                        return;
+
+                    case "/api/decide":
+                        if (method != "POST") { SendStatus(ctx, 405, "POST only"); return; }
+                        HandleDecide(ctx);
                         return;
 
                     default:
@@ -289,6 +315,139 @@ namespace YARG.Integration.RemoteQueue
                     SendStatus(ctx, 405, "GET, POST or DELETE");
                     return;
             }
+        }
+
+        // ------------------------------------------------------------------
+        // Voting
+        // ------------------------------------------------------------------
+
+        // Defaults used when settings are not available yet. This is not
+        // theoretical: the mode callback deliberately runs when a saved setting
+        // is LOADED, so the listener can be accepting requests before the
+        // settings object is fully there. Reading it unguarded turned every
+        // voting endpoint into a 500 - found by the smoke test, which runs in
+        // exactly that state.
+        private const bool DefaultVoting = true;
+        private const int  DefaultVotesNeeded = 3;
+
+        private static bool VotingEnabled
+        {
+            get
+            {
+                try
+                {
+                    return SettingsManager.Settings?.RemoteQueueVoting?.Value ?? DefaultVoting;
+                }
+                catch (Exception)
+                {
+                    return DefaultVoting;
+                }
+            }
+        }
+
+        private static int VotesNeeded
+        {
+            get
+            {
+                try
+                {
+                    return SettingsManager.Settings?.RemoteQueueVotesNeeded?.Value ?? DefaultVotesNeeded;
+                }
+                catch (Exception)
+                {
+                    return DefaultVotesNeeded;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Who is voting. The page makes a random id and keeps it in the browser;
+        /// the remote address is the fallback when it does not send one.
+        ///
+        /// This stops the ordinary double-tap and one phone voting twenty times.
+        /// It does NOT stop somebody clearing their storage or opening a private
+        /// tab, and it is not trying to: a party jukebox that needed real
+        /// accounts would not get used.
+        /// </summary>
+        private static string VoterOf(HttpListenerRequest request)
+        {
+            var declared = request.Headers["X-Voter"];
+            if (!string.IsNullOrWhiteSpace(declared) && declared.Length <= 64)
+            {
+                return declared.Trim();
+            }
+
+            return request.RemoteEndPoint?.Address?.ToString() ?? "unknown";
+        }
+
+        private static void HandleSuggest(HttpListenerContext ctx)
+        {
+            if (!VotingEnabled) { SendStatus(ctx, 404, "voting is off"); return; }
+
+            var hash = ReadHash(ReadBody(ctx.Request), ctx);
+            if (hash == null) { SendStatus(ctx, 400, "a 'hash' is required"); return; }
+
+            var nomination = RemoteQueueBridge.Suggest(hash, VoterOf(ctx.Request));
+            if (nomination == null) { SendStatus(ctx, 404, "no song with that hash"); return; }
+
+            SendJson(ctx, 200, nomination);
+        }
+
+        private static void HandleVote(HttpListenerContext ctx)
+        {
+            if (!VotingEnabled) { SendStatus(ctx, 404, "voting is off"); return; }
+
+            var body = ReadBody(ctx.Request);
+            var hash = ReadHash(body, ctx);
+            if (hash == null) { SendStatus(ctx, 400, "a 'hash' is required"); return; }
+
+            var down = string.Equals(ctx.Request.QueryString["dir"], "down", StringComparison.OrdinalIgnoreCase);
+            var delta = down ? -1 : 1;
+            var voter = VoterOf(ctx.Request);
+
+            // "queued" votes reorder the queue; "suggestion" votes decide whether
+            // a song gets in at all. Same gesture on the phone, different lists.
+            if (string.Equals(ctx.Request.QueryString["on"], "queued", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!RemoteQueueBridge.VoteQueued(hash, voter, delta))
+                {
+                    SendStatus(ctx, 404, "no song with that hash");
+                    return;
+                }
+
+                SendJson(ctx, 200, new { voted = true, on = "queued", hash, dir = down ? "down" : "up" });
+                return;
+            }
+
+            var promoted = RemoteQueueBridge.VoteSuggestion(hash, voter, delta, VotesNeeded);
+            SendJson(ctx, 200, new { voted = true, on = "suggestion", hash, promoted });
+        }
+
+        private static void HandleDecide(HttpListenerContext ctx)
+        {
+            if (!VotingEnabled) { SendStatus(ctx, 404, "voting is off"); return; }
+
+            var body = ReadBody(ctx.Request);
+            var hash = ReadHash(body, ctx);
+            if (hash == null) { SendStatus(ctx, 400, "a 'hash' is required"); return; }
+
+            var choice = ctx.Request.QueryString["choice"];
+            var playNext = string.Equals(choice, "next", StringComparison.OrdinalIgnoreCase);
+            if (!playNext && !string.Equals(choice, "setlist", StringComparison.OrdinalIgnoreCase))
+            {
+                SendStatus(ctx, 400, "choice must be 'next' or 'setlist'");
+                return;
+            }
+
+            var outcome = RemoteQueueBridge.VoteOutcome(hash, VoterOf(ctx.Request), playNext, VotesNeeded);
+            SendJson(ctx, 200, new
+            {
+                voted = true,
+                hash,
+                choice = playNext ? "next" : "setlist",
+                decided = outcome != NominationOutcome.None,
+                outcome = outcome.ToString(),
+            });
         }
 
         /// <summary>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using UnityEngine;
 using YARG.Core.Logging;
@@ -18,6 +19,40 @@ namespace YARG.Integration.RemoteQueue
         public string album;
         public string charter;
         public int    length_ms;
+
+        /// <summary>Net votes, when this song is in the queue.</summary>
+        public int    score;
+    }
+
+    /// <summary>A song somebody suggested, and how the room feels about it.</summary>
+    public sealed class RemoteNomination
+    {
+        public string hash;
+        public string name;
+        public string artist;
+
+        /// <summary>"suggested" while the room decides whether to play it at all;
+        /// "deciding" once it has won that and is choosing where it goes.</summary>
+        public string stage;
+
+        public int score;
+        public int ups;
+        public int downs;
+        public int for_next;
+        public int for_setlist;
+    }
+
+    /// <summary>Everything a phone needs in one poll.</summary>
+    public sealed class RemoteBoard
+    {
+        public RemoteQueueView         queue;
+        public List<RemoteNomination>  suggestions = new();
+
+        /// <summary>How many votes promote a suggestion, or settle where it goes.</summary>
+        public int threshold;
+
+        /// <summary>Whether voting is on at all.</summary>
+        public bool voting;
     }
 
     /// <summary>The queue, plus enough context for the page to explain itself.</summary>
@@ -301,6 +336,226 @@ namespace YARG.Integration.RemoteQueue
         }
 
         // ------------------------------------------------------------------
+        // Voting (increment 3)
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Suggests a song from the library. It does NOT enter the queue - it
+        /// goes on the suggestion board for the room to vote on, which is the
+        /// point: anybody can put a song forward, and the room decides.
+        /// </summary>
+        public static RemoteNomination Suggest(string hashText, string voter)
+        {
+            var song = Resolve(hashText);
+            if (song == null)
+            {
+                return null;
+            }
+
+            var hash = song.Hash.ToString();
+            var nomination = RemoteQueueVotes.Suggest(hash, voter);
+            return Describe(nomination, song);
+        }
+
+        /// <summary>A vote on a suggestion. Promotion happens at the threshold.</summary>
+        public static bool VoteSuggestion(string hashText, string voter, int delta, int threshold)
+        {
+            var song = Resolve(hashText);
+            return song != null &&
+                RemoteQueueVotes.VoteSuggestion(song.Hash.ToString(), voter, delta, threshold);
+        }
+
+        /// <summary>
+        /// The second vote, and the one that actually changes the queue: play it
+        /// next, or add it to the end. Returns what happened, or None while the
+        /// room is still deciding.
+        /// </summary>
+        public static NominationOutcome VoteOutcome(string hashText, string voter, bool playNext, int threshold)
+        {
+            var song = Resolve(hashText);
+            if (song == null)
+            {
+                return NominationOutcome.None;
+            }
+
+            var outcome = RemoteQueueVotes.VoteOutcome(song.Hash.ToString(), voter, playNext, threshold);
+            if (outcome == NominationOutcome.None)
+            {
+                return outcome;
+            }
+
+            RunOnMain(() =>
+            {
+                FlushPendingOnMain();
+
+                if (outcome == NominationOutcome.AddToSetlist)
+                {
+                    AddOnMain(song);
+                    return true;
+                }
+
+                // PLAY NEXT, NOT PLAY NOW. Cutting off whoever is mid-song to
+                // start a different one is not a party feature, it is a way to
+                // start an argument. "Next" is the strongest thing a vote should
+                // be able to do to a song already in progress.
+                if (GlobalVariables.State.PlayingAShow)
+                {
+                    var songs = GlobalVariables.State.ShowSongs;
+                    var at = Math.Min(GlobalVariables.State.ShowIndex + 1, songs.Count);
+                    songs.Insert(at, song);
+                    return true;
+                }
+
+                var menu = UnityEngine.Object.FindAnyObjectByType<MusicLibraryMenu>();
+                if (menu != null)
+                {
+                    menu.InsertSongAtTopOfSetlistRemotely(song);
+                    return true;
+                }
+
+                lock (_pending)
+                {
+                    _pending.Insert(0, song);
+                }
+
+                return true;
+            });
+
+            return outcome;
+        }
+
+        /// <summary>
+        /// A vote on something already queued, followed immediately by a re-sort
+        /// of the part of the queue that has not been played yet.
+        /// </summary>
+        public static bool VoteQueued(string hashText, string voter, int delta)
+        {
+            var song = Resolve(hashText);
+            if (song == null)
+            {
+                return false;
+            }
+
+            RemoteQueueVotes.VoteQueued(song.Hash.ToString(), voter, delta);
+            ApplyVoteOrder();
+            return true;
+        }
+
+        /// <summary>
+        /// Reorders the unplayed queue by score.
+        ///
+        /// Only ever the unplayed part. During a show everything up to and
+        /// including <c>ShowIndex</c> is left exactly where it is, because
+        /// ShowIndex is a position rather than a reference - shuffling songs
+        /// behind it would silently repoint the show at a different song.
+        /// </summary>
+        public static void ApplyVoteOrder()
+        {
+            RunOnMain(() =>
+            {
+                if (GlobalVariables.State.PlayingAShow)
+                {
+                    var songs = GlobalVariables.State.ShowSongs;
+                    var first = GlobalVariables.State.ShowIndex + 1;
+                    if (first >= songs.Count - 1)
+                    {
+                        return true;
+                    }
+
+                    var tail = songs.GetRange(first, songs.Count - first);
+                    var order = RemoteQueueVotes.SortByScore(tail.Select(s => s.Hash.ToString()));
+
+                    var byHash = new Dictionary<string, SongEntry>();
+                    foreach (var s in tail)
+                    {
+                        byHash[s.Hash.ToString()] = s;
+                    }
+
+                    for (var i = 0; i < order.Count; i++)
+                    {
+                        songs[first + i] = byHash[order[i]];
+                    }
+
+                    return true;
+                }
+
+                var menu = UnityEngine.Object.FindAnyObjectByType<MusicLibraryMenu>();
+                if (menu != null)
+                {
+                    menu.ReorderSetlistRemotely(RemoteQueueVotes.SortByScore(
+                        menu.ShowPlaylist.ToList().Select(s => s.Hash.ToString())));
+                }
+
+                return true;
+            });
+        }
+
+        /// <summary>The queue and the suggestion board in one call, so a phone polls once.</summary>
+        public static RemoteBoard GetBoard(int threshold, bool voting)
+        {
+            var board = new RemoteBoard
+            {
+                queue = GetQueue(),
+                threshold = threshold,
+                voting = voting,
+            };
+
+            foreach (var nomination in RemoteQueueVotes.Suggestions())
+            {
+                var song = Resolve(nomination.Hash);
+                if (song == null)
+                {
+                    // The library changed under us - a suggestion for a song that
+                    // no longer exists should not sit on the board forever.
+                    RemoteQueueVotes.DropSuggestion(nomination.Hash);
+                    continue;
+                }
+
+                board.suggestions.Add(Describe(nomination, song));
+            }
+
+            return board;
+        }
+
+        private static RemoteNomination Describe(RemoteQueueVotes.Nomination nomination, SongEntry song) => new()
+        {
+            hash        = nomination.Hash,
+            name        = song.Name,
+            artist      = song.Artist,
+            stage       = nomination.Stage == NominationStage.Deciding ? "deciding" : "suggested",
+            score       = nomination.Score,
+            ups         = nomination.Ups,
+            downs       = nomination.Downs,
+            for_next    = nomination.ForPlayNext.Count,
+            for_setlist = nomination.ForSetlist.Count,
+        };
+
+        /// <summary>The add path, shared by a direct queue and a won vote. Main thread only.</summary>
+        private static void AddOnMain(SongEntry song)
+        {
+            if (GlobalVariables.State.PlayingAShow)
+            {
+                GlobalVariables.State.ShowSongs.Add(song);
+                return;
+            }
+
+            var menu = UnityEngine.Object.FindAnyObjectByType<MusicLibraryMenu>();
+            if (menu != null)
+            {
+                menu.AddSongToSetlistRemotely(song);
+                return;
+            }
+
+            lock (_pending)
+            {
+                if (!_pending.Contains(song))
+                {
+                    _pending.Add(song);
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------
         // Internals
         // ------------------------------------------------------------------
 
@@ -385,6 +640,7 @@ namespace YARG.Integration.RemoteQueue
             album     = song.Album,
             charter   = song.Charter,
             length_ms = (int) song.SongLengthMilliseconds,
+            score     = RemoteQueueVotes.QueueScore(song.Hash.ToString()),
         };
 
         /// <summary>

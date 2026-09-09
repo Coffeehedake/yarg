@@ -308,6 +308,8 @@ namespace YARG.Settings
                 nameof(Settings.BandComboTypeSetting),
                 nameof(Settings.DataStreamEnable),
                 nameof(Settings.RemoteQueue),
+                nameof(Settings.RemoteQueueVoting),
+                nameof(Settings.RemoteQueueVotesNeeded),
                 nameof(Settings.SaveScoresWithBots),
                 new HeaderMetadata("Accessibility"),
                 nameof(Settings.FontScaling),
