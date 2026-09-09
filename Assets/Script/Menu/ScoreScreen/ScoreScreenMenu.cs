@@ -22,6 +22,7 @@ using YARG.Core.Logging;
 using YARG.Core.Replays;
 using YARG.Core.Replays.Analyzer;
 using YARG.Core.Song;
+using YARG.Integration.RemoteQueue;
 using YARG.Localization;
 using YARG.Menu.MusicLibrary;
 using YARG.Menu.Navigation;
@@ -156,6 +157,20 @@ namespace YARG.Menu.ScoreScreen
             // Put the scores in!
             CreateScoreCards(scoreScreenStats);
 
+            // Open the voting window BEFORE building the navigation scheme, so
+            // the Continue button is drawn in its voting state rather than
+            // changing under the player a frame later.
+            //
+            // Only during a setlist with something still to come: after the last
+            // song there is nothing for a vote to reorder, and outside a show the
+            // library menu is where songs get queued anyway.
+            if (GlobalVariables.State.PlayingAShow &&
+                GlobalVariables.State.ShowIndex + 1 < GlobalVariables.State.ShowSongs.Count &&
+                RemoteQueueServer.IsRunning)
+            {
+                RemoteQueueIntermission.Open(RemoteQueueIntermission.DefaultSeconds);
+            }
+
             SetNavigationScheme();
 
             _sourceIcon.sprite = SongSources.SourceToIcon(song.Source);
@@ -167,8 +182,43 @@ namespace YARG.Menu.ScoreScreen
             _restartingSong = false;
         }
 
+        /// <summary>
+        /// Watches the voting window. Two jobs, both cheap: settle the vote when
+        /// the clock runs out, and redraw the Continue button once when its state
+        /// changes.
+        ///
+        /// The countdown itself is NOT drawn here. A navigation-scheme rebuild is
+        /// a pop and a push, and doing that every second to animate a number
+        /// would be a lot of churn for something nobody in the room is looking at
+        /// - the countdown lives on the phones, which is where people's eyes are.
+        /// </summary>
+        private void Update()
+        {
+            var holding = RemoteQueueIntermission.ShouldHold();
+
+            if (RemoteQueueIntermission.HasExpired)
+            {
+                RemoteQueueBridge.ResolveIntermissionOnMain();
+                UpdateNavigationScheme(true);
+                _voteWasHolding = false;
+                return;
+            }
+
+            if (holding != _voteWasHolding)
+            {
+                _voteWasHolding = holding;
+                UpdateNavigationScheme(true);
+            }
+        }
+
+        private bool _voteWasHolding;
+
         private void OnDisable()
         {
+            // Leaving the score screen ends the window with it. A vote that was
+            // still open when the next song started would have nothing to change.
+            RemoteQueueIntermission.Close();
+
             // Only write back if an offset was actually toggled here; otherwise there's nothing
             // to persist and re-saving unmodified data risks clobbering entries that couldn't be
             // recovered from a corrupted file on load.
@@ -447,8 +497,26 @@ namespace YARG.Menu.ScoreScreen
         private void SetNavigationScheme()
         {
             var song = GlobalVariables.State.CurrentSong;
-            _continueButtonEntry = new NavigationScheme.Entry(MenuAction.Green, "Menu.Common.Continue", () =>
+            // While the room is voting, the button says so and the first press
+            // settles the vote instead of advancing. See RemoteQueueIntermission
+            // for why: the gap between songs is the only moment anybody can vote,
+            // and a habitual press of Green would otherwise throw away a vote
+            // nobody had a chance to cast.
+            var voteIsOpen = RemoteQueueIntermission.ShouldHold();
+
+            _continueButtonEntry = new NavigationScheme.Entry(MenuAction.Green,
+                voteIsOpen ? "Menu.ScoreScreen.VotingOpen" : "Menu.Common.Continue", () =>
                 {
+                    if (RemoteQueueIntermission.ShouldHold())
+                    {
+                        // The host override. Settles whatever the room managed to
+                        // decide and redraws the button; it does NOT advance, so
+                        // the next press is an ordinary Continue.
+                        RemoteQueueBridge.ResolveIntermissionOnMain();
+                        UpdateNavigationScheme(true);
+                        return;
+                    }
+
                     if (!_analyzingReplay)
                     {
                         GlobalVariables.State.ShowIndex++;

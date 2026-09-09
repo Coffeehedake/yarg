@@ -555,6 +555,7 @@
             "ShowAdvanced": "Show Advanced",
             "HideAdvanced": "Hide Advanced",
             "EndSetlistEarly" : "End Setlist",
+            "VotingOpen": "Voting… (press to settle)",
             "AddSongOffset": "(Hold) Save song offset",
             "RemoveSongOffset": "(Hold) Undo offset save",
             "ViewReplay": "View Replay"

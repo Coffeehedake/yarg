@@ -53,6 +53,16 @@ namespace YARG.Integration.RemoteQueue
 
         /// <summary>Whether voting is on at all.</summary>
         public bool voting;
+
+        /// <summary>
+        /// True during the gap between two songs - the only moment anybody's
+        /// hands are free to vote. The page shouts about it, because a vote cast
+        /// at any other time is a vote cast into an empty room.
+        /// </summary>
+        public bool intermission;
+
+        /// <summary>Seconds left in that window, or 0.</summary>
+        public int intermission_seconds;
     }
 
     /// <summary>The queue, plus enough context for the page to explain itself.</summary>
@@ -490,6 +500,45 @@ namespace YARG.Integration.RemoteQueue
             });
         }
 
+        /// <summary>
+        /// Closes a voting window and applies whatever the room decided.
+        /// Returns the outcome so the caller can say something true about it.
+        ///
+        /// Safe to call from the main thread: unlike the other write paths this
+        /// does its own work inline rather than through <see cref="RunOnMain"/>,
+        /// because the score screen calls it from Update and waiting on the main
+        /// thread from the main thread is a deadlock.
+        /// </summary>
+        public static NominationOutcome ResolveIntermissionOnMain()
+        {
+            var (hash, outcome) = RemoteQueueVotes.ResolveExpiry();
+            RemoteQueueIntermission.Close();
+
+            if (outcome == NominationOutcome.None || hash == null)
+            {
+                return NominationOutcome.None;
+            }
+
+            var song = Resolve(hash);
+            if (song == null)
+            {
+                return NominationOutcome.None;
+            }
+
+            FlushPendingOnMain();
+
+            if (outcome == NominationOutcome.PlayNext && GlobalVariables.State.PlayingAShow)
+            {
+                var songs = GlobalVariables.State.ShowSongs;
+                var at = Math.Min(GlobalVariables.State.ShowIndex + 1, songs.Count);
+                songs.Insert(at, song);
+                return outcome;
+            }
+
+            AddOnMain(song);
+            return outcome;
+        }
+
         /// <summary>The queue and the suggestion board in one call, so a phone polls once.</summary>
         public static RemoteBoard GetBoard(int threshold, bool voting)
         {
@@ -498,6 +547,8 @@ namespace YARG.Integration.RemoteQueue
                 queue = GetQueue(),
                 threshold = threshold,
                 voting = voting,
+                intermission = RemoteQueueIntermission.IsOpen,
+                intermission_seconds = RemoteQueueIntermission.SecondsLeft,
             };
 
             foreach (var nomination in RemoteQueueVotes.Suggestions())
