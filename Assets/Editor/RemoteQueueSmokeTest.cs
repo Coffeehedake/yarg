@@ -184,8 +184,100 @@ namespace Editor
                 Check("Lan: the LAN address answers", Get($"http://{lan}:8099/healthz") == "ok");
             }
 
+            // ---------------------------------------------------------------
+            // Voting endpoints. With no library loaded these can only reach the
+            // rejection paths - the rules themselves are checked below, where
+            // they can be checked properly.
+            // ---------------------------------------------------------------
+            var (boardStatus, boardBody) = GetWithStatus("http://127.0.0.1:8099/api/board");
+            Check("board answers 200", boardStatus == 200);
+            Check("board carries the vote threshold", boardBody.Contains("\"threshold\""));
+
+            var (sugStatus, _) = PostWithStatus(
+                "http://127.0.0.1:8099/api/suggest?hash=0000000000000000000000000000000000000000", "");
+            Check("suggesting an unknown song is 404", sugStatus == 404);
+
+            var (decideStatus, _) = PostWithStatus(
+                "http://127.0.0.1:8099/api/decide?hash=0000000000000000000000000000000000000000&choice=sideways", "");
+            Check("a nonsense decision is 400", decideStatus == 400);
+
             RemoteQueueServer.HandleModeChanged(RemoteQueueMode.Off);
             Check("Off again: the socket is closed", !CanConnect(IPAddress.Loopback));
+
+            CheckVotingRules();
+        }
+
+        /// <summary>
+        /// The voting rules, exercised directly.
+        ///
+        /// This is the part of the feature batchmode CAN verify properly: the
+        /// rules are plain data with no Unity in them, so unlike the queue
+        /// plumbing there is no "we think it works" here.
+        /// </summary>
+        private static void CheckVotingRules()
+        {
+            const int threshold = 3;
+            const string a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            const string b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+            RemoteQueueVotes.Reset();
+
+            // Suggesting counts as the suggester's own upvote.
+            var nomination = RemoteQueueVotes.Suggest(a, "alice");
+            Check("suggesting counts as one vote", nomination.Score == 1);
+
+            // One voter, one vote - tapping twice must not count twice.
+            RemoteQueueVotes.VoteSuggestion(a, "bob", 1, threshold);
+            RemoteQueueVotes.VoteSuggestion(a, "bob", 1, threshold);
+            Check("one voter cannot vote twice", RemoteQueueVotes.Suggestions()[0].Score == 2);
+
+            // A voter changing their mind moves their vote rather than adding one.
+            RemoteQueueVotes.VoteSuggestion(a, "bob", -1, threshold);
+            Check("changing your mind moves your vote", RemoteQueueVotes.Suggestions()[0].Score == 0);
+            RemoteQueueVotes.VoteSuggestion(a, "bob", 1, threshold);
+
+            // The third distinct voter is the one that promotes it.
+            var promoted = RemoteQueueVotes.VoteSuggestion(a, "carol", 1, threshold);
+            Check("reaching the threshold promotes", promoted);
+            Check("a promoted suggestion is now deciding",
+                RemoteQueueVotes.Suggestions()[0].Stage == NominationStage.Deciding);
+
+            // ...and only once, so the queue cannot be hit twice by one song.
+            var again = RemoteQueueVotes.VoteSuggestion(a, "dave", 1, threshold);
+            Check("promotion happens exactly once", !again);
+
+            // The second vote: first side to the threshold wins.
+            Check("one vote does not settle it",
+                RemoteQueueVotes.VoteOutcome(a, "alice", true, threshold) == NominationOutcome.None);
+            RemoteQueueVotes.VoteOutcome(a, "bob", true, threshold);
+            var outcome = RemoteQueueVotes.VoteOutcome(a, "carol", true, threshold);
+            Check("three votes settle it as play-next", outcome == NominationOutcome.PlayNext);
+            Check("a settled suggestion leaves the board", RemoteQueueVotes.Suggestions().Count == 0);
+
+            // Switching sides moves the vote instead of counting on both.
+            RemoteQueueVotes.Reset();
+            RemoteQueueVotes.Suggest(b, "alice");
+            RemoteQueueVotes.VoteSuggestion(b, "bob", 1, 2);
+            RemoteQueueVotes.VoteOutcome(b, "alice", true, 2);
+            RemoteQueueVotes.VoteOutcome(b, "alice", false, 2);
+            var settled = RemoteQueueVotes.VoteOutcome(b, "bob", false, 2);
+            Check("switching sides moves the vote", settled == NominationOutcome.AddToSetlist);
+
+            // Ordering. Stability is what lets a hand-arranged queue survive
+            // until somebody actually votes on it.
+            RemoteQueueVotes.Reset();
+            var order = new List<string> { "one", "two", "three" };
+            var unchanged = RemoteQueueVotes.SortByScore(order);
+            Check("with no votes the order is untouched",
+                unchanged[0] == "one" && unchanged[1] == "two" && unchanged[2] == "three");
+
+            RemoteQueueVotes.VoteQueued("three", "alice", 1);
+            RemoteQueueVotes.VoteQueued("one", "bob", -1);
+            var sorted = RemoteQueueVotes.SortByScore(order);
+            Check("votes reorder highest first",
+                sorted[0] == "three" && sorted[1] == "two" && sorted[2] == "one");
+
+            RemoteQueueVotes.Reset();
         }
 
         // -------------------------------------------------------------------

@@ -524,6 +524,69 @@ namespace YARG.Menu.MusicLibrary
             RefreshAndReselect();
         }
 
+        /// <summary>
+        /// Puts a song at the front of the setlist - what a won "play next" vote
+        /// does when no show is running yet.
+        /// </summary>
+        public void InsertSongAtTopOfSetlistRemotely(SongEntry song)
+        {
+            if (song == null)
+            {
+                return;
+            }
+
+            var existing = ShowPlaylist.ToList();
+            ShowPlaylist.Clear();
+            ShowPlaylist.AddSong(song);
+
+            foreach (var other in existing)
+            {
+                if (!other.Hash.Equals(song.Hash))
+                {
+                    ShowPlaylist.AddSong(other);
+                }
+            }
+
+            if (ShowPlaylist.Count == 1)
+            {
+                SetNavigationScheme(true);
+            }
+
+            ToastManager.ToastSuccess(Localize.Key("Menu.MusicLibrary.AddedToSet"));
+            RefreshAndReselect();
+        }
+
+        /// <summary>
+        /// Rewrites the setlist into the given order of chart hashes. Anything
+        /// the caller does not mention is dropped, so the caller is expected to
+        /// have started from the current contents - which is what the vote
+        /// ordering does.
+        /// </summary>
+        public void ReorderSetlistRemotely(List<string> hashOrder)
+        {
+            if (hashOrder == null)
+            {
+                return;
+            }
+
+            var byHash = new Dictionary<string, SongEntry>();
+            foreach (var song in ShowPlaylist.ToList())
+            {
+                byHash[song.Hash.ToString()] = song;
+            }
+
+            ShowPlaylist.Clear();
+            foreach (var hash in hashOrder)
+            {
+                if (byHash.TryGetValue(hash, out var song))
+                {
+                    ShowPlaylist.AddSong(song);
+                }
+            }
+
+            RefreshAndReselect();
+        }
+
         public void MoveSongInSetlistRemotely(SongEntry song, bool up)
         {
             if (song == null)

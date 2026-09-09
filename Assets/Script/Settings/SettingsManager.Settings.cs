@@ -884,6 +884,23 @@ namespace YARG.Settings
                     RemoteQueueMode.Local,
                     RemoteQueueMode.Lan,
                 };
+
+            /// <summary>
+            /// Whether guests can suggest songs and vote, rather than only
+            /// queueing directly.
+            /// </summary>
+            public ToggleSetting RemoteQueueVoting { get; } = new(true);
+
+            /// <summary>
+            /// How many votes promote a suggestion, and how many settle whether
+            /// it plays next or goes on the end.
+            /// </summary>
+            /// <remarks>
+            /// A setting rather than a constant because the right number is a
+            /// property of the room, not of the software: three is a lot in a
+            /// group of four and nothing in a group of twenty.
+            /// </remarks>
+            public IntSetting RemoteQueueVotesNeeded { get; } = new(3, 1, 25);
             public DropdownSetting<BandComboType> BandComboTypeSetting { get; } = new(BandComboType.Off)
             {
                 BandComboType.Off,
