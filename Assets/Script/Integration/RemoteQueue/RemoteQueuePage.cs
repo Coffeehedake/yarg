@@ -64,6 +64,9 @@ namespace YARG.Integration.RemoteQueue
   .decide button { flex:1; border:1px solid var(--accent); background:transparent; color:var(--accent);
                    border-radius:9px; padding:10px; font-size:14px; font-weight:600; cursor:pointer; }
   .stage { font-size:12px; color:var(--accent); text-transform:uppercase; letter-spacing:.06em; }
+  .interm { background:var(--accent); color:#12121a; font-weight:700; text-align:center;
+            padding:9px; border-radius:9px; margin-top:9px; font-size:14px; }
+  .interm.gone { background:var(--card); color:var(--dim); font-weight:400; }
 </style>
 </head>
 <body>
@@ -75,6 +78,7 @@ namespace YARG.Integration.RemoteQueue
     <button id=""tabQueue"" aria-selected=""false"">Up next</button>
     <button id=""tabVote"" aria-selected=""false"">Suggestions</button>
   </div>
+  <div id=""interm"" hidden></div>
 </header>
 <main>
   <div id=""err"" class=""err"" hidden></div>
@@ -202,9 +206,27 @@ namespace YARG.Integration.RemoteQueue
     else if (tab === 'vote') renderVote();
   }
 
+  // The gap between songs is the only time anybody's hands are free, so the
+  // page says so loudly rather than leaving people to guess when to vote.
+  function drawIntermission() {
+    var el = $('interm');
+    if (!board || !board.voting) { el.hidden = true; return; }
+    el.hidden = false;
+    if (board.intermission) {
+      el.className = 'interm';
+      el.textContent = 'VOTE NOW — ' + board.intermission_seconds + 's';
+    } else if (board.queue && board.queue.playing_show) {
+      el.className = 'interm gone';
+      el.textContent = 'Song playing — voting opens between songs';
+    } else {
+      el.hidden = true;
+    }
+  }
+
   function loadBoard() {
     return api('/api/board').then(function (b) {
       board = b; fail(null);
+      drawIntermission();
       var q = b.queue;
       var what = q.playing_show ? 'playing a set'
                : q.target === 'pending' ? 'waiting for the song list' : 'setlist';

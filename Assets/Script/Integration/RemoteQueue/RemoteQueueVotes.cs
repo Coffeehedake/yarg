@@ -173,11 +173,85 @@ namespace YARG.Integration.RemoteQueue
             }
         }
 
+        /// <summary>
+        /// What happens when a voting window runs out.
+        ///
+        /// The LEADING suggestion wins, if the room actually wanted it - a net
+        /// positive score. If it had already reached the second vote, the side
+        /// with more votes decides where it goes, and a tie goes to the setlist
+        /// because that is the less disruptive of the two.
+        ///
+        /// Suggestions nobody wanted (net zero or negative) are dropped, so a
+        /// song the room ignored twice does not sit on the board all night.
+        /// Everything else is KEPT for the next gap: people voted for those, and
+        /// throwing their votes away because one song won would teach them not
+        /// to bother.
+        /// </summary>
+        public static (string hash, NominationOutcome outcome) ResolveExpiry()
+        {
+            lock (_gate)
+            {
+                Nomination winner = null;
+                foreach (var nomination in _nominations.Values)
+                {
+                    if (nomination.Score <= 0)
+                    {
+                        continue;
+                    }
+
+                    // Anything already at the second vote outranks a suggestion
+                    // still waiting for its first - the room has spoken once.
+                    if (winner == null ||
+                        (nomination.Stage, nomination.Score).CompareTo((winner.Stage, winner.Score)) > 0)
+                    {
+                        winner = nomination;
+                    }
+                }
+
+                // Drop the ones the room actively did not want.
+                var unwanted = _nominations.Values.Where(n => n.Score <= 0).Select(n => n.Hash).ToList();
+                foreach (var hash in unwanted)
+                {
+                    _nominations.Remove(hash);
+                }
+
+                if (winner == null)
+                {
+                    return (null, NominationOutcome.None);
+                }
+
+                var outcome = winner.Stage == NominationStage.Deciding && winner.ForPlayNext.Count > winner.ForSetlist.Count
+                    ? NominationOutcome.PlayNext
+                    : NominationOutcome.AddToSetlist;
+
+                _nominations.Remove(winner.Hash);
+                return (winner.Hash, outcome);
+            }
+        }
+
         public static void DropSuggestion(string hash)
         {
             lock (_gate)
             {
                 _nominations.Remove(hash);
+            }
+        }
+
+        /// <summary>
+        /// How many suggestions are on the board.
+        ///
+        /// Exists so the score screen's Update can ask the cheap question every
+        /// frame. <see cref="Suggestions"/> builds and sorts a list, which is
+        /// fine for an HTTP request and wasteful sixty times a second.
+        /// </summary>
+        public static int SuggestionCount
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _nominations.Count;
+                }
             }
         }
 

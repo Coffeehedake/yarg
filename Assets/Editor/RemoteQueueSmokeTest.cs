@@ -205,6 +205,77 @@ namespace Editor
             Check("Off again: the socket is closed", !CanConnect(IPAddress.Loopback));
 
             CheckVotingRules();
+            CheckIntermissionRules();
+        }
+
+        /// <summary>
+        /// The voting window between songs. Also plain data, also checkable here.
+        /// </summary>
+        private static void CheckIntermissionRules()
+        {
+            const string a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            const string b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+            const string c = "cccccccccccccccccccccccccccccccccccccccc";
+
+            RemoteQueueVotes.Reset();
+            RemoteQueueIntermission.Close();
+
+            Check("no window means nothing is held", !RemoteQueueIntermission.ShouldHold());
+
+            RemoteQueueIntermission.Open(30);
+            Check("an opened window is open", RemoteQueueIntermission.IsOpen);
+            Check("a window with nothing suggested holds nothing",
+                !RemoteQueueIntermission.ShouldHold());
+
+            RemoteQueueVotes.Suggest(a, "alice");
+            Check("a window with a suggestion holds", RemoteQueueIntermission.ShouldHold());
+
+            RemoteQueueIntermission.Close();
+            Check("closing releases the hold", !RemoteQueueIntermission.ShouldHold());
+
+            // A window that runs out reports it, so Update can settle the vote.
+            RemoteQueueIntermission.Open(1);
+            System.Threading.Thread.Sleep(1300);
+            Check("a window that runs out is no longer open", !RemoteQueueIntermission.IsOpen);
+            Check("a window that runs out reports having expired", RemoteQueueIntermission.HasExpired);
+
+            // Expiry: the leading net-positive suggestion wins, negatives are
+            // dropped, and everything else survives for the next gap.
+            RemoteQueueVotes.Reset();
+            RemoteQueueVotes.Suggest(a, "alice");                       // score 1
+            RemoteQueueVotes.Suggest(b, "bob");                         // score 1 ...
+            RemoteQueueVotes.VoteSuggestion(b, "carol", 1, 99);         // ... then 2
+            RemoteQueueVotes.Suggest(c, "dave");                        // score 1 ...
+            RemoteQueueVotes.VoteSuggestion(c, "erin", -1, 99);         // ... then 0
+            RemoteQueueVotes.VoteSuggestion(c, "frank", -1, 99);        // ... then -1
+
+            var (winner, outcome) = RemoteQueueVotes.ResolveExpiry();
+            Check("the leading suggestion wins on expiry", winner == b);
+            Check("a suggestion that never reached the second vote goes to the setlist",
+                outcome == NominationOutcome.AddToSetlist);
+
+            var left = RemoteQueueVotes.Suggestions();
+            Check("the disliked suggestion is dropped", left.All(n => n.Hash != c));
+            Check("an unresolved suggestion survives for the next gap",
+                left.Any(n => n.Hash == a));
+
+            // One already at the second vote outranks a higher-scoring suggestion
+            // that has not got there yet, and its own side decides where it goes.
+            RemoteQueueVotes.Reset();
+            RemoteQueueVotes.Suggest(a, "alice");
+            RemoteQueueVotes.VoteSuggestion(a, "bob", 1, 2);   // promoted at 2
+            RemoteQueueVotes.VoteOutcome(a, "alice", true, 99); // one for play-next
+            RemoteQueueVotes.Suggest(b, "carol");
+            RemoteQueueVotes.VoteSuggestion(b, "dave", 1, 99);
+            RemoteQueueVotes.VoteSuggestion(b, "erin", 1, 99); // score 3, still stage one
+
+            var (winner2, outcome2) = RemoteQueueVotes.ResolveExpiry();
+            Check("a promoted suggestion outranks a higher-scoring un-promoted one", winner2 == a);
+            Check("its own second-vote lead decides where it goes",
+                outcome2 == NominationOutcome.PlayNext);
+
+            RemoteQueueVotes.Reset();
+            RemoteQueueIntermission.Close();
         }
 
         /// <summary>
