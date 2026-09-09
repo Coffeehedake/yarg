@@ -294,6 +294,7 @@ namespace YARG.Settings
                 new HeaderMetadata("Other"),
                 nameof(Settings.BandComboTypeSetting),
                 nameof(Settings.DataStreamEnable),
+                nameof(Settings.RemoteQueue),
                 nameof(Settings.SaveScoresWithBots),
                 nameof(Settings.ReverbImplementation),
                 new HeaderMetadata("Accessibility"),

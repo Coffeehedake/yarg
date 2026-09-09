@@ -13,6 +13,7 @@ using YARG.Gameplay.HUD;
 using YARG.Helpers;
 using YARG.Integration;
 using YARG.Integration.RB3E;
+using YARG.Integration.RemoteQueue;
 using YARG.Integration.Sacn;
 using YARG.Integration.StageKit;
 using YARG.Input.Bindings;
@@ -864,6 +865,25 @@ namespace YARG.Settings
             #region Experimental
 
             public ToggleSetting DataStreamEnable { get; } = new(false, DataStreamEnableCallback );
+
+            /// <summary>
+            /// The in-game web server that lets phones on the couch search the
+            /// library and queue songs (YARC-Official/YARG#860).
+            /// </summary>
+            /// <remarks>
+            /// Off by default, and a three-way choice rather than a toggle. This
+            /// server has no authentication, so "on" would have had to mean
+            /// "anybody on the wifi can queue songs on this machine" - which is
+            /// exactly the point of the feature, and exactly the reason it should
+            /// be chosen deliberately rather than inherited from a default.
+            /// </remarks>
+            public DropdownSetting<RemoteQueueMode> RemoteQueue { get; } =
+                new(RemoteQueueMode.Off, RemoteQueueCallback)
+                {
+                    RemoteQueueMode.Off,
+                    RemoteQueueMode.Local,
+                    RemoteQueueMode.Lan,
+                };
             public DropdownSetting<BandComboType> BandComboTypeSetting { get; } = new(BandComboType.Off)
             {
                 BandComboType.Off,
@@ -1039,6 +1059,20 @@ namespace YARG.Settings
                     return;
                 }
                 DataStreamController.Instance?.HandleEnabledChanged(value);
+            }
+
+            private static void RemoteQueueCallback(RemoteQueueMode value)
+            {
+                // Deliberately NOT guarded on IsInitialized, unlike the data
+                // stream above. This callback also fires when a saved setting is
+                // loaded at startup, and that is exactly when a player who chose
+                // "Lan" last time expects the server to come back. Skipping it
+                // would mean the setting only took effect if you re-picked it.
+                //
+                // Safe to call repeatedly: HandleModeChanged stops whatever is
+                // running before it starts anything, so a double call rebinds
+                // rather than leaking a listener.
+                RemoteQueueServer.HandleModeChanged(value);
             }
 
             private static void FontScalingCallback(float value)

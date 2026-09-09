@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using YARG.Core.Game;
 using YARG.Core.Input;
+using YARG.Core.Song;
 using YARG.Localization;
 using YARG.Menu.Navigation;
 using YARG.Menu.Persistent;
@@ -476,6 +477,70 @@ namespace YARG.Menu.MusicLibrary
 
                 ToastManager.ToastSuccess(Localize.Key("Menu.MusicLibrary.AddedToSet"));
             }
+        }
+
+        // --------------------------------------------------------------------
+        // Seams for the remote queue server (YARG.Integration.RemoteQueue).
+        //
+        // These exist because the paths above are driven by CurrentSelection -
+        // they answer "add whatever the player has highlighted", which is not a
+        // question a phone on the couch can ask. Each of these takes the song
+        // explicitly and otherwise does exactly what the local path does,
+        // including the navigation rebuild on the first song, so a remotely
+        // queued setlist behaves identically to one built with a controller.
+        //
+        // The toast is deliberate rather than incidental: when somebody queues a
+        // song from their phone, the room should see it happen on the TV.
+        // --------------------------------------------------------------------
+
+        public void AddSongToSetlistRemotely(SongEntry song)
+        {
+            if (song == null || ShowPlaylist.ContainsSong(song))
+            {
+                return;
+            }
+
+            ShowPlaylist.AddSong(song);
+
+            if (ShowPlaylist.Count == 1)
+            {
+                // Same reason as AddToPlaylist: the navigation scheme has to be
+                // rebuilt once the setlist stops being empty.
+                SetNavigationScheme(true);
+            }
+
+            ToastManager.ToastSuccess(Localize.Key("Menu.MusicLibrary.AddedToSet"));
+            RefreshAndReselect();
+        }
+
+        public void RemoveSongFromSetlistRemotely(SongEntry song)
+        {
+            if (song == null)
+            {
+                return;
+            }
+
+            ShowPlaylist.RemoveSong(song);
+            RefreshAndReselect();
+        }
+
+        public void MoveSongInSetlistRemotely(SongEntry song, bool up)
+        {
+            if (song == null)
+            {
+                return;
+            }
+
+            if (up)
+            {
+                ShowPlaylist.MoveSongUp(song);
+            }
+            else
+            {
+                ShowPlaylist.MoveSongDown(song);
+            }
+
+            RefreshAndReselect();
         }
 
         public void AddPlaylistToSetlist(Playlist playlist)
