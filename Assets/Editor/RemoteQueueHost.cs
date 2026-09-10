@@ -36,6 +36,18 @@ namespace Editor
     ///
     ///   Unity.exe -batchmode -nographics -projectPath &lt;path&gt; \
     ///             -executeMethod Editor.RemoteQueueHost.RunLocal
+    ///
+    /// LAUNCH IT WITH Win32_Process.Create, NOT Start-Process, when starting it
+    /// from an automated session. A process started from a Cowork bridge call
+    /// inherits a job object that kills Unity's Package Manager CHILD, and the
+    /// editor then dies with "Could not connect to IPC stream Upm-&lt;pid&gt;" and a
+    /// message blaming anti-virus, which it is not. -noUpm is not a way around
+    /// it: the packages it disables are real dependencies. This cost an hour on
+    /// 2026-09-10 and was already documented before it did.
+    ///
+    /// Whatever launched this should also revert
+    /// ProjectSettings/ProjectSettings.asset afterwards; Unity re-adds a
+    /// VisionOS icon block on every run, including runs that die.
     /// </summary>
     public static class RemoteQueueHost
     {
