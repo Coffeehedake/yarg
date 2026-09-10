@@ -364,7 +364,10 @@ namespace YARG.Integration.RemoteQueue
 
             var hash = song.Hash.ToString();
             var nomination = RemoteQueueVotes.Suggest(hash, voter);
-            return Describe(nomination, song);
+
+            // Null means the board is full rather than the song being unknown,
+            // and the caller has to be able to tell those apart.
+            return nomination == null ? null : Describe(nomination, song);
         }
 
         /// <summary>A vote on a suggestion. Promotion happens at the threshold.</summary>
