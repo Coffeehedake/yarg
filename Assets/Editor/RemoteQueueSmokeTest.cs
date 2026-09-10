@@ -220,6 +220,14 @@ namespace Editor
                 ("Origin", "http://127.0.0.1:8099"), true);
             Check("our own page's origin is still accepted", ownOrigin == 404);
 
+            // A Capacitor shell labels its requests with its own scheme. This is
+            // the client the mobile app will be, so it has to get through - while
+            // a real web page, which cannot claim that origin, still does not.
+            var (nativeOrigin, _) = PostRaw(
+                "http://127.0.0.1:8099/api/queue?hash=0000000000000000000000000000000000000000",
+                ("Origin", "capacitor://localhost"), true);
+            Check("a native app shell's origin is accepted", nativeOrigin == 404);
+
             var (bigBody, _) = PostWithStatus("http://127.0.0.1:8099/api/queue",
                 "{\"hash\":\"" + new string('A', 200000) + "\"}");
             Check("an oversized body is refused before it is read", bigBody == 403);

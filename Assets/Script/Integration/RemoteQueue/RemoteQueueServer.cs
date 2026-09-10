@@ -506,7 +506,7 @@ namespace YARG.Integration.RemoteQueue
             why = null;
 
             var origin = request.Headers["Origin"];
-            if (!string.IsNullOrEmpty(origin))
+            if (!string.IsNullOrEmpty(origin) && !IsNativeShellOrigin(origin))
             {
                 if (!Uri.TryCreate(origin, UriKind.Absolute, out var parsed) ||
                     !string.Equals(parsed.Authority, request.UserHostName, StringComparison.OrdinalIgnoreCase))
@@ -535,6 +535,29 @@ namespace YARG.Integration.RemoteQueue
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// The origins a native app shell reports.
+        ///
+        /// A Capacitor or Ionic app is a web view with a native HTTP stack behind
+        /// it, and it labels its requests with a scheme of its own rather than an
+        /// http(s) address - so the same-origin test above would refuse the very
+        /// client this API is meant to serve. Found by reading the ShopStack
+        /// mobile app's Capacitor config rather than by shipping an app that
+        /// silently could not talk to anything.
+        ///
+        /// This does NOT reopen the hole the check was added for. A page on a
+        /// real web site cannot claim one of these: the browser sets Origin from
+        /// the document's own URL, and no https page can present itself as
+        /// capacitor://localhost.
+        /// </summary>
+        private static bool IsNativeShellOrigin(string origin)
+        {
+            return origin.Equals("capacitor://localhost", StringComparison.OrdinalIgnoreCase)
+                || origin.Equals("ionic://localhost", StringComparison.OrdinalIgnoreCase)
+                || origin.Equals("http://localhost", StringComparison.OrdinalIgnoreCase)
+                || origin.Equals("null", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
