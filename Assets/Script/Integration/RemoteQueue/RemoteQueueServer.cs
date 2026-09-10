@@ -189,6 +189,12 @@ namespace YARG.Integration.RemoteQueue
                 var path = ctx.Request.Url?.AbsolutePath ?? "/";
                 var method = ctx.Request.HttpMethod;
 
+                if (!IsRequestShapeAllowed(ctx.Request, method, out var why))
+                {
+                    SendStatus(ctx, 403, why);
+                    return;
+                }
+
                 switch (path)
                 {
                     case "/":
@@ -361,22 +367,22 @@ namespace YARG.Integration.RemoteQueue
         }
 
         /// <summary>
-        /// Who is voting. The page makes a random id and keeps it in the browser;
-        /// the remote address is the fallback when it does not send one.
+        /// Who is voting: THE SOCKET'S OWN ADDRESS, and nothing the caller says.
         ///
-        /// This stops the ordinary double-tap and one phone voting twenty times.
-        /// It does NOT stop somebody clearing their storage or opening a private
-        /// tab, and it is not trying to: a party jukebox that needed real
-        /// accounts would not get used.
+        /// This used to trust an id the page generated and kept in the browser,
+        /// which was measured and found worthless: one client rotating that
+        /// header scored 51 votes against a threshold of 3, and could equally
+        /// have overwritten somebody else's vote by claiming their id.
+        ///
+        /// An address is not a person - it can be spoofed on a LAN, and two
+        /// people sharing a tablet get one vote between them. But on a home
+        /// network each phone has its own address, so it bounds what one device
+        /// can do, which the header did not do at all. Anything stronger means
+        /// real accounts, and a party jukebox that needed accounts would not get
+        /// used.
         /// </summary>
         private static string VoterOf(HttpListenerRequest request)
         {
-            var declared = request.Headers["X-Voter"];
-            if (!string.IsNullOrWhiteSpace(declared) && declared.Length <= 64)
-            {
-                return declared.Trim();
-            }
-
             return request.RemoteEndPoint?.Address?.ToString() ?? "unknown";
         }
 
@@ -388,7 +394,20 @@ namespace YARG.Integration.RemoteQueue
             if (hash == null) { SendStatus(ctx, 400, "a 'hash' is required"); return; }
 
             var nomination = RemoteQueueBridge.Suggest(hash, VoterOf(ctx.Request));
-            if (nomination == null) { SendStatus(ctx, 404, "no song with that hash"); return; }
+            if (nomination == null)
+            {
+                // Two different failures, and a phone should be told which:
+                // "that song does not exist" and "the board is full" want
+                // different things from the person holding it.
+                if (RemoteQueueVotes.SuggestionCount >= RemoteQueueVotes.MaxSuggestions)
+                {
+                    SendStatus(ctx, 409, $"the board is full ({RemoteQueueVotes.MaxSuggestions}); vote some off first");
+                    return;
+                }
+
+                SendStatus(ctx, 404, "no song with that hash");
+                return;
+            }
 
             SendJson(ctx, 200, nomination);
         }
@@ -451,6 +470,74 @@ namespace YARG.Integration.RemoteQueue
         }
 
         /// <summary>
+        /// The header the page sends on every API call. Its value is irrelevant;
+        /// its PRESENCE is the point.
+        /// </summary>
+        private const string RequestedWith = "X-Yarg-Remote";
+
+        /// <summary>A hash is 40 characters. Nothing legitimate needs more than this.</summary>
+        private const int MaxBodyBytes = 4096;
+
+        /// <summary>
+        /// Rejects request SHAPES that no page of ours produces, which is what
+        /// stops a web site somebody has open elsewhere in the house from driving
+        /// this console.
+        ///
+        /// MEASURED, not theorised: before this existed, a cross-origin POST,
+        /// DELETE and vote were all accepted and acted on. A browser will send a
+        /// "simple" cross-site POST with no preflight at all, so the server sees
+        /// it and has already changed the queue before the browser gets around to
+        /// deciding whether the response may be read. The attacker never needs to
+        /// see the response - queueing and removing songs IS the attack.
+        ///
+        /// Two gates, either of which is enough:
+        ///
+        /// 1. Every mutating request must carry <see cref="RequestedWith"/>. A
+        ///    custom header is not a "simple" request, so a browser MUST preflight
+        ///    it; this server answers no preflight, so the browser never sends
+        ///    the real request. Non-browser callers can of course set it - that is
+        ///    fine, this gate is aimed squarely at drive-by pages.
+        /// 2. If an Origin IS present it has to be ours. Same-origin POSTs from
+        ///    our own page carry Origin too, so this cannot simply reject the
+        ///    header's presence.
+        /// </summary>
+        private static bool IsRequestShapeAllowed(HttpListenerRequest request, string method, out string why)
+        {
+            why = null;
+
+            var origin = request.Headers["Origin"];
+            if (!string.IsNullOrEmpty(origin))
+            {
+                if (!Uri.TryCreate(origin, UriKind.Absolute, out var parsed) ||
+                    !string.Equals(parsed.Authority, request.UserHostName, StringComparison.OrdinalIgnoreCase))
+                {
+                    why = "cross-origin requests are not accepted";
+                    return false;
+                }
+            }
+
+            var mutating = method is "POST" or "DELETE" or "PUT" or "PATCH";
+            if (!mutating)
+            {
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(request.Headers[RequestedWith]))
+            {
+                why = $"missing {RequestedWith}";
+                return false;
+            }
+
+            if (request.ContentLength64 > MaxBodyBytes)
+            {
+                why = "body too large";
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Decides whether this caller may be answered at all.
         ///
         /// Locality comes from the socket's own remote address and NEVER from a
@@ -510,10 +597,32 @@ namespace YARG.Integration.RemoteQueue
         // Plumbing
         // ------------------------------------------------------------------
 
+        /// <summary>
+        /// Reads at most <see cref="MaxBodyBytes"/> and stops.
+        ///
+        /// The declared Content-Length is checked earlier, but a caller can lie
+        /// about it or send none at all with chunked encoding - so the cap has to
+        /// be enforced HERE, on the read, not on the claim. Measured before this
+        /// existed: an 8 MB body was read into memory in full before the request
+        /// was even found to be nonsense.
+        /// </summary>
         private static string ReadBody(HttpListenerRequest request)
         {
-            using var reader = new StreamReader(request.InputStream, request.ContentEncoding ?? Encoding.UTF8);
-            return reader.ReadToEnd();
+            var buffer = new byte[MaxBodyBytes];
+            var filled = 0;
+
+            while (filled < buffer.Length)
+            {
+                var read = request.InputStream.Read(buffer, filled, buffer.Length - filled);
+                if (read <= 0)
+                {
+                    break;
+                }
+
+                filled += read;
+            }
+
+            return (request.ContentEncoding ?? Encoding.UTF8).GetString(buffer, 0, filled);
         }
 
         /// <summary>Accepts the hash as JSON, as a form field, or as a query parameter.</summary>

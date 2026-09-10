@@ -201,6 +201,39 @@ namespace Editor
                 "http://127.0.0.1:8099/api/decide?hash=0000000000000000000000000000000000000000&choice=sideways", "");
             Check("a nonsense decision is 400", decideStatus == 400);
 
+            // ---------------------------------------------------------------
+            // The security controls, as regressions rather than as a one-off
+            // audit. Each of these was measured FAILING before it was written.
+            // ---------------------------------------------------------------
+            var (noHeader, noHeaderBody) = PostRaw(
+                "http://127.0.0.1:8099/api/queue?hash=0000000000000000000000000000000000000000", null);
+            Check("a mutating request without our header is refused", noHeader == 403);
+            Check("and says why", noHeaderBody.Contains("X-Yarg-Remote"));
+
+            var (crossOrigin, _) = PostRaw(
+                "http://127.0.0.1:8099/api/queue?hash=0000000000000000000000000000000000000000",
+                ("Origin", "http://evil.example"));
+            Check("a cross-origin request is refused", crossOrigin == 403);
+
+            var (ownOrigin, _) = PostRaw(
+                "http://127.0.0.1:8099/api/queue?hash=0000000000000000000000000000000000000000",
+                ("Origin", "http://127.0.0.1:8099"), true);
+            Check("our own page's origin is still accepted", ownOrigin == 404);
+
+            var (bigBody, _) = PostWithStatus("http://127.0.0.1:8099/api/queue",
+                "{\"hash\":\"" + new string('A', 200000) + "\"}");
+            Check("an oversized body is refused before it is read", bigBody == 403);
+
+            RemoteQueueVotes.Reset();
+            for (var i = 0; i < RemoteQueueVotes.MaxSuggestions + 25; i++)
+            {
+                RemoteQueueVotes.Suggest("filler" + i, "voter" + i);
+            }
+
+            Check("the suggestion board has a ceiling",
+                RemoteQueueVotes.SuggestionCount == RemoteQueueVotes.MaxSuggestions);
+            RemoteQueueVotes.Reset();
+
             RemoteQueueServer.HandleModeChanged(RemoteQueueMode.Off);
             Check("Off again: the socket is closed", !CanConnect(IPAddress.Loopback));
 
@@ -459,12 +492,55 @@ namespace Editor
             }
         }
 
+        /// <summary>
+        /// Posts the way OUR page does, custom header and all. Mutating requests
+        /// without that header are refused now, on purpose - see the CSRF finding
+        /// in the security audit - so a test that omitted it would be testing the
+        /// rejection path and calling it the happy path.
+        /// </summary>
         private static (int, string) PostWithStatus(string url, string body)
         {
             try
             {
-                var content = new StringContent(body, Encoding.UTF8, "application/json");
-                var r = _http.PostAsync(url, content).GetAwaiter().GetResult();
+                var request = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(body, Encoding.UTF8, "application/json"),
+                };
+                request.Headers.TryAddWithoutValidation("X-Yarg-Remote", "1");
+                var r = _http.SendAsync(request).GetAwaiter().GetResult();
+                return ((int) r.StatusCode, r.Content.ReadAsStringAsync().GetAwaiter().GetResult());
+            }
+            catch (Exception e)
+            {
+                Log($"POST {url} threw {e.GetType().Name}");
+                return (0, string.Empty);
+            }
+        }
+
+        /// <summary>
+        /// A POST with full control over the headers, for the security checks -
+        /// including deliberately sending none of ours.
+        /// </summary>
+        private static (int, string) PostRaw(string url, (string, string)? header, bool withMark = false)
+        {
+            try
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(string.Empty, Encoding.UTF8, "text/plain"),
+                };
+
+                if (withMark)
+                {
+                    request.Headers.TryAddWithoutValidation("X-Yarg-Remote", "1");
+                }
+
+                if (header.HasValue)
+                {
+                    request.Headers.TryAddWithoutValidation(header.Value.Item1, header.Value.Item2);
+                }
+
+                var r = _http.SendAsync(request).GetAwaiter().GetResult();
                 return ((int) r.StatusCode, r.Content.ReadAsStringAsync().GetAwaiter().GetResult());
             }
             catch (Exception e)

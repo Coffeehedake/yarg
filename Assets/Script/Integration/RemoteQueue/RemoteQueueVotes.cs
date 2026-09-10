@@ -80,14 +80,31 @@ namespace YARG.Integration.RemoteQueue
         // ------------------------------------------------------------------
 
         /// <summary>
+        /// The most songs that may sit on the board at once.
+        ///
+        /// Measured before this existed: 5,000 suggestions were accepted and every
+        /// phone then downloaded all 5,000 every three seconds. A room cannot
+        /// meaningfully consider more than a screenful anyway, so the cap costs
+        /// nothing real and removes an easy way to bury the console in JSON.
+        /// </summary>
+        public const int MaxSuggestions = 40;
+
+        /// <summary>
         /// Suggests a song. The suggester's own vote counts as the first upvote -
         /// nobody suggests a song they would not vote for, and making them tap
         /// twice just produces a list of zero-score suggestions.
+        ///
+        /// Returns null when the board is full.
         /// </summary>
         public static Nomination Suggest(string hash, string voter)
         {
             lock (_gate)
             {
+                if (!_nominations.ContainsKey(hash) && _nominations.Count >= MaxSuggestions)
+                {
+                    return null;
+                }
+
                 if (!_nominations.TryGetValue(hash, out var nomination))
                 {
                     nomination = new Nomination { Hash = hash, Stage = NominationStage.Suggested };

@@ -89,17 +89,17 @@ namespace YARG.Integration.RemoteQueue
   var tab = 'find', timer = null, lastQuery = null, board = null;
   var $ = function (id) { return document.getElementById(id); };
 
-  // A voter id, kept in this browser. Enough to stop a double tap and one phone
-  // voting twenty times; not enough to stop somebody who clears storage, which
-  // is the right amount of ceremony for a living room.
-  var voter = (function () {
-    try {
-      var v = localStorage.getItem('yarg-voter');
-      if (!v) { v = 'v' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-                localStorage.setItem('yarg-voter', v); }
-      return v;
-    } catch (e) { return 'v' + Math.random().toString(36).slice(2); }
-  })();
+  // A custom header on every call. The VALUE means nothing - its presence is
+  // what matters. A browser cannot send a custom header cross-site without
+  // asking permission first, and this server answers no such request, so a page
+  // on some other site cannot reach these endpoints. Measured: before this,
+  // a cross-origin POST, DELETE and vote were all accepted and acted on.
+  //
+  // Note there is no voter id here any more. There used to be one, generated in
+  // the browser, and it was worthless: one client rotating it scored 51 votes
+  // against a threshold of 3. Who you are is now the address you connect from,
+  // which the server reads off the socket and no page can choose.
+  var MARK = { 'X-Yarg-Remote': '1' };
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>""']/g, function (c) {
@@ -121,7 +121,7 @@ namespace YARG.Integration.RemoteQueue
 
   function api(path, opts) {
     opts = opts || {};
-    opts.headers = Object.assign({ 'X-Voter': voter }, opts.headers || {});
+    opts.headers = Object.assign({}, MARK, opts.headers || {});
     return fetch(path, opts).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (body) {
         if (!r.ok) throw new Error(body.error || ('HTTP ' + r.status));
