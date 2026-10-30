@@ -358,6 +358,20 @@ namespace YARG.Integration.RemoteQueue
                 var menu = UnityEngine.Object.FindAnyObjectByType<MusicLibraryMenu>();
                 if (menu != null)
                 {
+                    // Look BEFORE moving. Playlist.MoveSongUp/Down silently do nothing at
+                    // either end, which this used to report as "moved" - and for a song that
+                    // is not in the setlist at all, MoveSongDown indexes SongHashes[-1] and
+                    // throws whenever the setlist is non-empty, which surfaced as an HTTP 500
+                    // from a request any client can send. Measured 2026-10-30 against a
+                    // running game: a never-queued song moved down answered 500, moved up
+                    // answered 200 "moved: true", and nothing had moved either time.
+                    var hashes = menu.ShowPlaylist.SongHashes;
+                    var at = hashes.IndexOf(song.Hash);
+                    if (at < 0 || (up && at == 0) || (!up && at == hashes.Count - 1))
+                    {
+                        return MoveResult.Refused;
+                    }
+
                     menu.MoveSongInSetlistRemotely(song, up);
                     return MoveResult.Moved;
                 }
