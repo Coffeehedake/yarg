@@ -53,13 +53,25 @@ namespace YARG.Editor
 
                 Directory.CreateDirectory(Path.GetDirectoryName(output));
 
+                // YARG_BUILD_DEVELOPMENT=1 makes a development build. It is not cosmetic: the fork
+                // sets insecureHttpOption to DevelopmentOnly (docs/ADR-004), so a RELEASE build
+                // refuses plain http:// - and a song server on a LAN is plain http. A release
+                // build therefore reports "Insecure connection not allowed" for every
+                // server it is pointed at, which looks like a network fault and is not one.
+                var flags = BuildOptions.None;
+                if (Environment.GetEnvironmentVariable("YARG_BUILD_DEVELOPMENT") == "1")
+                {
+                    flags |= BuildOptions.Development;
+                    Debug.Log("BUILD INFO: development build (plain http allowed)");
+                }
+
                 var options = new BuildPlayerOptions
                 {
                     scenes = scenes,
                     locationPathName = output,
                     target = BuildTarget.StandaloneWindows64,
                     targetGroup = BuildTargetGroup.Standalone,
-                    options = BuildOptions.None,
+                    options = flags,
                 };
 
                 var report = BuildPipeline.BuildPlayer(options);
