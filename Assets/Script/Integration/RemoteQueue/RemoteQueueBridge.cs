@@ -302,13 +302,34 @@ namespace YARG.Integration.RemoteQueue
             });
         }
 
+        /// <summary>Why a move did or did not happen.</summary>
+        /// <remarks>
+        /// A bool could not say. Both "this song cannot go there" and "there is nowhere to
+        /// move it yet" came back as the same refusal, and the second one reads as a fault
+        /// with the song: with the game on a settings screen a perfectly good queued song
+        /// answered "cannot be moved from where it is". Playtested 2026-10-30.
+        /// </remarks>
+        public enum MoveResult
+        {
+            Moved,
+
+            /// <summary>An unknown song, one not in the queue, or a move the show rules forbid.</summary>
+            Refused,
+
+            /// <summary>
+            /// The song IS queued, but only in the pending list: with no music-library menu open
+            /// there is no setlist yet, and a pending song has no order to change.
+            /// </summary>
+            WaitingForLibrary,
+        }
+
         /// <summary>Moves a song one place earlier (<paramref name="up"/>) or later.</summary>
-        public static bool Move(string hashText, bool up)
+        public static MoveResult Move(string hashText, bool up)
         {
             var song = Resolve(hashText);
             if (song == null)
             {
-                return false;
+                return MoveResult.Refused;
             }
 
             return RunOnMain(() =>
@@ -327,21 +348,26 @@ namespace YARG.Integration.RemoteQueue
                         to <= GlobalVariables.State.ShowIndex ||
                         to >= songs.Count)
                     {
-                        return false;
+                        return MoveResult.Refused;
                     }
 
                     (songs[at], songs[to]) = (songs[to], songs[at]);
-                    return true;
+                    return MoveResult.Moved;
                 }
 
                 var menu = UnityEngine.Object.FindAnyObjectByType<MusicLibraryMenu>();
                 if (menu != null)
                 {
                     menu.MoveSongInSetlistRemotely(song, up);
-                    return true;
+                    return MoveResult.Moved;
                 }
 
-                return false;
+                // No menu: only blame the closed menu if the song is really waiting for it.
+                // A song that was never queued is just a refusal.
+                lock (_pending)
+                {
+                    return _pending.Contains(song) ? MoveResult.WaitingForLibrary : MoveResult.Refused;
+                }
             });
         }
 

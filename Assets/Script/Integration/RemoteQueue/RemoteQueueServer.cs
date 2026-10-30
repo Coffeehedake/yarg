@@ -293,7 +293,17 @@ namespace YARG.Integration.RemoteQueue
                     if (action is "up" or "down")
                     {
                         var moved = RemoteQueueBridge.Move(hash, action == "up");
-                        if (!moved) { SendStatus(ctx, 409, "that song cannot be moved from where it is"); return; }
+
+                        // Same 409 either way, so no client has a new status to handle; only the
+                        // words differ, because "cannot be moved from where it is" blamed the
+                        // song when the cause was a screen nobody had opened.
+                        if (moved == RemoteQueueBridge.MoveResult.WaitingForLibrary)
+                        {
+                            SendStatus(ctx, 409, "that song is waiting for the music library screen to be opened on the game, and cannot be reordered until then");
+                            return;
+                        }
+
+                        if (moved != RemoteQueueBridge.MoveResult.Moved) { SendStatus(ctx, 409, "that song cannot be moved from where it is"); return; }
                         SendJson(ctx, 200, new { moved = true, hash, action });
                         return;
                     }
