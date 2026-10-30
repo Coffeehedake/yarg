@@ -247,9 +247,19 @@ namespace YARG.Song.RemoteLibrary
             string url = urlOverride ?? SettingsManager.Settings?.SongServerUrl?.Value;
             if (string.IsNullOrWhiteSpace(url))
             {
+                // Only redraw if something actually changed. Describe() calls this whenever the
+                // state is Unknown, and a blank URL leaves it Unknown - so redrawing
+                // unconditionally made every redraw ask for another, without end. That is the
+                // first-run state of every install, and it overflowed the stack the moment the
+                // Song Server tab was clicked.
+                bool changed = Current != State.Unknown || Error != null;
                 Current = State.Unknown;
                 Error = null;
-                Redraw();
+                if (changed)
+                {
+                    Redraw();
+                }
+
                 return;
             }
 
@@ -299,7 +309,37 @@ namespace YARG.Song.RemoteLibrary
         /// </summary>
         private static void Redraw()
         {
-            SettingsMenu.Instance?.OnSettingChanged();
+            // A redraw asks the status row for its text, and the row's text can ask for a
+            // redraw. The outer pass is already redrawing, so a nested request adds nothing;
+            // dropping it makes the cycle impossible by construction rather than by the order
+            // things happen to run in.
+            if (_redrawing)
+            {
+                return;
+            }
+
+            _redrawing = true;
+            try
+            {
+                SettingsMenu.Instance?.OnSettingChanged();
+                Redrawn?.Invoke();
+            }
+            finally
+            {
+                _redrawing = false;
+            }
         }
+
+        private static bool _redrawing;
+
+        /// <summary>
+        /// Raised every time a redraw is requested, whether or not a settings menu exists.
+        /// </summary>
+        /// <remarks>
+        /// Exists so a headless probe can stand in for the menu. Without a menu
+        /// <see cref="Redraw"/> does nothing, which let the menu -> Describe -> Refresh ->
+        /// menu cycle go untested until it overflowed the stack in a real window.
+        /// </remarks>
+        public static event Action Redrawn;
     }
 }

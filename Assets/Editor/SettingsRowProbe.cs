@@ -89,7 +89,10 @@ namespace YARG.Editor
             Pass("prefab resolves TextSettingVisual");
 
             var so = new SerializedObject(visual);
-            foreach (string field in new[] { "_settingLabel", "_evenBackground", "_advancedMarker", "_inputField" })
+            // "_advancedMarker" used to be required here. Upstream removed the advanced-settings
+            // concept (isAdvanced became a visibleWhen delegate) and deleted the field, so
+            // demanding it now would fail on a field nothing is supposed to have.
+            foreach (string field in new[] { "_settingLabel", "_evenBackground", "_inputField" })
             {
                 var prop = so.FindProperty(field);
                 if (prop == null)
@@ -104,7 +107,7 @@ namespace YARG.Editor
 
             if (_failures == 0)
             {
-                Pass("all four serialized references survived");
+                Pass("all serialized references survived");
             }
 
             // The row is useless if the text field cannot report what was typed.
@@ -459,6 +462,84 @@ namespace YARG.Editor
             {
                 Pass("an empty URL settles to Unknown without throwing");
             }
+
+            CheckStatusRowDoesNotRecurse(live[0]);
+        }
+
+        /// <summary>
+        /// Stands in for the settings menu, which does not exist in batchmode, and checks that
+        /// drawing the status row with NO URL configured does not feed itself.
+        /// </summary>
+        /// <remarks>
+        /// This is the first-run state of every install, and it crashed the real game the
+        /// moment the Song Server tab was clicked: entering the tab invalidates the status,
+        /// the menu redraws, the redraw asks the row for its text, the row finds nothing
+        /// checked and starts a refresh, and a refresh with a blank URL "settles" by
+        /// redrawing - which asks the row for its text. A stack overflow, not an exception.
+        /// The checks above all ran with <c>Redraw()</c> as a no-op, so none of them could
+        /// see it.
+        /// </remarks>
+        private static void CheckStatusRowDoesNotRecurse(TextMetadata row)
+        {
+            int redraws = 0;
+            int depth = 0;
+            bool tooDeep = false;
+
+            // What MetadataTab.OnSettingChanged does with a live row.
+            Action menu = () =>
+            {
+                redraws++;
+                if (depth >= 10)
+                {
+                    tooDeep = true; // stop here: letting it run would take the editor down
+                    return;
+                }
+
+                depth++;
+                try { row.LiveText(); }
+                finally { depth--; }
+            };
+
+            SongServerStatus.Redrawn += menu;
+            try
+            {
+                SongServerStatus.Refresh(string.Empty).GetAwaiter().GetResult();
+                SongServerStatus.Invalidate();
+
+                if (tooDeep)
+                {
+                    Fail($"with no URL, entering the tab recurses without end ({redraws} redraws before the probe stopped it)");
+                }
+                else if (redraws > 3)
+                {
+                    Fail($"with no URL, entering the tab redrew {redraws} times; a settled blank state should need at most 3");
+                }
+                else
+                {
+                    Pass($"with no URL, entering the tab redraws {redraws} time(s) and stops");
+                }
+
+                // Once settled, merely drawing the row must not ask for another redraw.
+                redraws = 0;
+                tooDeep = false;
+                for (int i = 0; i < 3; i++)
+                {
+                    row.LiveText();
+                }
+
+                if (redraws != 0)
+                {
+                    Fail($"drawing a settled, blank-URL row requested {redraws} redraw(s); it should request none");
+                }
+                else
+                {
+                    Pass("drawing a settled, blank-URL row requests no redraw");
+                }
+            }
+            finally
+            {
+                SongServerStatus.Redrawn -= menu;
+            }
         }
 
         /// <summary>
@@ -535,7 +616,10 @@ namespace YARG.Editor
             // Counting against a folder that really holds songs, rather than trusting that
             // the empty case generalises. The smoke test leaves 23 verified archives here.
             string populated = Path.Combine(Path.GetTempPath(), "yarg-song-server-smoketest");
-            if (!Directory.Exists(populated))
+            // An empty folder is as much "no corpus" as a missing one: with nothing to count, the
+            // row correctly says "0 KB" and the check below would blame it for a precondition
+            // that was never met.
+            if (!Directory.Exists(populated) || Directory.GetFiles(populated, "*.sng").Length == 0)
             {
                 Debug.Log("PROBE INCONCLUSIVE: no mirrored corpus on disk to count " +
                     "(run Editor.SongServerSyncSmokeTest.Run first)");
