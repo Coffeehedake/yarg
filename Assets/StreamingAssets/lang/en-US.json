@@ -1952,6 +1952,23 @@
               "Name": "Sync On Startup",
               "Description": "Mirror new songs from the song server automatically when YARG starts. Does nothing if no server URL is set, and never interrupts startup if the server cannot be reached."
             },
+            "RemoteQueue": {
+                "Name": "Remote Queue",
+                "Description": "Lets phones and other devices search your library and queue songs through a web page while YARG is running. Off: disabled. Local: only this computer can reach it. LAN: anyone on your network can queue songs. There is no password, so only use LAN on a network you trust.",
+                "Dropdown": {
+                    "Off": "Off",
+                    "Local": "Local (this computer only)",
+                    "Lan": "LAN (anyone on your network)"
+                }
+            },
+            "RemoteQueueVoting": {
+                "Name": "Remote Queue Voting",
+                "Description": "Lets guests suggest songs and vote on them, rather than only queueing songs directly."
+            },
+            "RemoteQueueVotesNeeded": {
+                "Name": "Votes Needed",
+                "Description": "How many votes promote a suggestion, and how many settle whether it plays next or goes on the end of the setlist."
+            },
             "DMXKeyframeChannel": {
                 "Name": "DMX Keyframe",
                 "Description": "This channel receives the Next (3), Previous (13), and First (23) keyframe calls."

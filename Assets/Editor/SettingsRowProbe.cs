@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -52,6 +53,7 @@ namespace YARG.Editor
                 CheckStatusRow();
                 CheckSongServerTab();
                 CheckMirrorFilter();
+                CheckEverySettingHasText();
             }
             catch (Exception e)
             {
@@ -60,6 +62,142 @@ namespace YARG.Editor
 
             Debug.Log(_failures == 0 ? "PROBE RESULT: PASS" : $"PROBE RESULT: FAIL ({_failures})");
             EditorApplication.Exit(_failures == 0 ? 0 : 1);
+        }
+
+        /// <summary>
+        /// Every setting a settings tab lists has the text the menu asks for.
+        /// </summary>
+        /// <remarks>
+        /// A setting with no entry in en-US.json does not fail anywhere. The menu asks for
+        /// <c>Settings.Setting.&lt;Name&gt;.Name</c>, finds nothing, and prints the key itself:
+        /// <c>SETTINGS.SETTING.REMOTEQUEUE.NAME</c>, in capitals, in the middle of the
+        /// settings screen. The Remote Queue settings shipped that way and stayed that way
+        /// through two playtests, because nothing here ever looked.
+        ///
+        /// The lookup mirrors the game's own: BaseSettingVisual asks for <c>Name</c>, the
+        /// description panel for <c>Description</c>, and DropdownSettingVisual for
+        /// <c>Dropdown.&lt;value&gt;</c> of each option (checked here at the level of the
+        /// enum's values - see the comment where it is done for what that cannot see). A tab entry that is a METHOD of
+        /// the settings container is a button, which is keyed elsewhere and skipped; one that
+        /// is neither a property nor a method is its own failure, since the menu would throw
+        /// when it tried to build the row.
+        ///
+        /// It checks every setting rather than ours, and that is affordable because the
+        /// upstream ones were measured first: all of them have both a name and a description.
+        /// </remarks>
+        private static void CheckEverySettingHasText()
+        {
+            string langPath = Path.Combine(Application.streamingAssetsPath, "lang", "en-US.json");
+            if (!File.Exists(langPath))
+            {
+                Fail($"{langPath} is missing");
+                return;
+            }
+
+            var root = JObject.Parse(File.ReadAllText(langPath));
+            var container = typeof(SettingsManager.SettingContainer);
+            var seen = new HashSet<string>();
+            var missing = new List<string>();
+            int settings = 0;
+            int buttons = 0;
+
+            // AllSettingsTabs, not DisplayedSettingsTabs: the Debug and Experimental tabs live
+            // only in the former, and Experimental is where the Remote Queue settings are. The
+            // first version of this check walked the displayed list and passed over exactly the
+            // rows it was written for.
+            foreach (var tab in SettingsManager.AllSettingsTabs.OfType<MetadataTab>())
+            {
+                foreach (var field in tab.Settings.OfType<FieldMetadata>())
+                {
+                    string name = field.FieldName;
+                    if (!seen.Add(name))
+                    {
+                        continue;
+                    }
+
+                    if (container.GetProperty(name) == null)
+                    {
+                        if (container.GetMethod(name) != null)
+                        {
+                            buttons++;
+                        }
+                        else
+                        {
+                            missing.Add($"{tab.Name}/{name} is neither a setting nor a button");
+                        }
+
+                        continue;
+                    }
+
+                    settings++;
+                    foreach (string key in new[] { "Name", "Description" })
+                    {
+                        if (HasText(root, "Settings", "Setting", name, key) == false)
+                        {
+                            missing.Add($"{tab.Name}/{name}: no Settings.Setting.{name}.{key}");
+                        }
+                    }
+
+                    // A dropdown of an ENUM needs a Dropdown block. Decided from the property's
+                    // declared type alone, because the alternative - reading the options off an
+                    // instance - cannot be done here: SettingContainer's constructor asks the
+                    // audio manager for its buffer length, there is no audio manager in
+                    // batchmode, and it throws. (Reading through SettingsManager.Settings is no
+                    // better: it is null.)
+                    //
+                    // WHAT THIS DOES NOT CATCH, and it is a real gap: an option the dropdown
+                    // offers but the block omits, or spells differently, when the block exists
+                    // and holds other values - the offered set lives on the instance. It does not
+                    // demand that every key be a value of the enum either, because upstream
+                    // itself breaks that (LyricDisplay carries a stale "Compatibility" key), and
+                    // an extra string is harmless: the menu never asks for it.
+                    var propertyType = container.GetProperty(name).PropertyType;
+                    if (propertyType.IsGenericType &&
+                        propertyType.GetGenericTypeDefinition() == typeof(DropdownSetting<>) &&
+                        propertyType.GetGenericArguments()[0].IsEnum)
+                    {
+                        var enumType = propertyType.GetGenericArguments()[0];
+                        var block = root["Settings"]?["Setting"]?[name]?["Dropdown"] as JObject;
+                        if (block == null || !block.Properties().Any())
+                        {
+                            missing.Add($"{tab.Name}/{name}: no Settings.Setting.{name}.Dropdown block for {enumType.Name}");
+                        }
+                    }
+                }
+            }
+
+            if (settings == 0)
+            {
+                // A probe that found nothing to check has not passed anything.
+                Fail("found no settings to check; the tab walk is broken");
+                return;
+            }
+
+            foreach (string line in missing)
+            {
+                Fail("setting text missing: " + line);
+            }
+
+            if (missing.Count == 0)
+            {
+                Pass($"all {settings} settings have a name and a description, and enum dropdowns a Dropdown block (button rows are separate entries and not checked here; {buttons} method-named fields skipped)");
+            }
+        }
+
+        /// <summary>Walks object keys one at a time, so a key that contains a dot cannot be misread as a path.</summary>
+        private static bool HasText(JObject root, params string[] path)
+        {
+            JToken node = root;
+            foreach (string part in path)
+            {
+                node = (node as JObject)?[part];
+                if (node == null)
+                {
+                    return false;
+                }
+            }
+
+            return node.Type == JTokenType.String && !string.IsNullOrWhiteSpace(node.Value<string>());
         }
 
         private static void CheckPrefab()
