@@ -1117,6 +1117,7 @@
             "Sound": "Sound",
             "SongManager": "Songs",
             "SongServer": "Song Server",
+            "Updates": "Updates",
             "Presets": "Presets",
             "Advanced": "Advanced",
             "AllSettings": "All Settings",
@@ -1127,6 +1128,7 @@
         },
         "Header": {
             "SongServer": "Song Server",
+            "Updates": "Updates",
             "Other": "Other",
             "Display": "Display",
             "Volume": "Volume",
@@ -1172,6 +1174,8 @@
         "Button": {
             "SyncFromSongServer": "Sync From Song Server",
             "CancelSongServerSync": "Cancel Sync",
+            "CheckForUpdate": "Check For Update",
+            "DownloadUpdate": "Download Update",
             "CopyCurrentSongJsonFilePath": "Copy Current Song Json File Path",
             "CopyCurrentSongTextFilePath": "Copy Current Song Text File Path",
             "ExportSongsJson": "Ouvert (JSON)",
@@ -1947,6 +1951,10 @@
             "SongServerUrl": {
               "Name": "Song Server URL",
               "Description": "Address of a yarg-song-server to mirror songs from, for example http://192.168.1.10:8080. Leave blank to disable. Only http and https addresses are accepted."
+            },
+            "UpdateServerUrl": {
+              "Name": "Update Server URL",
+              "Description": "Address of an update manifest for this build, for example http://192.168.1.10:8099/updates/dev.json. Leave blank to disable update checks. An update replaces the game on disk, so only point this at a server you control."
             },
             "SyncOnStartup": {
               "Name": "Sync On Startup",

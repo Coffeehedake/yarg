@@ -10,6 +10,7 @@ using YARG.Core.Logging;
 using YARG.Core.Utility;
 using YARG.Helpers;
 using YARG.Integration.RemoteQueue;
+using YARG.Integration.SelfUpdate;
 using YARG.Menu.Filters;
 using YARG.Settings.Metadata;
 using YARG.Song.RemoteLibrary;
@@ -135,6 +136,14 @@ namespace YARG.Settings
                 nameof(Settings.SyncOnStartup),
                 new ButtonRowMetadata(nameof(Settings.SyncFromSongServer),
                     nameof(Settings.CancelSongServerSync)),
+            },
+            new MetadataTab("Updates", icon: "Import")
+            {
+                new HeaderMetadata("Updates"),
+                nameof(Settings.UpdateServerUrl),
+                new TextMetadata(SelfUpdateStatus.Describe),
+                new ButtonRowMetadata(nameof(Settings.CheckForUpdate),
+                    nameof(Settings.DownloadUpdate)),
             },
             new MetadataTab("Sound", icon: "Sound")
             {

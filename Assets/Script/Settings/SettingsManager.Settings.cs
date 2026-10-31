@@ -16,6 +16,7 @@ using YARG.Integration;
 using YARG.Integration.RB3E;
 using YARG.Integration.RemoteQueue;
 using YARG.Integration.Sacn;
+using YARG.Integration.SelfUpdate;
 using YARG.Integration.StageKit;
 using YARG.Input.Bindings;
 using YARG.Menu.Filters;
@@ -211,6 +212,26 @@ namespace YARG.Settings
             /// loading screen is a worse outcome than a library that is one song short.
             /// </remarks>
             public ToggleSetting SyncOnStartup { get; } = new(true);
+
+            /// <summary>
+            /// Where to look for a newer build of this fork.
+            /// </summary>
+            /// <remarks>
+            /// Empty by default, and nothing happens until it is set - an unconfigured game
+            /// never opens a socket for this, and never checks on startup even when it is set.
+            /// An update is hundreds of megabytes; it is a button, not a background task.
+            ///
+            /// The address points at a JSON manifest, not at a build. See ADR-006 in
+            /// yarg-song-server for its shape and for the risk: over plain HTTP this is a
+            /// channel that can replace the executable, and the hash in the manifest cannot
+            /// vouch for the manifest itself.
+            /// </remarks>
+            public UrlSetting UpdateServerUrl { get; } = new(defaultValue: string.Empty,
+                // A changed URL makes the previous verdict meaningless, exactly as with the
+                // song server: showing a corrected typo's old failure reads as the correction
+                // having failed.
+                onChange: _ => SelfUpdateStatus.Invalidate(),
+                allowEmpty: true);
             public string LastWasapiDevice = string.Empty;
 
             public SortAttribute LibrarySort = SortAttribute.Name;
@@ -848,6 +869,71 @@ namespace YARG.Settings
             public void CancelSongServerSync()
             {
                 SongServerStatus.CancelSync();
+            }
+
+            /// <summary>
+            /// Asks the update server what the newest build is.
+            /// </summary>
+            public async void CheckForUpdate()
+            {
+                if (!SelfUpdateStatus.Self.IsKnown)
+                {
+                    DialogManager.Instance.ShowMessage("No Version Stamp",
+                        "This build carries no version information, so it cannot be compared " +
+                        "against a server. That is normal in the editor.");
+                    return;
+                }
+
+                string url = UpdateServerUrl.Value;
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    DialogManager.Instance.ShowMessage("No Update Server",
+                        "Set the Update Server URL above to the address of an update manifest, " +
+                        "for example http://192.168.1.10:8099/updates/dev.json");
+                    return;
+                }
+
+                SelfUpdateStatus.Invalidate();
+                await SelfUpdateStatus.Refresh(url);
+            }
+
+            /// <summary>
+            /// Downloads the offered build and unpacks it ready for a restart.
+            /// </summary>
+            /// <remarks>
+            /// This does not replace anything. The swap happens outside the game, because a
+            /// running process cannot overwrite its own files - the dialog says so rather than
+            /// leaving somebody waiting for a restart that never comes on its own.
+            /// </remarks>
+            public async void DownloadUpdate()
+            {
+                if (SelfUpdateStatus.Current == SelfUpdateStatus.State.Downloading)
+                {
+                    DialogManager.Instance.ShowMessage("Already Downloading",
+                        "An update is already downloading. Wait for it to finish.");
+                    return;
+                }
+
+                if (SelfUpdateStatus.Current != SelfUpdateStatus.State.UpdateAvailable)
+                {
+                    DialogManager.Instance.ShowMessage("Nothing To Download",
+                        "Press Check For Update first; there is no newer build on offer.");
+                    return;
+                }
+
+                await SelfUpdateStatus.Download();
+
+                if (SelfUpdateStatus.Current == SelfUpdateStatus.State.Staged)
+                {
+                    DialogManager.Instance.ShowMessage("Update Ready",
+                        "The update has been downloaded and verified. It will be applied the " +
+                        "next time YARG starts.");
+                }
+                else
+                {
+                    DialogManager.Instance.ShowMessage("Update Failed",
+                        SelfUpdateStatus.Error ?? "The download did not complete.");
+                }
             }
 
                         public void RemoveRemoteContent()
