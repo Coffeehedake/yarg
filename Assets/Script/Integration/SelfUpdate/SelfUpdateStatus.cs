@@ -88,6 +88,15 @@ namespace YARG.Integration.SelfUpdate
 
         public static string Describe()
         {
+            // Answered before the Unknown branch below, because Refresh() leaves the state at
+            // Unknown when there is no URL - so without this the settings row would kick off a
+            // fresh Refresh on every single redraw and never stop, while telling the person
+            // nothing about why no update is being offered.
+            if (string.IsNullOrWhiteSpace(Settings.SettingsManager.Settings.UpdateServerUrl.Value))
+            {
+                return $"This build: {Self}. No update server set.";
+            }
+
             if (Current == State.Unknown)
             {
                 // Lazy, exactly as SongServerStatus does: the row cannot be on screen without
