@@ -8,6 +8,7 @@ using UnityEngine;
 using UnityEngine.Networking;
 using YARG.Core.Logging;
 using YARG.Helpers;
+using YARG.Menu.Settings;
 
 namespace YARG.Integration.SelfUpdate
 {
@@ -58,6 +59,39 @@ namespace YARG.Integration.SelfUpdate
         private static bool _selfLoaded;
         private static long _downloaded;
         private static long _toDownload;
+        private static bool _redrawing;
+        private static float _lastProgressRedraw;
+
+        /// <summary>
+        /// Reuses the settings menu's "something changed, redraw" path, as SongServerStatus does.
+        /// </summary>
+        /// <remarks>
+        /// Without this the buttons look broken. They were always doing the work - the row just
+        /// never asked for its text again, so a check that took two seconds and a download that
+        /// took two minutes both looked like a button that did nothing. Measured on MSI,
+        /// 2026-10-31: "if I type it in the buttons do nothing".
+        ///
+        /// The guard matters because a redraw asks the row for its text and the row's text can
+        /// ask for a redraw. Dropping the nested request makes that cycle impossible by
+        /// construction rather than by the order things happen to run in.
+        /// </remarks>
+        private static void Redraw()
+        {
+            if (_redrawing)
+            {
+                return;
+            }
+
+            _redrawing = true;
+            try
+            {
+                SettingsMenu.Instance?.OnSettingChanged();
+            }
+            finally
+            {
+                _redrawing = false;
+            }
+        }
 
         public static BuildIdentity Self
         {
@@ -84,6 +118,7 @@ namespace YARG.Integration.SelfUpdate
             Current = State.Unknown;
             Available = null;
             Error = null;
+            Redraw();
         }
 
         public static string Describe()
@@ -114,8 +149,9 @@ namespace YARG.Integration.SelfUpdate
                 State.UpdateAvailable => $"Update available: {Available} "
                     + $"({FormatBytes(Available.Size)}). This build: {Self}.",
                 State.Downloading => _toDownload > 0
-                    ? $"Downloading: {FormatBytes(_downloaded)} of {FormatBytes(_toDownload)}"
-                    : "Downloading...",
+                    ? $"{Bar(_downloaded, _toDownload)}{_downloaded * 100 / _toDownload}%  "
+                        + $"{FormatBytes(_downloaded)} of {FormatBytes(_toDownload)}"
+                    : $"Downloading... {FormatBytes(_downloaded)} so far",
                 State.Staged => $"Update {Available} is ready — restart to apply it.",
                 State.Failed => $"Update check failed: {Error}",
                 _ => $"This build: {Self}",
@@ -144,6 +180,7 @@ namespace YARG.Integration.SelfUpdate
             }
 
             Current = State.Checking;
+            Redraw();   // so the row says "checking..." the instant the button is pressed
 
             try
             {
@@ -175,6 +212,8 @@ namespace YARG.Integration.SelfUpdate
                 Current = State.Failed;
                 YargLogger.LogFormatWarning("Self-update check failed: {0}", e.Message);
             }
+
+            Redraw();
         }
 
         /// <summary>
@@ -200,6 +239,8 @@ namespace YARG.Integration.SelfUpdate
             Current = State.Downloading;
             _downloaded = 0;
             _toDownload = manifest.Size;
+            _lastProgressRedraw = 0f;
+            Redraw();
 
             try
             {
@@ -220,6 +261,16 @@ namespace YARG.Integration.SelfUpdate
                     while (!operation.isDone)
                     {
                         _downloaded = (long) request.downloadedBytes;
+
+                        // Four times a second, not every frame. A redraw rebuilds the settings
+                        // tab, and doing that at 60fps for the length of a 160 MB download
+                        // would make the menu the expensive part of downloading.
+                        if (Time.realtimeSinceStartup - _lastProgressRedraw > 0.25f)
+                        {
+                            _lastProgressRedraw = Time.realtimeSinceStartup;
+                            Redraw();
+                        }
+
                         await UniTask.Yield();
                     }
 
@@ -258,6 +309,22 @@ namespace YARG.Integration.SelfUpdate
                 Current = State.Failed;
                 YargLogger.LogFormatWarning("Self-update download failed: {0}", e.Message);
             }
+
+            Redraw();
+        }
+
+        /// <summary>
+        /// A text progress bar, because the settings row is a line of text.
+        /// </summary>
+        private static string Bar(long done, long total, int width = 24)
+        {
+            if (total <= 0)
+            {
+                return string.Empty;
+            }
+
+            int filled = (int) Math.Round(width * Math.Clamp(done / (double) total, 0, 1));
+            return "[" + new string('#', filled) + new string('-', width - filled) + "] ";
         }
 
         private static string Sha256OfFile(string path)
