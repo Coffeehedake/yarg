@@ -6,6 +6,7 @@ using Newtonsoft.Json.Linq;
 using TMPro;
 using UnityEditor;
 using UnityEngine;
+using YARG.Integration.RemoteQueue;
 using YARG.Menu.Settings.Visuals;
 using YARG.Settings;
 using YARG.Settings.Metadata;
@@ -54,6 +55,7 @@ namespace YARG.Editor
                 CheckSongServerTab();
                 CheckMirrorFilter();
                 CheckEverySettingHasText();
+                CheckRemoteQueueAddress();
             }
             catch (Exception e)
             {
@@ -181,6 +183,95 @@ namespace YARG.Editor
             if (missing.Count == 0)
             {
                 Pass($"all {settings} settings have a name and a description, and enum dropdowns a Dropdown block (button rows are separate entries and not checked here; {buttons} method-named fields skipped)");
+            }
+        }
+
+        /// <summary>
+        /// What the Remote Queue status row says, in every state, and that it is on the tab.
+        /// </summary>
+        /// <remarks>
+        /// The phone app tells a guest "YARG will show an address", and for a long time YARG
+        /// showed none, and a failed start was a log line and nothing else. Each sentence is
+        /// checked here because each is a place the row could say something false: an address
+        /// that was not bound, a loopback or link-local address presented as one to type, or a
+        /// failure with no reason.
+        /// </remarks>
+        private static void CheckRemoteQueueAddress()
+        {
+            const int port = 8099;
+            var none = new List<RemoteQueueAddress.Candidate>();
+
+            string Say(RemoteQueueMode mode, bool running, string error = null,
+                IEnumerable<RemoteQueueAddress.Candidate> found = null)
+                => RemoteQueueAddress.Format(mode, running, error, found ?? none, port);
+
+            void Expect(bool condition, string what, string text)
+            {
+                if (condition) { Pass(what); }
+                else { Fail($"{what} - got: '{text}'"); }
+            }
+
+            string off = Say(RemoteQueueMode.Off, false);
+            Expect(off.Contains("off"), "Off says it is off", off);
+
+            string local = Say(RemoteQueueMode.Local, true);
+            Expect(local.Contains("127.0.0.1:8099") && local.ToLowerInvariant().Contains("only this computer"),
+                "Local says it is this computer only, at the loopback address", local);
+
+            // A machine like the one this was found on: Wi-Fi with a gateway, Tailscale and two
+            // Hyper-V switches without, a link-local leftover, loopback, and a duplicate.
+            var machine = new List<RemoteQueueAddress.Candidate>
+            {
+                new("172.28.208.1", false),
+                new("100.79.53.15", false),
+                new("192.168.2.46", true),
+                new("169.254.7.7", true),
+                new("127.0.0.1", false),
+                new("192.168.2.46", true),
+            };
+            string lan = Say(RemoteQueueMode.Lan, true, found: machine);
+            Expect(lan.StartsWith("Type this into the app: 192.168.2.46:8099"),
+                "LAN leads with the address on the interface that has a gateway", lan);
+            Expect(!lan.Contains("169.254") && !lan.Contains("127."),
+                "LAN never offers a link-local or loopback address to type", lan);
+            Expect(lan.Contains("172.28.208.1:8099") && lan.Split(new[] { "192.168.2.46" }, StringSplitOptions.None).Length == 2,
+                "LAN keeps the other addresses as fallbacks and lists the first only once", lan);
+
+            string nowhere = Say(RemoteQueueMode.Lan, true, found: new List<RemoteQueueAddress.Candidate> { new("127.0.0.1", false), new("169.254.1.1", false) });
+            Expect(nowhere.Contains("no network address"),
+                "LAN with only loopback and link-local addresses says none was found, not an empty address", nowhere);
+
+            // A failed start must say so and say why - the row used to be silent about it.
+            // And it must not send the player off to change a system setting: an earlier
+            // version suggested a netsh command for an access-denied failure, on the strength
+            // of a test in the wrong runtime (see RemoteQueueAddress), so that is now guarded.
+            string failedLan = Say(RemoteQueueMode.Lan, false, "Address already in use");
+            Expect(failedLan.Contains("Could not start (Lan)") && failedLan.Contains("Address already in use"),
+                "a LAN start that failed says so and says why", failedLan);
+            Expect(!failedLan.Contains("netsh") && !failedLan.ToLowerInvariant().Contains("administrator"),
+                "a failed start does not tell the player to change a Windows setting", failedLan);
+
+            string failedLocal = Say(RemoteQueueMode.Local, false, null);
+            Expect(failedLocal.Contains("Could not start (Local)") && failedLocal.Contains("no reason was reported"),
+                "a failure with no recorded reason still says so rather than printing nothing", failedLocal);
+
+            // The row is on the Experimental tab, directly under the setting it describes.
+            var tab = SettingsManager.AllSettingsTabs.OfType<MetadataTab>().FirstOrDefault(t => t.Name == "Experimental");
+            if (tab == null)
+            {
+                Fail("no Experimental tab");
+                return;
+            }
+
+            var items = tab.Settings.ToList();
+            int at = items.FindIndex(m => m is FieldMetadata f && f.FieldName == "RemoteQueue");
+            bool underneath = at >= 0 && at + 1 < items.Count && items[at + 1] is TextMetadata { LiveText: not null };
+            Expect(underneath, "a live status row sits directly under the Remote Queue setting", at < 0 ? "no RemoteQueue field" : items.ElementAtOrDefault(at + 1)?.GetType().Name);
+
+            if (underneath)
+            {
+                string row = ((TextMetadata) items[at + 1]).LiveText();
+                Expect(!string.IsNullOrWhiteSpace(row), "that row renders a sentence in the current state", row);
             }
         }
 

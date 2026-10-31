@@ -53,12 +53,27 @@ namespace YARG.Integration.RemoteQueue
         public static bool IsRunning => _running;
         public static RemoteQueueMode Mode => _mode;
 
+        /// <summary>Why the last attempt to start failed, or null if it did not.</summary>
+        public static string LastStartError { get; private set; }
+
+        /// <summary>
+        /// What the settings screen shows under the Remote Queue setting: the true state,
+        /// including "could not start". Before this, a failed start was a log line and nothing
+        /// else, and the setting went on saying LAN.
+        /// </summary>
+        public static string Describe()
+        {
+            var candidates = _mode == RemoteQueueMode.Lan ? RemoteQueueAddress.Gather() : null;
+            return RemoteQueueAddress.Format(_mode, _running, LastStartError, candidates, Port);
+        }
+
         /// <summary>Wired to the setting's onChange. Idempotent on purpose.</summary>
         public static void HandleModeChanged(RemoteQueueMode mode)
         {
             Stop();
 
             _mode = mode;
+            LastStartError = null;
             if (mode == RemoteQueueMode.Off)
             {
                 return;
@@ -85,6 +100,11 @@ namespace YARG.Integration.RemoteQueue
             catch (Exception e)
             {
                 YargLogger.LogException(e, $"Remote queue: could not listen on {prefix}");
+
+                // Remembered so the settings screen can say so. This used to be a log line and
+                // nothing else, so a failed start left a setting that still said LAN.
+                LastStartError = e.Message;
+
                 _listener = null;
                 return;
             }
@@ -101,6 +121,9 @@ namespace YARG.Integration.RemoteQueue
             Application.quitting += Stop;
 
             YargLogger.LogFormatInfo("Remote queue: listening on {0} (mode {1})", prefix, mode);
+
+            // "http://+:8099/" is a wildcard, not somewhere a phone can type. Say where.
+            YargLogger.LogFormatInfo("Remote queue: {0}", Describe());
         }
 
         public static void Stop()

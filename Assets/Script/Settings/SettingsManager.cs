@@ -9,6 +9,7 @@ using YARG.Core.Audio;
 using YARG.Core.Logging;
 using YARG.Core.Utility;
 using YARG.Helpers;
+using YARG.Integration.RemoteQueue;
 using YARG.Menu.Filters;
 using YARG.Settings.Metadata;
 using YARG.Song.RemoteLibrary;
@@ -308,6 +309,7 @@ namespace YARG.Settings
                 nameof(Settings.BandComboTypeSetting),
                 nameof(Settings.DataStreamEnable),
                 nameof(Settings.RemoteQueue),
+                new TextMetadata(RemoteQueueServer.Describe),
                 nameof(Settings.RemoteQueueVoting),
                 nameof(Settings.RemoteQueueVotesNeeded),
                 nameof(Settings.SaveScoresWithBots),
