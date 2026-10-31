@@ -33,6 +33,30 @@ $ErrorActionPreference = 'Stop'
 function Step($m) { Write-Output ("=== {0}" -f $m) }
 
 # --- 1. the tree must be clean ------------------------------------------------------------
+# A Unity build writes files back into the project, so a publish dirties the tree it just
+# checked. Without clearing these the script would refuse every run after the first - the guard
+# would be tripping over its own build rather than catching a real edit. Named explicitly and
+# narrowly: anything NOT on this list still refuses, which is the whole point of the guard.
+$byproducts = @(
+    'ProjectSettings/ProjectSettings.asset',              # Unity re-adds an empty VisionOS icon stanza
+    'Assets/Settings/AddressableAssetsData/link.xml',     # written by the Addressables build step
+    'Assets/Settings/AddressableAssetsData/link.xml.meta'
+)
+
+Step 'clearing build byproducts from the last run'
+foreach ($b in $byproducts) {
+    $full = Join-Path $Project $b
+    $state = (& git -C $Project status --porcelain -- $b)
+    if (-not $state) { continue }
+    if ($state -match '^\?\?') {
+        Remove-Item $full -Force -ErrorAction SilentlyContinue
+        Write-Output "  removed untracked $b"
+    } else {
+        & git -C $Project checkout -- $b
+        Write-Output "  restored $b"
+    }
+}
+
 Step 'checking the working tree'
 $dirty = & git -C $Project status --porcelain
 if ($dirty) {
