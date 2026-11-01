@@ -20,6 +20,7 @@ using YARG.Scores;
 using YARG.Settings;
 using YARG.Settings.Types;
 using YARG.Song;
+using YARG.Song.RemoteLibrary;
 
 namespace YARG.Gameplay
 {
@@ -159,6 +160,33 @@ namespace YARG.Gameplay
                         replayIndex++;
                     }
                 }
+            }
+
+            // A song that came from the server's catalogue has no bytes on this machine yet.
+            // They are fetched HERE: after the song is chosen, before anything queues a chart or
+            // audio load. Both of those read the file, and a remote entry has none - it returns
+            // null from every loader by design - so arriving at LoadChart without this having
+            // run is the failure this ordering exists to prevent.
+            //
+            // Song is replaced with the entry the scanner produced from the downloaded bytes,
+            // which is a real SngEntry and plays by the same code path as a local song. Nothing
+            // downstream of this line needs to know the song came from a server.
+            if (Song is RemoteSongEntry remoteSong)
+            {
+                context.SetLoadingText("Fetching from song server...");
+
+                var fetched = await RemoteSongFetcher.Materialise(
+                    remoteSong, System.Threading.CancellationToken.None);
+
+                if (fetched == null)
+                {
+                    // Back to the menu rather than on to a loader that would fail less clearly.
+                    ToastManager.ToastError("Could not fetch this song from the song server");
+                    global.LoadScene(SceneIndex.Menu);
+                    return;
+                }
+
+                Song = fetched;
             }
 
             context.Queue(UniTask.RunOnThreadPool(LoadChart), "Loading chart...");

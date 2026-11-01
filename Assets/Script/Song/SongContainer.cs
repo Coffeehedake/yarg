@@ -170,6 +170,47 @@ namespace YARG.Song
         private static bool AllowedByRating(SongEntry song) =>
             GetEffectiveSongRating(song) <= SettingsManager.Settings.MaxSongRating.Value;
 
+        /// <summary>
+        /// Adds the song server's whole catalogue to the library as entries with no files.
+        /// </summary>
+        /// <remarks>
+        /// This is ADR-004 increment 3. It is behind an environment variable rather than a
+        /// setting because it is not finished: the entries browse, but they cannot yet be
+        /// PLAYED - <see cref="RemoteSongEntry"/> returns null from every loader, because the
+        /// code that turns .sng bytes into a chart lives on an internal class. Shipping a
+        /// settings toggle for a library whose songs do not start would be worse than not
+        /// shipping it. With the variable unset this method returns immediately and the game
+        /// behaves exactly as before.
+        /// </remarks>
+        private static async UniTask MergeRemoteCatalog()
+        {
+            if (Environment.GetEnvironmentVariable("YARG_REMOTE_CATALOG") != "1")
+            {
+                return;
+            }
+
+            string url = SettingsManager.Settings.SongServerUrl.Value;
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return;
+            }
+
+            try
+            {
+                var remote = await RemoteLibrary.RemoteCatalog.Fetch(url,
+                    System.Threading.CancellationToken.None);
+                int added = RemoteLibrary.RemoteCatalog.MergeInto(_songCache, remote);
+                YargLogger.LogFormatInfo("Song server catalogue: {0} entries merged, {1} already local",
+                    added, remote.Count - added);
+            }
+            catch (Exception ex)
+            {
+                // A server that is down, slow or lying must not stop the game loading the songs
+                // that are on this disk. The library is smaller than it could be; that is all.
+                YargLogger.LogWarning($"Song server catalogue unavailable: {ex.Message}");
+            }
+        }
+
 #nullable enable
         public static async UniTask RunRefresh(bool quick, LoadingContext? context = null)
 #nullable disable
@@ -189,6 +230,18 @@ namespace YARG.Song
                 !directories.Contains(serverLibraryPath))
             {
                 directories.Add(serverLibraryPath);
+            }
+
+            // Songs fetched one at a time because somebody played them. Scanned on the same
+            // terms as the mirror above, and that is what makes the cache a cache rather than a
+            // per-session download: a song played yesterday comes back as an ordinary local
+            // entry today, and MergeRemoteCatalog then skips the server's copy of it because
+            // the chart hash is already present.
+            string serverCachePath = PathHelper.ServerCachePath;
+            if (!string.IsNullOrEmpty(serverCachePath) && Directory.Exists(serverCachePath) &&
+                !directories.Contains(serverCachePath))
+            {
+                directories.Add(serverCachePath);
             }
 
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -228,6 +281,16 @@ namespace YARG.Song
             {
                 Genrelizer.DegenrelizeAll(_songCache);
             }
+            // The server's catalogue goes in HERE, after the scan and before anything sorts, so
+            // remote songs land in the same browse categories, instrument groupings and
+            // date-added buckets as local ones. Merging after FillContainers would show them in
+            // the flat list and nowhere else.
+            //
+            // It is deliberately after the Genrelizer: that rewrites genres on the cache, and a
+            // remote entry has no file for it to work from. Remote songs therefore carry the
+            // genre the server published, which is the one its browse list already shows.
+            await MergeRemoteCatalog();
+
             SongSorting.SortEntries(_songCache, _sortedSongs);
             FillContainers();
             stopwatch.Stop();

@@ -59,6 +59,19 @@ namespace YARG.Helpers
         public static string ServerLibraryPath { get; private set; }
 
         /// <summary>
+        /// Songs fetched one at a time because somebody played them, as opposed to
+        /// <see cref="ServerLibraryPath"/>, which the whole-library mirror fills.
+        /// </summary>
+        /// <remarks>
+        /// One song per subfolder, named by its chart hash. That layout is not tidiness: it
+        /// lets a freshly fetched song be scanned by pointing the scanner at ONE directory
+        /// holding ONE file, so the cost of materialising a song does not grow with the number
+        /// of songs already cached. Scanning a single flat folder would make the hundredth
+        /// song cost a hundred times the first.
+        /// </remarks>
+        public static string ServerCachePath { get; private set; }
+
+        /// <summary>
         /// YARC Launcher path.
         /// </summary>
         public static string LauncherPath { get; private set; }
@@ -143,6 +156,7 @@ namespace YARG.Helpers
             SongCachePath = Path.Combine(PersistentDataPath, "songcache.bin");
             BadSongsPath = Path.Combine(PersistentDataPath, "badsongs.txt");
             ServerLibraryPath = Path.Combine(PersistentDataPath, "ServerLibrary");
+            ServerCachePath = Path.Combine(PersistentDataPath, "ServerCache");
 
             // Get the launcher paths
 #if UNITY_EDITOR_OSX || UNITY_STANDALONE_OSX

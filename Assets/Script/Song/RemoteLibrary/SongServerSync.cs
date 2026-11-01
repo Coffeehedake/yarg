@@ -409,7 +409,11 @@ namespace YARG.Song.RemoteLibrary
             }
         }
 
-        private static async UniTask<long> FetchOne(string root, string hash, string destination,
+        // internal rather than private because fetch-on-play needs exactly this: one song,
+        // downloaded to a .part and only named once it verifies. Writing a second downloader
+        // for the single-song case would mean a second set of hostile-server behaviours to get
+        // right, and HostileServerProbe only exercises this one.
+        internal static async UniTask<long> FetchOne(string root, string hash, string destination,
             CancellationToken token)
         {
             // Checked again here, not only where the list is parsed. This is the line that
