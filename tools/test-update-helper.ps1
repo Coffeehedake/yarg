@@ -132,6 +132,32 @@ Check 'the install is untouched'        ((Get-BuildTag $install) -eq 'OLD')
 Check 'the staged build is still staged' (Test-Path (Join-Path $staged 'YARG.exe'))
 Stop-Process -Id $game.Id -Force -ErrorAction SilentlyContinue
 
+Write-Output '=== 4. a HELD install folder still updates, via the contents swap ==='
+# This is the case MSI actually hit: the install folder could not be renamed because something
+# held it - it sits inside an SMB share - while its children were perfectly free. A process
+# whose current directory is the folder reproduces that exactly. Takes ~30s because the helper
+# retries the rename before falling back.
+Reset-Scratch
+$install = Join-Path $root 'install'
+$staged  = Join-Path $root 'staged'
+$marker  = Join-Path $root 'update-pending.json'
+New-FakeInstall $install 'OLD'
+New-FakeInstall $staged  'NEW'
+Write-Marker $marker $staged $install 4187
+$game = Start-ShortLivedGame 2
+$holder = Start-Process -FilePath 'powershell.exe' `
+    -ArgumentList '-NoProfile', '-Command', 'Start-Sleep -Seconds 120' `
+    -WorkingDirectory $install -PassThru -WindowStyle Hidden
+Start-Sleep -Seconds 1
+& $helper -GamePid $game.Id -Marker $marker -WaitSeconds 30 | Out-Null
+$rc = $LASTEXITCODE
+Stop-Process -Id $holder.Id -Force -ErrorAction SilentlyContinue
+Check 'helper still exits 0'            ($rc -eq 0)
+Check 'the new build is in place'       ((Get-BuildTag $install) -eq 'NEW')
+Check 'the install folder was not moved' (Test-Path $install)
+Check 'the marker was removed'          (-not (Test-Path $marker))
+
+Reset-Scratch
 Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Output ''
