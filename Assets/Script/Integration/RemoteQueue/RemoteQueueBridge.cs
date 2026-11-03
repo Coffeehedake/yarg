@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -6,6 +6,7 @@ using UnityEngine;
 using YARG.Core.Logging;
 using YARG.Core.Song;
 using YARG.Menu.MusicLibrary;
+using YARG.Playlists;
 using YARG.Song;
 
 namespace YARG.Integration.RemoteQueue
@@ -95,18 +96,28 @@ namespace YARG.Integration.RemoteQueue
     /// fire-and-forget, and an HTTP handler needs the answer. Hence the
     /// wait-with-timeout below.
     ///
-    /// Second, and this is the part that would otherwise produce a silent
-    /// nothing-happened: THERE ARE TWO QUEUES.
+    /// Second, the queue this writes to. There used to be TWO: the setlist being
+    /// built in the menu, and a SNAPSHOT of it that gameplay ran off once "Start
+    /// Setlist" was pressed. Adding to the wrong one looked identical to the guest -
+    /// the request succeeded and the song never played.
     ///
-    ///   - In the menu, the setlist being built is <c>MusicLibraryMenu.ShowPlaylist</c>.
-    ///   - Once "Start Setlist" is pressed, gameplay runs off a SNAPSHOT of it in
-    ///     <c>GlobalVariables.State.ShowSongs</c>, indexed by <c>ShowIndex</c>.
+    /// Upstream's #1758 removed that duality, and this was ported onto it when the
+    /// fork was brought current on 2026-11-02. <c>MusicLibraryMenu.ShowPlaylist</c>
+    /// IS <c>Setlist.Playlist</c> now, so there is one queue and writing to it is
+    /// unambiguous. What survives from the old shape is the GUARD, which is not an
+    /// artefact of having had two queues: during a show, the song playing and
+    /// everything behind it stay untouchable, because <c>Setlist.Index</c> is a
+    /// POSITION rather than a reference to a song, so editing behind it silently
+    /// repoints the show at something else.
     ///
-    /// Adding to the wrong one looks identical to the guest - the request
-    /// succeeds and the song never plays. So an add is routed by what is actually
-    /// happening, and when neither queue is reachable (a single song is playing,
-    /// no show, no library menu loaded) the song is held in <see cref="_pending"/>
-    /// and flushed into the setlist the moment the library menu exists again.
+    /// The menu is still told when it is open, for the toast and the redraw - the
+    /// room should see on the TV that somebody queued from their phone - and with no
+    /// menu loaded the song is held in <see cref="_pending"/> and flushed in the
+    /// moment the library menu exists again. That holding is now a choice rather
+    /// than a necessity, since <c>Setlist.Playlist</c> is static and reachable with
+    /// no menu at all; it stays because "pending" is part of the HTTP contract the
+    /// phone app transcribes, and widening a currency merge into a behaviour change
+    /// is not this change.
     /// </summary>
     public static class RemoteQueueBridge
     {
@@ -117,6 +128,36 @@ namespace YARG.Integration.RemoteQueue
         /// phone until it times out on its own.
         /// </summary>
         private const int MainThreadTimeoutMs = 5000;
+
+        /// <summary>
+        /// Index, in <c>Setlist.Playlist.SongHashes</c>, of the song being played - the last
+        /// position a remote request may not touch - or -1 when no show is running.
+        ///
+        /// It is deliberately NOT <c>Setlist.Index</c>, which counts positions in
+        /// <c>Setlist.ResolveSongs()</c>. That skips every hash the library cannot resolve, so the
+        /// two disagree by one for each unresolvable hash ahead of the playing song. Guarding with
+        /// one and editing with the other is exactly how an edit lands on the wrong side of the
+        /// playing position, and it would do so only on a library where a queued song had gone
+        /// missing - which is to say, almost never, and never on the machine it was written on.
+        /// Everything on the show path here is in hash space for that reason.
+        /// </summary>
+        private static int PlayingHashIndex()
+        {
+            if (!Setlist.IsPlaying)
+            {
+                return -1;
+            }
+
+            var songs = Setlist.ResolveSongs();
+            if (Setlist.Index < 0 || Setlist.Index >= songs.Count)
+            {
+                // A show is running but the position names no song. Refuse everything rather than
+                // report "no show", which would hand a phone the whole queue to rearrange.
+                return Setlist.Playlist.SongHashes.Count;
+            }
+
+            return Setlist.Playlist.SongHashes.IndexOf(songs[Setlist.Index].Hash);
+        }
 
         /// <summary>Songs queued when there was nowhere to put them yet.</summary>
         private static readonly List<SongEntry> _pending = new();
@@ -175,12 +216,14 @@ namespace YARG.Integration.RemoteQueue
 
                 var view = new RemoteQueueView();
 
-                if (GlobalVariables.State.PlayingAShow)
+                if (Setlist.IsPlaying)
                 {
                     view.playing_show = true;
-                    view.index = GlobalVariables.State.ShowIndex;
+                    // Both of these are in resolved space, and must stay in the SAME space as
+                    // each other: the phone draws view.songs and highlights view.index in it.
+                    view.index = Setlist.Index;
                     view.target = "show";
-                    foreach (var song in GlobalVariables.State.ShowSongs)
+                    foreach (var song in Setlist.ResolveSongs())
                     {
                         view.songs.Add(ToRemote(song));
                     }
@@ -231,12 +274,13 @@ namespace YARG.Integration.RemoteQueue
             {
                 FlushPendingOnMain();
 
-                if (GlobalVariables.State.PlayingAShow)
+                if (Setlist.IsPlaying)
                 {
-                    // Append to the running show. The pause menu advances by
-                    // ShowIndex against this list, so a song added here plays
-                    // after the ones already ahead of it.
-                    GlobalVariables.State.ShowSongs.Add(song);
+                    // Append to the running show. The score screen advances with
+                    // Setlist.TryAdvance, so a song added here plays after the ones
+                    // already ahead of it. AddSong refuses a song that is already
+                    // queued, where the old snapshot would have taken it twice.
+                    Setlist.Playlist.AddSong(song);
                     return "show";
                 }
 
@@ -271,20 +315,19 @@ namespace YARG.Integration.RemoteQueue
             {
                 FlushPendingOnMain();
 
-                if (GlobalVariables.State.PlayingAShow)
+                if (Setlist.IsPlaying)
                 {
-                    var songs = GlobalVariables.State.ShowSongs;
-                    var at = songs.FindIndex(s => s.Hash.Equals(song.Hash));
+                    var at = Setlist.Playlist.SongHashes.IndexOf(song.Hash);
 
                     // Never touch the song being played or anything already
                     // played: the index would then point at a different song and
                     // the show would jump. Only what is still ahead is editable.
-                    if (at <= GlobalVariables.State.ShowIndex)
+                    if (!CanEditWithinShow(at, PlayingHashIndex()))
                     {
                         return false;
                     }
 
-                    songs.RemoveAt(at);
+                    Setlist.Playlist.RemoveSong(song);
                     return true;
                 }
 
@@ -336,22 +379,26 @@ namespace YARG.Integration.RemoteQueue
             {
                 FlushPendingOnMain();
 
-                if (GlobalVariables.State.PlayingAShow)
+                if (Setlist.IsPlaying)
                 {
-                    var songs = GlobalVariables.State.ShowSongs;
-                    var at = songs.FindIndex(s => s.Hash.Equals(song.Hash));
+                    var hashes = Setlist.Playlist.SongHashes;
+                    var at = hashes.IndexOf(song.Hash);
                     var to = up ? at - 1 : at + 1;
 
-                    // Same rule as removal, and one more: nothing may be moved
-                    // into or before the currently playing slot.
-                    if (at <= GlobalVariables.State.ShowIndex ||
-                        to <= GlobalVariables.State.ShowIndex ||
-                        to >= songs.Count)
+                    if (!CanMoveWithinShow(at, to, PlayingHashIndex(), hashes.Count))
                     {
                         return MoveResult.Refused;
                     }
 
-                    (songs[at], songs[to]) = (songs[to], songs[at]);
+                    if (up)
+                    {
+                        Setlist.Playlist.MoveSongUp(song);
+                    }
+                    else
+                    {
+                        Setlist.Playlist.MoveSongDown(song);
+                    }
+
                     return MoveResult.Moved;
                 }
 
@@ -451,12 +498,9 @@ namespace YARG.Integration.RemoteQueue
                 // start a different one is not a party feature, it is a way to
                 // start an argument. "Next" is the strongest thing a vote should
                 // be able to do to a song already in progress.
-                if (GlobalVariables.State.PlayingAShow)
+                if (Setlist.IsPlaying)
                 {
-                    var songs = GlobalVariables.State.ShowSongs;
-                    var at = Math.Min(GlobalVariables.State.ShowIndex + 1, songs.Count);
-                    songs.Insert(at, song);
-                    return true;
+                    return InsertNextInShow(song);
                 }
 
                 var menu = UnityEngine.Object.FindAnyObjectByType<MusicLibraryMenu>();
@@ -506,27 +550,21 @@ namespace YARG.Integration.RemoteQueue
         {
             RunOnMain(() =>
             {
-                if (GlobalVariables.State.PlayingAShow)
+                if (Setlist.IsPlaying)
                 {
-                    var songs = GlobalVariables.State.ShowSongs;
-                    var first = GlobalVariables.State.ShowIndex + 1;
-                    if (first >= songs.Count - 1)
+                    var hashes = Setlist.Playlist.SongHashes;
+                    var floor = PlayingHashIndex();
+
+                    var unplayed = new List<string>();
+                    for (var i = floor + 1; i < hashes.Count; i++)
                     {
-                        return true;
+                        unplayed.Add(hashes[i].ToString());
                     }
 
-                    var tail = songs.GetRange(first, songs.Count - first);
-                    var order = RemoteQueueVotes.SortByScore(tail.Select(s => s.Hash.ToString()));
-
-                    var byHash = new Dictionary<string, SongEntry>();
-                    foreach (var s in tail)
+                    var reordered = QueueInVoteOrder(hashes, floor, RemoteQueueVotes.SortByScore(unplayed));
+                    if (reordered != null)
                     {
-                        byHash[s.Hash.ToString()] = s;
-                    }
-
-                    for (var i = 0; i < order.Count; i++)
-                    {
-                        songs[first + i] = byHash[order[i]];
+                        Setlist.Playlist.ReplaceSongs(reordered);
                     }
 
                     return true;
@@ -570,11 +608,9 @@ namespace YARG.Integration.RemoteQueue
 
             FlushPendingOnMain();
 
-            if (outcome == NominationOutcome.PlayNext && GlobalVariables.State.PlayingAShow)
+            if (outcome == NominationOutcome.PlayNext && Setlist.IsPlaying)
             {
-                var songs = GlobalVariables.State.ShowSongs;
-                var at = Math.Min(GlobalVariables.State.ShowIndex + 1, songs.Count);
-                songs.Insert(at, song);
+                InsertNextInShow(song);
                 return outcome;
             }
 
@@ -624,12 +660,157 @@ namespace YARG.Integration.RemoteQueue
             for_setlist = nomination.ForSetlist.Count,
         };
 
+        /// <summary>
+        /// Puts a song immediately after the one playing, in a running show. Main thread only.
+        /// Returns false when the queue was deliberately left alone.
+        ///
+        /// Shared by the two paths a won "play next" vote can arrive on - settled by the clock and
+        /// settled by the caller - because the index arithmetic is the sort that is right once and
+        /// then quietly wrong in the copy.
+        /// </summary>
+        private static bool InsertNextInShow(SongEntry song)
+        {
+            var reordered = QueueWithSongNext(Setlist.Playlist.SongHashes, PlayingHashIndex(), song.Hash);
+            if (reordered == null)
+            {
+                return false;
+            }
+
+            Setlist.Playlist.ReplaceSongs(reordered);
+            return true;
+        }
+
+        // ------------------------------------------------------------------
+        // The show guard, as pure functions
+        //
+        // Everything that decides WHETHER a remote request may touch the queue, and WHERE in it,
+        // lives here taking plain numbers. Not for tidiness: the thing being protected is the
+        // playing position, the protection is index arithmetic, and a compile cannot tell a
+        // correct offset from one that is out by one. They are PUBLIC, which for helpers this
+        // small looks like over-exposure and is not: Assets/Editor is a separate assembly, so
+        // `internal` does not reach SetlistGuardProbe - measured, as 81 CS0117 errors. The probe
+        // is the only way this gets measured at all, since a show cannot be started headless.
+        // `floor` is always a position in Setlist.Playlist.SongHashes; see PlayingHashIndex for
+        // why that space and not the resolved one.
+        // ------------------------------------------------------------------
+
+        /// <summary>
+        /// Whether a remote request may touch the song at <paramref name="at"/>, given that
+        /// <paramref name="floor"/> is playing. A song that is not in the queue gives
+        /// <paramref name="at"/> = -1 and is refused by the same comparison.
+        /// </summary>
+        public static bool CanEditWithinShow(int at, int floor)
+        {
+            return at > floor;
+        }
+
+        /// <summary>
+        /// Whether a remote request may move the song at <paramref name="at"/> to
+        /// <paramref name="to"/>. Same rule as editing, and one more: nothing may be moved INTO or
+        /// before the playing slot, which is a separate clause because the destination is not the
+        /// thing being checked above.
+        /// </summary>
+        public static bool CanMoveWithinShow(int at, int to, int floor, int count)
+        {
+            return CanEditWithinShow(at, floor) && to > floor && to < count;
+        }
+
+        /// <summary>
+        /// The queue a won "play next" produces: <paramref name="hash"/> immediately after
+        /// <paramref name="floor"/>. Null means leave the queue exactly as it is.
+        /// </summary>
+        public static List<HashWrapper> QueueWithSongNext(IReadOnlyList<HashWrapper> hashes, int floor,
+            HashWrapper hash)
+        {
+            var reordered = new List<HashWrapper>(hashes);
+            var existing = reordered.IndexOf(hash);
+            if (existing >= 0 && !CanEditWithinShow(existing, floor))
+            {
+                // Already played. Moving it forward would drag the playing position with it, and
+                // the setlist cannot hold a song twice, so there is nothing to do here that is
+                // both safe and visible.
+                return null;
+            }
+
+            var at = Math.Min(floor + 1, reordered.Count);
+            if (existing >= 0)
+            {
+                // No adjustment to `at` for the position this vacates, which looks like an
+                // omission and is not. Getting here means CanEditWithinShow said yes, so
+                // existing >= floor + 1, while at <= floor + 1: the song being moved is never
+                // BEFORE the slot it is moving to, so the removal never shifts that slot.
+                // There was an `if (existing < at) at--;` here until it was written down that
+                // way - trying to make the probe catch its absence is what showed it could
+                // never run. Arithmetic that cannot execute still has to be read by whoever
+                // comes next, and it claims a case exists.
+                reordered.RemoveAt(existing);
+            }
+
+            reordered.Insert(Math.Min(at, reordered.Count), hash);
+            return reordered;
+        }
+
+        /// <summary>
+        /// The queue a settled vote produces: everything up to and including <paramref name="floor"/>
+        /// exactly where it was, and the rest in <paramref name="order"/>. Null means there was
+        /// nothing to reorder.
+        /// </summary>
+        public static List<HashWrapper> QueueInVoteOrder(IReadOnlyList<HashWrapper> hashes, int floor,
+            List<string> order)
+        {
+            var first = floor + 1;
+            if (first >= hashes.Count - 1)
+            {
+                // One song left ahead, or none. Nothing a sort could change.
+                return null;
+            }
+
+            var tail = new List<HashWrapper>();
+            for (var i = first; i < hashes.Count; i++)
+            {
+                tail.Add(hashes[i]);
+            }
+
+            var byText = new Dictionary<string, HashWrapper>();
+            foreach (var hash in tail)
+            {
+                byText[hash.ToString()] = hash;
+            }
+
+            var reordered = new List<HashWrapper>();
+            for (var i = 0; i < first; i++)
+            {
+                reordered.Add(hashes[i]);
+            }
+
+            foreach (var text in order ?? new List<string>())
+            {
+                if (byText.TryGetValue(text, out var hash) && !reordered.Contains(hash))
+                {
+                    reordered.Add(hash);
+                }
+            }
+
+            // Anything the sort did not name goes back on the end. The version before the 11-02
+            // port indexed the sorted list positionally, so a short result left stale entries in
+            // place and an unknown one threw: a reorder must never be able to lose a song.
+            foreach (var hash in tail)
+            {
+                if (!reordered.Contains(hash))
+                {
+                    reordered.Add(hash);
+                }
+            }
+
+            return reordered;
+        }
+
         /// <summary>The add path, shared by a direct queue and a won vote. Main thread only.</summary>
         private static void AddOnMain(SongEntry song)
         {
-            if (GlobalVariables.State.PlayingAShow)
+            if (Setlist.IsPlaying)
             {
-                GlobalVariables.State.ShowSongs.Add(song);
+                Setlist.Playlist.AddSong(song);
                 return;
             }
 
@@ -670,11 +851,11 @@ namespace YARG.Integration.RemoteQueue
                     return;
                 }
 
-                if (GlobalVariables.State.PlayingAShow)
+                if (Setlist.IsPlaying)
                 {
                     foreach (var song in _pending)
                     {
-                        GlobalVariables.State.ShowSongs.Add(song);
+                        Setlist.Playlist.AddSong(song);
                     }
 
                     YargLogger.LogFormatInfo("Remote queue: flushed {0} pending song(s) into the running show",

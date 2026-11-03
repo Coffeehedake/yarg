@@ -168,9 +168,9 @@ namespace YARG.Menu.ScoreScreen
             // Only during a setlist with something still to come: after the last
             // song there is nothing for a vote to reorder, and outside a show the
             // library menu is where songs get queued anyway.
-            if (GlobalVariables.State.PlayingAShow &&
-                GlobalVariables.State.ShowIndex + 1 < GlobalVariables.State.ShowSongs.Count &&
-                RemoteQueueServer.IsRunning)
+            // Setlist.HasNext is this condition exactly - IsPlaying and a song after the current
+            // one - so it replaces it rather than being a near-enough stand-in for it.
+            if (Setlist.HasNext && RemoteQueueServer.IsRunning)
             {
                 RemoteQueueIntermission.Open(RemoteQueueIntermission.DefaultSeconds);
             }

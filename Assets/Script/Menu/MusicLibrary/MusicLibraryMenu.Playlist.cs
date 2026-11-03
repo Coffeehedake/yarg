@@ -490,13 +490,11 @@ namespace YARG.Menu.MusicLibrary
 
             ShowPlaylist.AddSong(song);
 
-            if (ShowPlaylist.Count == 1)
-            {
-                // Same reason as AddToPlaylist: the navigation scheme has to be
-                // rebuilt once the setlist stops being empty.
-                SetNavigationScheme(true);
-            }
-
+            // No SetNavigationScheme call here any more. OnSetlistChanged, subscribed to
+            // Setlist.Changed since upstream's #1758, rebuilds it on the same empty-to-non-empty
+            // transition - and checks IsNavigationSchemeBlocked() first, which this did not. A
+            // phone can queue a song while the player has a popup or a dialog open on the TV, so
+            // the unguarded version could rebuild the scheme out from under it.
             ToastManager.ToastSuccess(Localize.Key("Menu.MusicLibrary.AddedToSet"));
             RefreshAndReselect();
         }
@@ -535,11 +533,7 @@ namespace YARG.Menu.MusicLibrary
                 }
             }
 
-            if (ShowPlaylist.Count == 1)
-            {
-                SetNavigationScheme(true);
-            }
-
+            // Left to OnSetlistChanged, as above.
             ToastManager.ToastSuccess(Localize.Key("Menu.MusicLibrary.AddedToSet"));
             RefreshAndReselect();
         }

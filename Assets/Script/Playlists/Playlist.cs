@@ -109,6 +109,42 @@ namespace YARG.Playlists
             }
         }
 
+        /// <summary>
+        /// Replaces the contents in one step, raising <see cref="Edited"/> exactly once.
+        ///
+        /// For the reorderings <see cref="MoveSongUp"/> and <see cref="MoveSongDown"/> cannot
+        /// express, because they move one place: inserting at a position, or sorting part of the
+        /// list. Doing those as a <see cref="Clear"/> plus a run of <see cref="AddSong"/> calls is
+        /// fine on a setlist nobody is playing, but during a show it empties the list the playback
+        /// position points into and raises an <see cref="Edited"/> per song, so every subscriber
+        /// sees a list that is briefly wrong. This exposes no intermediate state.
+        ///
+        /// Duplicates are dropped, keeping the first, because <see cref="AddSong"/> does not allow
+        /// a song in twice and a list that came through here should not differ from one built with it.
+        /// </summary>
+        public void ReplaceSongs(IEnumerable<HashWrapper> hashes)
+        {
+            if (hashes == null)
+            {
+                return;
+            }
+
+            var replacement = new List<HashWrapper>();
+            foreach (var hash in hashes)
+            {
+                if (!replacement.Contains(hash))
+                {
+                    replacement.Add(hash);
+                }
+            }
+
+            // In place rather than assigning a new list: SongHashes is a public field, and
+            // anything holding a reference to it would keep reading the old contents.
+            SongHashes.Clear();
+            SongHashes.AddRange(replacement);
+            OnEdited();
+        }
+
         public void Clear()
         {
             if (SongHashes.Count == 0)
