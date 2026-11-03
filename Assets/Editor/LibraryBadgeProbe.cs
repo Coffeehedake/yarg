@@ -2,11 +2,13 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Newtonsoft.Json.Linq;
 using UnityEditor;
 using UnityEngine;
 using YARG.Core.Song.Cache;
 using YARG.Helpers;
 using YARG.Menu.MusicLibrary;
+using YARG.Song;
 using YARG.Song.RemoteLibrary;
 
 namespace YARG.Editor
@@ -178,6 +180,15 @@ namespace YARG.Editor
                     Pass("the badge is appended after the formatted text, leaving it untouched");
                 }
 
+                // ---- a song BROWSED from the server, holding no bytes on this machine ----
+                // The badge and the "server:" filter both shipped BEFORE RemoteSongEntry
+                // existed, so neither has ever been asked about the one song that is most
+                // obviously the server's: one the player can see and has not downloaded.
+                // Built through RemoteCatalog.FromJson - production's own mapping, against a
+                // real catalogue - because a hand-made entry would only prove that a string
+                // comparison works.
+                CheckBrowsedEntries();
+
                 // ---- a null entry must not throw ----
                 // GetSecondaryText runs for every visible row on every frame of a scroll; an
                 // exception there is a menu that stops drawing rather than a message anyone
@@ -217,6 +228,91 @@ namespace YARG.Editor
 
             Debug.Log(_failures == 0 ? "PROBE RESULT: PASS" : $"PROBE RESULT: FAIL ({_failures})");
             EditorApplication.Exit(_failures == 0 ? 0 : 1);
+        }
+
+        /// <summary>
+        /// Asks whether an un-downloaded server song is treated as the server's.
+        /// </summary>
+        /// <remarks>
+        /// Skipped rather than failed when no catalogue is available: this probe's other
+        /// checks need only two folders on disk, and making all of them depend on a reachable
+        /// server would mean the badge stops being verifiable the moment vault2 is asleep.
+        /// </remarks>
+        private static void CheckBrowsedEntries()
+        {
+            string catalogPath = Environment.GetEnvironmentVariable("YARG_CATALOG_JSON") ?? "";
+            if (!File.Exists(catalogPath))
+            {
+                Debug.Log("PROBE SKIP: no catalogue at YARG_CATALOG_JSON, so browsed-song " +
+                    "behaviour was NOT measured");
+                return;
+            }
+
+            var songs = (JArray) JObject.Parse(File.ReadAllText(catalogPath))["songs"]!;
+            var remote = songs.OfType<JObject>().Select(RemoteCatalog.FromJson).ToList();
+            if (remote.Count == 0)
+            {
+                Fail("the catalogue parsed to zero remote entries, so nothing was measured");
+                return;
+            }
+
+            Debug.Log($"PROBE INFO: {remote.Count} browsed entries built from the catalogue");
+            Debug.Log($"PROBE INFO:   first one's ActualLocation is {remote[0].ActualLocation}");
+
+            int marked = 0, kept = 0, wronglyLocal = 0;
+            foreach (var e in remote)
+            {
+                if (SongViewType.WithServerBadge("ARTIST", e).Contains(SongViewType.BadgeMarkup))
+                {
+                    marked++;
+                }
+
+                // The filter half of the same question. A player who types "server:yes" to see
+                // what the server has, and is shown only what they already downloaded, has been
+                // answered the opposite of what they asked.
+                if (MirroredSongs.Matches(e, MirroredSongs.Want.Mirrored))
+                {
+                    kept++;
+                }
+
+                // And the other direction, because a filter that keeps everything under both
+                // answers is not a filter. "server:no" means "things I own", and a song with
+                // no bytes on this machine is not one of them.
+                if (MirroredSongs.Matches(e, MirroredSongs.Want.NotMirrored))
+                {
+                    wronglyLocal++;
+                }
+            }
+
+            if (marked != remote.Count)
+            {
+                Fail($"{remote.Count - marked} of {remote.Count} songs browsed FROM the server " +
+                    "carry no server badge");
+            }
+            else
+            {
+                Pass($"all {remote.Count} browsed songs carry the badge");
+            }
+
+            if (kept != remote.Count)
+            {
+                Fail($"\"server:yes\" hides {remote.Count - kept} of {remote.Count} songs that " +
+                    "exist only on the server");
+            }
+            else
+            {
+                Pass($"\"server:yes\" keeps all {remote.Count} browsed songs");
+            }
+
+            if (wronglyLocal > 0)
+            {
+                Fail($"\"server:no\" still shows {wronglyLocal} of {remote.Count} songs this " +
+                    "machine holds no bytes of");
+            }
+            else
+            {
+                Pass($"\"server:no\" excludes all {remote.Count} browsed songs");
+            }
         }
 
         private static List<YARG.Core.Song.SongEntry> Scan(List<string> folders)

@@ -57,7 +57,8 @@ namespace YARG.Menu.MusicLibrary
         }
 
         /// <summary>
-        /// Marks a song that came from the song server mirror.
+        /// Marks a song that came from the song server - mirrored to disk, or browsed from the
+        /// server with no bytes on this machine at all.
         /// </summary>
         /// <remarks>
         /// It rides on the ARTIST line rather than getting a control of its own, and that is
@@ -78,7 +79,7 @@ namespace YARG.Menu.MusicLibrary
         /// </remarks>
         public static string WithServerBadge(string secondaryText, SongEntry entry)
         {
-            if (!MirroredSongs.IsMirrored(entry))
+            if (!MirroredSongs.IsFromServer(entry))
             {
                 return secondaryText;
             }

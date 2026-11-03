@@ -36,9 +36,36 @@ namespace YARG.Song.RemoteLibrary
             NotMirrored,
         }
 
+        /// <summary>
+        /// The song's bytes are on this machine, under the mirror folder.
+        /// </summary>
         public static bool IsMirrored(SongEntry entry)
         {
             return IsUnder(entry?.ActualLocation, PathHelper.ServerLibraryPath);
+        }
+
+        /// <summary>
+        /// The song came from the song server, whether or not this machine holds it.
+        /// </summary>
+        /// <remarks>
+        /// This is the question the badge and the <c>server:</c> filter actually ask, and for
+        /// a while they asked <see cref="IsMirrored"/> instead. Both shipped before
+        /// <see cref="RemoteSongEntry"/> existed, and browsing without mirroring never
+        /// revisited them — so the song that is most obviously the server's, one the player
+        /// can see and has not downloaded, was the one song treated as local. Measured on a
+        /// real 6-song catalogue: 6 of 6 unbadged, and <c>server:yes</c> hid all 6, which is
+        /// the filter answering the opposite of what was asked.
+        ///
+        /// The type test is not a retreat from "THE SIGNAL IS THE PATH". For a song with no
+        /// bytes here there IS no path — <c>ActualLocation</c> is the synthetic
+        /// <c>server://&lt;hash&gt;</c> that exists only so the container can sort and
+        /// de-duplicate — so the entry's type is the whole of the available evidence, and it
+        /// is conclusive: a RemoteSongEntry exists because the server published it. Once such
+        /// a song IS fetched the path test would answer too, and both agree.
+        /// </remarks>
+        public static bool IsFromServer(SongEntry entry)
+        {
+            return entry is RemoteSongEntry || IsMirrored(entry);
         }
 
         /// <summary>
@@ -124,8 +151,8 @@ namespace YARG.Song.RemoteLibrary
         {
             return want switch
             {
-                Want.Mirrored    => IsMirrored(entry),
-                Want.NotMirrored => !IsMirrored(entry),
+                Want.Mirrored    => IsFromServer(entry),
+                Want.NotMirrored => !IsFromServer(entry),
                 _                => true,
             };
         }
