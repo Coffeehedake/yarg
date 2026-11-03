@@ -1,4 +1,4 @@
-using Cysharp.Threading.Tasks;
+﻿using Cysharp.Threading.Tasks;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -175,16 +175,24 @@ namespace YARG.Song
         /// </summary>
         /// <remarks>
         /// This is ADR-004 increment 3. It is behind an environment variable rather than a
-        /// setting because it is not finished: the entries browse, but they cannot yet be
-        /// PLAYED - <see cref="RemoteSongEntry"/> returns null from every loader, because the
-        /// code that turns .sng bytes into a chart lives on an internal class. Shipping a
-        /// settings toggle for a library whose songs do not start would be worse than not
-        /// shipping it. With the variable unset this method returns immediately and the game
-        /// behaves exactly as before.
+        /// setting on 2026-11-02, which is what it should have been: the reason for the
+        /// variable was that the entries browsed but could not be PLAYED, and that stopped
+        /// being true in the same commit that wrote it — `36ca1f2a` added the fetch-on-play
+        /// step in <see cref="Gameplay.GameManager"/> that materialises a
+        /// <see cref="RemoteSongEntry"/> into a real entry before any loader runs. A gate
+        /// justified by a limitation its own commit removed is not a feature flag, it is
+        /// shipping code switched off and forgetting.
+        ///
+        /// Measured before the gate came off, against the live server: three songs known only
+        /// from the catalogue downloaded, scanned and returned real charts — `RemotePlaybackProbe`,
+        /// cold 131–1208 ms, warm 4–9 ms from the cache.
+        ///
+        /// With the setting off, or no URL set, this returns immediately and the game behaves
+        /// exactly as before.
         /// </remarks>
         private static async UniTask MergeRemoteCatalog()
         {
-            if (Environment.GetEnvironmentVariable("YARG_REMOTE_CATALOG") != "1")
+            if (!SettingsManager.Settings.BrowseServerLibrary.Value)
             {
                 return;
             }

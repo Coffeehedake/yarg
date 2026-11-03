@@ -220,6 +220,29 @@ namespace YARG.Settings
             public ToggleSetting SyncOnStartup { get; } = new(true);
 
             /// <summary>
+            /// Whether to browse the server's whole library, playing a song by fetching it on
+            /// demand rather than mirroring everything first.
+            /// </summary>
+            /// <remarks>
+            /// Off by default, and deliberately separate from <see cref="SyncOnStartup"/>: the
+            /// two are alternatives rather than steps. Mirroring trades disk for certainty — the
+            /// songs are there whether or not the server is — while browsing trades that for a
+            /// library the size of the server's, at the cost of a wait on first play and nothing
+            /// at all when the server is down.
+            ///
+            /// This replaced a `YARG_REMOTE_CATALOG=1` environment variable on 2026-11-02. The
+            /// variable was not a feature flag so much as a way of shipping the code switched
+            /// off, and its stated reason — that the entries browse but cannot be played — was
+            /// made false by the same commit that wrote it, which added the fetch-on-play step
+            /// in <c>GameManager.Loading</c>. Measured against the live server before this was
+            /// promoted: three catalogue-only songs downloaded, scanned and returned real charts
+            /// (<c>RemotePlaybackProbe</c>, cold 131–1208 ms, warm 4–9 ms).
+            ///
+            /// Costs nothing until a URL is set, on the same terms as the rest of this group.
+            /// </remarks>
+            public ToggleSetting BrowseServerLibrary { get; } = new(false);
+
+            /// <summary>
             /// Where to look for a newer build of this fork.
             /// </summary>
             /// <remarks>
