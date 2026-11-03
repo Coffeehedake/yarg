@@ -39,6 +39,9 @@ namespace YARG.Editor
     {
         private static int _failures;
 
+        /// <summary>A mirrored file is named for its own chart hash; nothing else here is usable.</summary>
+        private static readonly Regex ChartHashName = new(@"^[0-9a-f]{40}$", RegexOptions.Compiled);
+
         private static void Fail(string m) { _failures++; Debug.LogError("PROBE FAIL: " + m); }
         private static void Pass(string m) => Debug.Log("PROBE PASS: " + m);
 
@@ -55,9 +58,23 @@ namespace YARG.Editor
 
             try
             {
+                // Only files whose NAME is a chart hash, because that is the property this probe
+                // depends on: it takes "known-good hash/bytes pairs for free" from the filenames,
+                // and SongServerSync correctly refuses anything that is not ^[0-9a-f]{40}$.
+                //
+                // Taking the first three files outright was fragile, and it broke on 2026-11-03.
+                // This folder is shared: SongServerSyncSmokeTest fills it with mirrored files,
+                // named for their hash, and other work had filled it with packed corpus cases
+                // named 01-plain.sng and so on. Those sorted first, so the three "known-good"
+                // hashes were not hashes, the client refused them exactly as it refuses a hostile
+                // server's garbage, and seven assertions failed - one of them reporting that the
+                // client had accepted MINUS THREE of six bad names. Nothing was wrong with the
+                // code under test.
                 string corpus = Path.Combine(Path.GetTempPath(), "yarg-song-server-smoketest");
                 var sources = Directory.Exists(corpus)
-                    ? Directory.GetFiles(corpus, "*.sng").OrderBy(x => x).ToList()
+                    ? Directory.GetFiles(corpus, "*.sng")
+                        .Where(f => ChartHashName.IsMatch(Path.GetFileNameWithoutExtension(f)))
+                        .OrderBy(x => x).ToList()
                     : new List<string>();
 
                 if (sources.Count < 3)
