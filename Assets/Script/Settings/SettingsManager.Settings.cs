@@ -243,6 +243,25 @@ namespace YARG.Settings
             public ToggleSetting BrowseServerLibrary { get; } = new(false);
 
             /// <summary>
+            /// How much disk the songs fetched by <see cref="BrowseServerLibrary"/> may use,
+            /// in gigabytes. Zero means no limit.
+            /// </summary>
+            /// <remarks>
+            /// Defaults to a BOUND rather than to unlimited, which is the opposite of how
+            /// <see cref="SyncOnStartup"/>'s mirror behaves, and the difference is deliberate.
+            /// The mirror holds songs somebody asked for and may be the only copy; the cache
+            /// holds whatever happened to get played and can be fetched again. An unbounded
+            /// cache was the defect this fixes: browsing exists so a player does not need the
+            /// whole server on disk, and without a ceiling it arrives there one song at a time.
+            ///
+            /// 10 GB is generous on purpose — roughly a thousand songs at the ~9 MB average of
+            /// the vault2 library. Eviction here can in principle cost data, unlike the server's
+            /// own pack cache, because the source is another machine that may no longer have the
+            /// song; a tight default would trade disk for that risk far too eagerly.
+            /// </remarks>
+            public IntSetting ServerCacheBudgetGb { get; } = new(10, 0, 2000);
+
+            /// <summary>
             /// Where to look for a newer build of this fork.
             /// </summary>
             /// <remarks>

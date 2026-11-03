@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -62,6 +62,11 @@ namespace YARG.Song.RemoteLibrary
         public static async UniTask<SongEntry?> Materialise(string serverUrl,
             RemoteSongEntry remote, CancellationToken token)
         {
+            // Before the early return on purpose. A song played twice in one session takes the
+            // fast path below, and if the play were only recorded after it, the second play
+            // would leave the song looking as stale as it did before anyone touched it.
+            ServerCacheBudget.RecordPlayed(remote.ChartHash);
+
             // Played before in this session: the scanner has already answered for these bytes.
             if (remote.MaterialisedEntry != null)
             {
@@ -94,6 +99,12 @@ namespace YARG.Song.RemoteLibrary
                 }
 
                 remote.Materialise(entry);
+
+                // After the song is in hand, never before: a sweep that ran first could evict
+                // the very bytes this call is about to return. The hash just fetched is passed
+                // as protected for the same reason, which is the hazard the server's pack cache
+                // had to add a counter for after measuring it happen.
+                EnforceBudget(hash);
                 return entry;
             }
             catch (OperationCanceledException)
@@ -104,6 +115,41 @@ namespace YARG.Song.RemoteLibrary
             {
                 YargLogger.LogWarning($"Could not fetch {hash} from the song server: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// Brings the fetch cache back within its configured budget, if it has one.
+        /// </summary>
+        /// <remarks>
+        /// Protects the song just fetched and the song currently loaded. The second is belt and
+        /// braces: a file open for playback cannot be deleted on Windows anyway, so the sweep
+        /// would skip it — but relying on an OS behaviour to protect a player's audio is not a
+        /// policy, it is a coincidence that holds on one platform.
+        /// </remarks>
+        private static void EnforceBudget(string justFetched)
+        {
+            try
+            {
+                int gb = SettingsManager.Settings.ServerCacheBudgetGb.Value;
+                if (gb <= 0)
+                {
+                    return;
+                }
+
+                var protect = new List<string> { justFetched };
+                var playing = GlobalVariables.State.CurrentSong;
+                if (playing != null)
+                {
+                    protect.Add(playing.Hash.ToString());
+                }
+
+                ServerCacheBudget.Enforce((long) gb * 1024L * 1024L * 1024L, protect);
+            }
+            catch (Exception ex)
+            {
+                // A cache that is too big is a worse day than a song that would not start.
+                YargLogger.LogWarning($"Could not enforce the server cache budget: {ex.Message}");
             }
         }
 

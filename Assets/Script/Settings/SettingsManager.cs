@@ -136,6 +136,7 @@ namespace YARG.Settings
                 new TextMetadata(() => SongServerStatus.DescribeMirror()),
                 nameof(Settings.SyncOnStartup),
                 nameof(Settings.BrowseServerLibrary),
+                nameof(Settings.ServerCacheBudgetGb),
                 new ButtonRowMetadata(nameof(Settings.SyncFromSongServer),
                     nameof(Settings.CancelSongServerSync)),
             },

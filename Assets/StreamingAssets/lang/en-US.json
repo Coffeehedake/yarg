@@ -1970,6 +1970,10 @@
               "Name": "Sync On Startup",
               "Description": "Mirror new songs from the song server automatically when YARG starts. Does nothing if no server URL is set, and never interrupts startup if the server cannot be reached."
             },
+            "ServerCacheBudgetGb": {
+              "Name": "Server Song Cache Limit (GB)",
+              "Description": "How much disk the songs downloaded by Browse Server Library may use. When the limit is passed, the songs you played longest ago are removed first; the song you are playing is never removed. Set to 0 for no limit. This never touches songs mirrored by Sync On Startup, or any folder you added yourself."
+            },
             "BrowseServerLibrary": {
               "Name": "Browse Server Library",
               "Description": "Show every song on the server in your library, and download one only when you play it. Starts using no disk and grows: a song is kept once you have played it, and nothing removes it later, so this trades a full mirror for a copy of what you actually play. A song you have not played before takes a moment to start, and nothing on the server is playable while the server is unreachable. Does nothing if no server URL is set."
