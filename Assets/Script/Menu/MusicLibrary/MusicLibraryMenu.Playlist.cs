@@ -16,7 +16,7 @@ namespace YARG.Menu.MusicLibrary
 {
     public partial class MusicLibraryMenu
     {
-        public Playlist       ShowPlaylist   { get; set; }         = new(true);
+        public Playlist       ShowPlaylist => Setlist.Playlist;
         private Playlist      _lastPlaylistSelectPlaylist;
 
         private List<ViewType> CreatePlaylistSelectViewList()
@@ -438,7 +438,8 @@ namespace YARG.Menu.MusicLibrary
 
         private void StartSetlist()
         {
-            if (ShowPlaylist.Count > 0 && PlayerContainer.Players.Count > 0)
+            // TODO: Tell the player when none of the setlist's songs are playable, instead of doing nothing
+            if (PlayerContainer.Players.Count > 0 && Setlist.TryStart(out var firstSong))
             {
                 // If we are in the main library, save the current index
                 if (MenuState == MenuState.Library)
@@ -446,10 +447,7 @@ namespace YARG.Menu.MusicLibrary
                     _mainLibraryIndex = SelectedIndex;
                 }
 
-                GlobalVariables.State.PlayingAShow = true;
-                GlobalVariables.State.ShowSongs = ShowPlaylist.ToList();
-                GlobalVariables.State.CurrentSong = GlobalVariables.State.ShowSongs.First();
-                GlobalVariables.State.ShowIndex = 0;
+                GlobalVariables.State.CurrentSong = firstSong;
                 MenuManager.Instance.PushMenu(MenuManager.Menu.DifficultySelect);
             }
         }
@@ -465,12 +463,6 @@ namespace YARG.Menu.MusicLibrary
             if (CurrentSelection is SongViewType selection)
             {
                 ShowPlaylist.AddSong(selection.SongEntry);
-                if (ShowPlaylist.Count == 1)
-                {
-                    // We need to rebuild the navigation scheme after adding the first song
-                    SetNavigationScheme(true);
-                }
-
                 ToastManager.ToastSuccess(Localize.Key("Menu.MusicLibrary.AddedToSet"));
             }
         }
@@ -632,12 +624,6 @@ namespace YARG.Menu.MusicLibrary
             else
             {
                 ToastManager.ToastWarning(Localize.Key("Menu.MusicLibrary.NoSongsInPlaylist"));
-            }
-
-            if (count > 0 && ShowPlaylist.Count == count)
-            {
-                // We need to rebuild the navigation scheme the first time we add song(s)
-                SetNavigationScheme(true);
             }
 
             RefreshAndReselect();

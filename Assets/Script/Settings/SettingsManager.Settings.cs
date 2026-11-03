@@ -49,6 +49,12 @@ namespace YARG.Settings
         Pages,
     }
 
+    public enum DateAddedSortMode
+    {
+        ChartFileDate,
+        ReleaseDate,
+    }
+
     public enum SecondaryAlbumSortMode
     {
         AlbumsByTitleSongsByTitle,
@@ -444,6 +450,13 @@ namespace YARG.Settings
                 {
                     SongLengthLabelMode.RangeLabels,
                     SongLengthLabelMode.LegacyLabels,
+                };
+
+            public DropdownSetting<DateAddedSortMode> DateAddedSort { get; }
+                = new(DateAddedSortMode.ChartFileDate, _ => RefreshSongs())
+                {
+                    DateAddedSortMode.ChartFileDate,
+                    DateAddedSortMode.ReleaseDate,
                 };
 
             public ToggleSetting EnablePlayAShow { get; } = new(true);

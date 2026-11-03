@@ -231,7 +231,7 @@ namespace YARG.Menu.ScoreScreen
                 SongOffsetContainer.SaveOffsets(_offsets);
             }
             MusicLibraryMenu.CurrentlyPlaying = GlobalVariables.State.CurrentSong;
-            if (!GlobalVariables.State.PlayingAShow && !_restartingSong)
+            if (!Setlist.IsPlaying && !_restartingSong)
             {
                 GlobalVariables.State = PersistentState.Default;
             }
@@ -523,13 +523,10 @@ namespace YARG.Menu.ScoreScreen
 
                     if (!_analyzingReplay)
                     {
-                        GlobalVariables.State.ShowIndex++;
-                        if (GlobalVariables.State.PlayingAShow &&
-                            GlobalVariables.State.ShowIndex < GlobalVariables.State.ShowSongs.Count)
+                        if (Setlist.TryAdvance(out var nextSong))
                         {
                             // Reset CurrentSong and launch back into the Gameplay scene
-                            GlobalVariables.State.CurrentSong =
-                                GlobalVariables.State.ShowSongs[GlobalVariables.State.ShowIndex];
+                            GlobalVariables.State.CurrentSong = nextSong;
                             GlobalVariables.Instance.LoadScene(SceneIndex.Gameplay);
                         }
                         else
@@ -539,7 +536,7 @@ namespace YARG.Menu.ScoreScreen
                                 GlobalVariables.State.CurrentReplay = null;
                             }
 
-                            GlobalVariables.State.PlayingAShow = false;
+                            Setlist.EndShow();
                             GlobalVariables.Instance.LoadScene(SceneIndex.Menu);
                         }
                     }
@@ -547,7 +544,7 @@ namespace YARG.Menu.ScoreScreen
 
             _endEarlyButtonEntry = new NavigationScheme.Entry(MenuAction.Red, "Menu.ScoreScreen.EndSetlistEarly", () =>
             {
-                GlobalVariables.State.PlayingAShow = false;
+                Setlist.EndShow();
                 GlobalVariables.Instance.LoadScene(SceneIndex.Menu);
             });
 
@@ -757,8 +754,7 @@ namespace YARG.Menu.ScoreScreen
                 buttons.Add(_showAdvancedButtonEntry);
             }
 
-            if (GlobalVariables.State.PlayingAShow &&
-                GlobalVariables.State.ShowIndex + 1 < GlobalVariables.State.ShowSongs.Count)
+            if (Setlist.HasNext)
             {
                 buttons.Insert(1, _endEarlyButtonEntry);
             }
