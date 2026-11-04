@@ -1,6 +1,7 @@
 ﻿#nullable enable
 using System;
 using System.IO;
+using System.Collections.Generic;
 using YARG.Core;
 using YARG.Core.Audio;
 using YARG.Core.Chart;
@@ -113,6 +114,18 @@ namespace YARG.Song
         /// </remarks>
         public override DateTime GetLastModifiedTime() => _materialised?.GetLastModifiedTime() ?? _lastWrite;
 
+        /// <summary>
+        /// The stem labels the server published for this song, and whether it ships its own
+        /// preview file.
+        /// </summary>
+        /// <remarks>
+        /// Only the preview uses these. The game previews a song by mixing every stem, so the
+        /// client has to know which stems exist before it can ask for them; see
+        /// <see cref="LoadPreviewAudio"/>.
+        /// </remarks>
+        private readonly List<string> _stems = new();
+        private bool _hasOwnPreview;
+
         private RemoteSongEntry(string chartHash, string packageHash, DateTime lastWrite)
         {
             _chartHash = chartHash;
@@ -135,7 +148,9 @@ namespace YARG.Song
             LoaderSettings settings,
             string         parsedYear,
             int            yearAsNumber,
-            DateTime       lastWrite)
+            DateTime       lastWrite,
+            IEnumerable<string>? stems = null,
+            bool           hasOwnPreview = false)
         {
             if (string.IsNullOrWhiteSpace(chartHash))
             {
@@ -156,6 +171,18 @@ namespace YARG.Song
             // If this ever stops agreeing with the server, every client disagrees about every
             // song and nothing else in the system will say so.
             entry._hash = HashWrapper.FromString(chartHash);
+
+            entry._hasOwnPreview = hasOwnPreview;
+            if (stems != null)
+            {
+                foreach (var stem in stems)
+                {
+                    if (!string.IsNullOrWhiteSpace(stem))
+                    {
+                        entry._stems.Add(stem);
+                    }
+                }
+            }
 
             // Without this the entry has metadata and browses as blank, because the sort strings
             // are private and are only ever derived here. Removing this one call was the probe's
@@ -218,6 +245,16 @@ namespace YARG.Song
         /// only when the mixer refuses it, because an undisposed MemoryStream per rejected
         /// preview is a leak nobody would look for.
         /// </para>
+        /// <para>
+        /// <b>Multi-stem songs are MIXED here, not chosen by the server.</b> Upstream previews a
+        /// song by adding every stem to one mixer (<c>CreateAudioMixer</c>), so a server picking
+        /// one stem is guessing at a question this method can answer properly. On the live
+        /// library that guess was wrong for 908 of 3,860 songs: Rock Band and Guitar Hero
+        /// packages keep the backing track in <c>song.ogg</c> and it is empty once every
+        /// instrument has its own stem, so the preview was digital silence - every sample zero,
+        /// measured. The server now serves one clip per stem and this builds the same
+        /// multi-channel mixer the game builds for a local song.
+        /// </para>
         /// </remarks>
         public override StemMixer? LoadPreviewAudio(float speed, bool enableCensoring)
         {
@@ -232,6 +269,21 @@ namespace YARG.Song
                 return null;
             }
 
+            // A package that ships its own preview, or has only one stem, needs no mixing - and
+            // the single-clip endpoint already serves exactly the right thing for both. Keeping
+            // them on that path also keeps the common case at one request: 3,861 of the live
+            // library's 4,085 songs have one stem, and 215 ship a preview.
+            if (_hasOwnPreview || _stems.Count <= 1)
+            {
+                return LoadSingleClipPreview(server, speed);
+            }
+
+            return LoadMixedPreview(server, speed, enableCensoring);
+        }
+
+        /// <summary>One clip, decoded as the whole preview. The original ADR-009 path.</summary>
+        private StemMixer? LoadSingleClipPreview(string server, float speed)
+        {
             var stream = RemoteSongFetcher.DownloadPreview(server, _chartHash);
             if (stream == null)
             {
@@ -250,6 +302,86 @@ namespace YARG.Song
                 YargLogger.LogFormatWarning("The server's preview for {0} would not decode",
                     _chartHash);
             }
+            return mixer;
+        }
+
+        /// <summary>
+        /// One channel per stem, mirroring YARG.Core's own <c>CreateAudioMixer</c>.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <c>Crowd</c> is skipped because upstream's preview skips it - <c>LoadPreviewAudio</c>
+        /// passes <c>SongStem.Crowd</c> as the stem to ignore - and a crowd track under a
+        /// thirty-second preview is noise over the thing being previewed.
+        /// </para>
+        /// <para>
+        /// A stem whose clip will not fetch or decode is skipped rather than failing the whole
+        /// preview: four stems of five is a preview, and none is silence. The mixer is only
+        /// abandoned when NO channel was added, because a mixer with no channels plays nothing
+        /// while looking like success - the same shape of bug as the silent stem this replaces.
+        /// </para>
+        /// </remarks>
+        private StemMixer? LoadMixedPreview(string server, float speed, bool enableCensoring)
+        {
+            var mixer = GlobalAudioHandler.CreateMixer(
+                "server://" + _chartHash + "/preview", speed, 0,
+                clampStemVolume: false, normalize: true);
+            if (mixer == null)
+            {
+                YargLogger.LogFormatWarning("Could not create a preview mixer for {0}", _chartHash);
+                return null;
+            }
+
+            int added = 0;
+            foreach (var stem in _stems)
+            {
+                if (!AudioHelpers.SupportedStems.TryGetValue(stem.ToLowerInvariant(),
+                        out var stemEnum))
+                {
+                    // Not a stem the game knows how to place in a mix. Skipped quietly: the
+                    // catalogue carries whatever the package held, and this is not an error.
+                    continue;
+                }
+                if (stemEnum == SongStem.Crowd)
+                {
+                    continue;
+                }
+                if (enableCensoring && stem.EndsWith("_explicit", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var stream = RemoteSongFetcher.DownloadStemPreview(server, _chartHash, stem);
+                if (stream == null)
+                {
+                    continue;
+                }
+                if (mixer.AddChannel(stream, stemEnum))
+                {
+                    added++;
+                }
+                else
+                {
+                    stream.Dispose();
+                    // Interpolated, not LogFormatWarning: YargLogger's generic overloads plus
+                    // their caller-info parameters make any multi-argument LogFormat* call
+                    // ambiguous (CS0121), and it reads as a missing method.
+                    YargLogger.LogWarning(
+                        $"The preview clip for {_chartHash} stem {stem} would not decode");
+                }
+            }
+
+            if (added == 0)
+            {
+                mixer.Dispose();
+                YargLogger.LogWarning(
+                    $"No stem of {_chartHash} produced a usable preview channel out of "
+                    + $"{_stems.Count} published");
+                return null;
+            }
+
+            YargLogger.LogInfo(
+                $"Mixed a server preview for {_chartHash} from {added} of {_stems.Count} stems");
             return mixer;
         }
 

@@ -193,6 +193,61 @@ namespace YARG.Song.RemoteLibrary
         }
 
         /// <summary>
+        /// One named stem's preview clip, for a song whose preview has to be mixed.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The server endpoint carries NO extension - <c>/song/{hash}/preview/{stem}</c> - on
+        /// purpose. The single-clip path is spelled <c>preview.ogg</c> and spent a day serving
+        /// mpeg bytes under that name; the type belongs in <c>Content-Type</c>, and BASS sniffs
+        /// the content anyway.
+        /// </para>
+        /// <para>
+        /// A 404 here is ordinary, not a fault: the catalogue lists the stems a package holds and
+        /// the caller walks that list, but a package can disagree with its own catalogue row
+        /// after a rescan. The caller skips the stem.
+        /// </para>
+        /// </remarks>
+        public static MemoryStream? DownloadStemPreview(string serverUrl, string chartHash,
+            string stem)
+        {
+            if (string.IsNullOrWhiteSpace(serverUrl) || string.IsNullOrWhiteSpace(chartHash)
+                || string.IsNullOrWhiteSpace(stem))
+            {
+                return null;
+            }
+
+            var url = serverUrl.TrimEnd('/') + "/song/" + chartHash.ToLowerInvariant()
+                + "/preview/" + Uri.EscapeDataString(stem);
+            try
+            {
+                using var response = PreviewClient.GetAsync(url).GetAwaiter().GetResult();
+                if (!response.IsSuccessStatusCode)
+                {
+                    YargLogger.LogInfo($"No preview for {chartHash} stem {stem}: "
+                        + $"the server answered {(int) response.StatusCode}");
+                    return null;
+                }
+
+                var bytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                if (bytes == null || bytes.Length == 0)
+                {
+                    YargLogger.LogWarning(
+                        $"The preview for {chartHash} stem {stem} came back empty");
+                    return null;
+                }
+
+                return new MemoryStream(bytes, writable: false);
+            }
+            catch (Exception ex)
+            {
+                YargLogger.LogWarning(
+                    $"Could not fetch the {stem} preview for {chartHash}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
         /// One client for every preview, with a short timeout.
         /// </summary>
         /// <remarks>

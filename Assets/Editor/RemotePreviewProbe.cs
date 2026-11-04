@@ -15,24 +15,26 @@ using YARG.Song.RemoteLibrary;
 namespace YARG.Editor
 {
     /// <summary>
-    /// Plays a server-cut preview through the game's own decoder.
+    /// Plays server-cut previews through the game's own decoder, and checks the right PATH was
+    /// taken for each kind of song.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This is the measurement ADR-009 named and could not take. The cutter was verified against
-    /// real encoders' CRCs, the clip was decoded by VLC's libvorbis and a person listened to one
-    /// - but the ADR's own standard is the REAL CLIENT, whose decoder is BASS, and nothing had
-    /// put a clip in front of it. "VLC played it" and "YARG will play it" are different claims.
+    /// ADR-009's standard is the real client, whose decoder is BASS. This calls
+    /// <c>RemoteSongEntry.LoadPreviewAudio</c> - the production path, the one the music library
+    /// calls when a song is highlighted - against the live server.
     /// </para>
     /// <para>
-    /// So this calls <c>RemoteSongEntry.LoadPreviewAudio</c> - the production path, the same one
-    /// the music library calls when a song is highlighted - against the live server, and asks
-    /// BASS whether what came back is audio.
+    /// <b>Counting channels is the whole point now.</b> A multi-stem song must come back as a
+    /// MIXER WITH MANY CHANNELS, because the game previews a song by mixing every stem and the
+    /// server's single-clip guess was digital silence for 908 of 3,860 songs. A mixer that merely
+    /// decodes is not evidence the mixing happened: the old single-clip path also returns a
+    /// perfectly good one-channel mixer, and it would pass every assertion about length.
     /// </para>
     /// <para>
-    /// A mixer that is merely non-null is not enough: a decoder handed rubbish can still produce
-    /// an empty stream. The length is checked against the window the server was asked for,
-    /// because a clip of zero seconds would satisfy every other assertion here.
+    /// So each case names the path it must take, and the single-stem and ships-its-own-preview
+    /// cases are the controls. Without them "channels &gt; 1" could be satisfied by a change that
+    /// made everything mix, which would waste 5 MB on songs that need 713 KB.
     /// </para>
     /// <para>
     /// Needs <c>YARG_CATALOG_JSON</c> and <c>YARG_SERVER_URL</c>. Without them it reports
@@ -90,52 +92,78 @@ namespace YARG.Editor
                     return;
                 }
 
-                // The entry reads the URL from settings, exactly as it does in a real game.
                 SettingsManager.Settings.SongServerUrl.Value = server;
                 Debug.Log($"PROBE INFO: server {server}");
 
                 var songs = (JArray) JObject.Parse(File.ReadAllText(catalogPath))["songs"]!;
-                var row = songs.OfType<JObject>().FirstOrDefault();
-                if (row == null)
+                if (songs.Count == 0)
                 {
                     Debug.LogError("PROBE INCONCLUSIVE: the catalogue is empty");
                     EditorApplication.Exit(2);
                     return;
                 }
 
-                var entry = RemoteCatalog.FromJson(row);
-                Debug.Log($"PROBE INFO: {entry.Artist} - {entry.Name}  chart {entry.ChartHash}");
-                Check("the song has no bytes on this disk, so this is the remote path",
-                    !entry.IsMaterialised);
+                bool sawMulti = false, sawSingle = false;
 
-                // ---- the measurement -------------------------------------------------------
-                var started = DateTime.UtcNow;
-                var mixer = entry.LoadPreviewAudio(1.0f, false);
-                var took = (DateTime.UtcNow - started).TotalMilliseconds;
-
-                Check("LoadPreviewAudio returned a mixer", mixer != null);
-                if (mixer == null)
+                foreach (var row in songs.OfType<JObject>())
                 {
-                    Debug.LogError("PROBE RESULT: FAIL - BASS would not decode the server's clip");
-                    EditorApplication.Exit(1);
-                    return;
+                    int stemCount = (row["assets"]?["stems"] as JArray)?.Count ?? 0;
+                    bool ownPreview = row["assets"]?["preview_audio"]?["name"] != null;
+                    bool shouldMix = stemCount > 1 && !ownPreview;
+
+                    var entry = RemoteCatalog.FromJson(row);
+                    Debug.Log($"PROBE INFO: {entry.Artist} - {entry.Name}  " +
+                        $"{stemCount} stems, ships own preview {ownPreview}, " +
+                        $"expect {(shouldMix ? "MIXED" : "single clip")}");
+
+                    Check("the song has no bytes on this disk, so this is the remote path",
+                        !entry.IsMaterialised);
+
+                    var started = DateTime.UtcNow;
+                    var mixer = entry.LoadPreviewAudio(1.0f, false);
+                    var took = (DateTime.UtcNow - started).TotalMilliseconds;
+
+                    if (mixer == null)
+                    {
+                        Fail($"LoadPreviewAudio returned null for {entry.Name}");
+                        continue;
+                    }
+
+                    using (mixer)
+                    {
+                        double length = mixer.Length;
+                        int channels = mixer.Channels.Count;
+                        Debug.Log($"PROBE INFO: BASS decoded it in {took:F0} ms, " +
+                            $"length {length:F2}s, {channels} channel(s)");
+
+                        // A decoder handed rubbish can still hand back an empty stream, and that
+                        // would satisfy "returned a mixer" perfectly well.
+                        Check($"{entry.Name}: the clip has real length, not zero", length > 1.0);
+                        Check($"{entry.Name}: and it is about the preview window",
+                            length > 5.0 && length < 90.0);
+
+                        if (shouldMix)
+                        {
+                            sawMulti = true;
+                            // THE measurement. One channel here means the server chose a stem
+                            // and the client accepted it - which is the defect, not the fix.
+                            Check($"{entry.Name}: mixed MANY channels from {stemCount} stems " +
+                                $"(got {channels})", channels > 1);
+                        }
+                        else
+                        {
+                            sawSingle = true;
+                            // The control. If this also mixes, every song pays 5 MB for a
+                            // preview that needs 713 KB.
+                            Check($"{entry.Name}: stayed on the single-clip path " +
+                                $"(got {channels} channel)", channels == 1);
+                        }
+                    }
                 }
 
-                using (mixer)
-                {
-                    double length = mixer.Length;
-                    Debug.Log($"PROBE INFO: BASS decoded it in {took:F0} ms, length {length:F2}s, " +
-                        $"{mixer.Channels.Count} channel set(s)");
+                Check("the catalogue covered a multi-stem song", sawMulti);
+                Check("the catalogue covered a single-clip song as a control", sawSingle);
 
-                    // A decoder handed rubbish can still hand back an empty stream, and that
-                    // would satisfy "returned a mixer" perfectly well.
-                    Check("the clip has real length, not zero", length > 1.0);
-                    Check("and it is about the preview window rather than the whole song",
-                        length > 5.0 && length < 90.0);
-                    Check("it has at least one channel", mixer.Channels.Count > 0);
-                }
-
-                // ---- the negative control --------------------------------------------------
                 // A hash the server does not have must answer null, not a mixer. Without this,
                 // a LoadPreviewAudio that returned some cached or default audio for anything
                 // would pass everything above.
@@ -143,6 +171,11 @@ namespace YARG.Editor
                     "0000000000000000000000000000000000000000");
                 Check("a song the server does not have yields no preview", missing == null);
                 missing?.Dispose();
+
+                var missingStem = RemoteSongFetcher.DownloadStemPreview(server,
+                    "0000000000000000000000000000000000000000", "guitar");
+                Check("nor does an unknown song's stem", missingStem == null);
+                missingStem?.Dispose();
 
                 Debug.Log(_failures == 0 ? "PROBE RESULT: PASS" : $"PROBE RESULT: FAIL ({_failures})");
                 EditorApplication.Exit(_failures == 0 ? 0 : 1);

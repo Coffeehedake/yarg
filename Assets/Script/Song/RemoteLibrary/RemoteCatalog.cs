@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -105,13 +106,49 @@ namespace YARG.Song.RemoteLibrary
                 Part(p, "harmony_vocals",        ref parts.HarmonyVocals);
             }
 
+            // The stems, and whether the package ships its own preview file. Both are only here
+            // for the preview: the game previews a song by mixing EVERY stem (YARG.Core's
+            // CreateAudioMixer), so the client needs to know which stems exist before it can ask
+            // the server for them. Without this it could only take the server's single-clip
+            // guess, and ADR-009 on the server records how wrong that guess is for a Rock Band
+            // package whose `song` stem is an empty backing track.
+            var stems = new List<string>();
+            bool hasOwnPreview = false;
+            if (n["assets"] is JObject assets)
+            {
+                if (assets["stems"] is JArray stemRows)
+                {
+                    foreach (var row in stemRows)
+                    {
+                        // `stem` is the catalogue's label ("guitar"), which is what maps to a
+                        // SongStem; `name` is the file. Prefer the label and fall back to the
+                        // file's base name so a package with an odd filename still mixes.
+                        var label = (string?) row["stem"];
+                        if (string.IsNullOrWhiteSpace(label))
+                        {
+                            var file = (string?) row["name"];
+                            label = string.IsNullOrWhiteSpace(file)
+                                ? null
+                                : Path.GetFileNameWithoutExtension(file);
+                        }
+                        if (!string.IsNullOrWhiteSpace(label) && !stems.Contains(label))
+                        {
+                            stems.Add(label);
+                        }
+                    }
+                }
+                hasOwnPreview = assets["preview_audio"] is JObject pa
+                    && !string.IsNullOrWhiteSpace((string?) pa["name"]);
+            }
+
             return RemoteSongEntry.Create(
                 (string?) n["chart_hash"] ?? "",
                 (string?) n["package_hash"] ?? "",
                 m, parts, LoaderSettings.Default,
                 (string?) n["year"] ?? "",
                 (int?) n["year_as_number"] ?? int.MaxValue,
-                (DateTime?) n["date_added"] ?? new DateTime(1970, 1, 1));
+                (DateTime?) n["date_added"] ?? new DateTime(1970, 1, 1),
+                stems, hasOwnPreview);
         }
 
         private static void SetIfPresent(JObject n, string key, Action<string> set)
