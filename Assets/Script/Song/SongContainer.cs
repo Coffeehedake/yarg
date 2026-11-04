@@ -174,9 +174,11 @@ namespace YARG.Song
         /// Adds the song server's whole catalogue to the library as entries with no files.
         /// </summary>
         /// <remarks>
-        /// This is ADR-004 increment 3. It is behind an environment variable rather than a
-        /// setting on 2026-11-02, which is what it should have been: the reason for the
-        /// variable was that the entries browsed but could not be PLAYED, and that stopped
+        /// This is ADR-004 increment 3. It is gated by the <c>BrowseServerLibrary</c> setting,
+        /// which is what it should always have been. *(This paragraph described the gate as an
+        /// environment variable until 2026-11-03 and contradicted itself four lines later, where
+        /// it already said "with the setting off". The variable went when the setting landed.)*
+        /// The variable existed because the entries browsed but could not be PLAYED, and that stopped
         /// being true in the same commit that wrote it — `36ca1f2a` added the fetch-on-play
         /// step in <see cref="Gameplay.GameManager"/> that materialises a
         /// <see cref="RemoteSongEntry"/> into a real entry before any loader runs. A gate
@@ -207,9 +209,27 @@ namespace YARG.Song
             {
                 var remote = await RemoteLibrary.RemoteCatalog.Fetch(url,
                     System.Threading.CancellationToken.None);
+
+                // Counted separately because the old line lumped them together and that cost
+                // real time. It said "{0} entries merged, {1} already local" with the second
+                // number as remote.Count - added, so the five catalogue rows that duplicate
+                // another row's chart hash were reported as songs this machine already had.
+                // 4,085 rows, 3,952 merged and "133 already local" against a 128-song local
+                // library reads as five songs that went missing somewhere, and it was chased
+                // as exactly that. Nothing was missing: 4,085 rows carry 4,080 distinct charts,
+                // 128 were already on disk, 3,952 were added, and the library showed 4,080.
+                int distinct = 0;
+                var seenHashes = new HashSet<HashWrapper>();
+                foreach (var entry in remote)
+                {
+                    if (seenHashes.Add(entry.Hash)) { distinct++; }
+                }
+
                 int added = RemoteLibrary.RemoteCatalog.MergeInto(_songCache, remote);
-                YargLogger.LogFormatInfo("Song server catalogue: {0} entries merged, {1} already local",
-                    added, remote.Count - added);
+                YargLogger.LogFormatInfo(
+                    "Song server catalogue: {0} rows, {1} distinct charts ({2} duplicate rows), " +
+                    "{3} merged, {4} already on this disk",
+                    remote.Count, distinct, remote.Count - distinct, added, distinct - added);
             }
             catch (Exception ex)
             {

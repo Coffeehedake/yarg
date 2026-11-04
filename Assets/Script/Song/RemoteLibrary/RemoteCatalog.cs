@@ -5,6 +5,7 @@ using System.Threading;
 using Cysharp.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using UnityEngine.Networking;
+using YARG.Core.IO;
 using YARG.Core.Logging;
 using YARG.Core.Song;
 using YARG.Core.Song.Cache;
@@ -64,7 +65,19 @@ namespace YARG.Song.RemoteLibrary
             m.AlbumTrack = (int?) n["album_track"] ?? 0;
             m.PlaylistTrack = (int?) n["playlist_track"] ?? 0;
             m.Preview = ((long?) n["preview_start_ms"] ?? -1, (long?) n["preview_end_ms"] ?? -1);
-            m.SongRating = (SongRating) (uint) ((int?) n["rating"] ?? 0);
+            // Through YARG.Core's own converter, never a cast. The wire carries the RAW
+            // song.ini number (1 = Family Friendly ... 5 = Sensitive Content, per the wiki and
+            // per internal/songini/keys.go on the server) and SongRating is 0-based in a
+            // DIFFERENT order, so the cast that used to be here was wrong twice over: every
+            // rated song moved one position up the enum - Mature read as Sensitive_Content,
+            // Family Friendly as Supervision_Recommended - and an absent rating became 0,
+            // which is Family_Friendly rather than Unspecified. The second half is the one
+            // that bites quietly: 3,604 of the live server's 4,085 songs publish no rating at
+            // all, so they all asserted Family Friendly, and UnratedSongRating - which decides
+            // what an unrated LOCAL song counts as - could never apply to a server song.
+            // RatingHelper is public in YARG.Core.IO and is what the ini and DTA scanners both
+            // use, so this is the game's own mapping rather than a second copy of it.
+            m.SongRating = RatingHelper.ParseSongRating((uint) ((int?) n["rating"] ?? 0));
 
             var parts = AvailableParts.Default;
             if (n["parts"] is JObject p)
