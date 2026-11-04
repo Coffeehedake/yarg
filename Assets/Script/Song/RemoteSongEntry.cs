@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.IO;
 using YARG.Core;
@@ -86,6 +86,29 @@ namespace YARG.Song
         public override string ActualLocation => _materialised?.ActualLocation ?? "server://" + _chartHash;
 
         public override DateTime GetLastWriteTime() => _lastWrite;
+
+        /// <summary>
+        /// The server's own timestamp, or the downloaded file's once there is one.
+        /// </summary>
+        /// <remarks>
+        /// The base implementation is <c>File.GetLastWriteTime(ActualLocation)</c>, and
+        /// <see cref="ActualLocation"/> here is the synthetic <c>server://&lt;hash&gt;</c> for a
+        /// song with no bytes on this disk. Windows resolves that against the working directory
+        /// and throws <c>IOException: The filename, directory name, or volume label syntax is
+        /// incorrect</c>.
+        ///
+        /// That is not hypothetical. Upstream's #1721 added Sort by Date Added, which calls this
+        /// for every entry inside a <c>Parallel.For</c>; the throw became an AggregateException
+        /// that killed <c>SongSorting.SortEntries</c>, so <c>FillContainers</c> never ran and the
+        /// library silently kept only the songs it had before the catalogue was merged. The log
+        /// said <i>"3952 entries merged"</i> immediately above the stack trace, so the merge was
+        /// working perfectly and the library still showed 128 songs.
+        ///
+        /// This is the seam ADR-004 warns about generally: a <see cref="RemoteSongEntry"/> has no
+        /// file, so every base method that reaches for one has to be overridden, and a new caller
+        /// upstream can turn a dormant one into a crash without touching our code at all.
+        /// </remarks>
+        public override DateTime GetLastModifiedTime() => _materialised?.GetLastModifiedTime() ?? _lastWrite;
 
         private RemoteSongEntry(string chartHash, string packageHash, DateTime lastWrite)
         {
