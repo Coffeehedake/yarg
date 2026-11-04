@@ -422,9 +422,41 @@ namespace YARG.Settings
             /// The <see cref="IsInitialized"/> guard is what stops this firing once per setting
             /// while settings are being loaded at startup — the scan is about to happen anyway.
             /// </remarks>
+            /// <summary>
+            /// Rebuilds the library after Browse Server Library is turned on or off.
+            /// </summary>
+            /// <remarks>
+            /// <para>
+            /// <c>RefreshSongs()</c>, which every other library setting uses, is NOT enough here:
+            /// it calls <c>RequestContainerRefresh()</c>, which re-sorts the songs already in
+            /// memory and never reaches <c>MergeRemoteCatalog</c>. Turning the setting on has to
+            /// go all the way back to a full refresh or the catalogue is never fetched.
+            /// </para>
+            /// <para>
+            /// <c>IsInitialized</c> alone was the wrong guard, and the game's own log said so.
+            /// It is true as soon as the settings container exists, so on 2026-11-03 this ran
+            /// FOUR SECONDS into startup, ahead of <c>LoadingScreen</c>'s own load: a full
+            /// 2.84-second rescan nobody asked for, and then a NullReferenceException from
+            /// <c>SongSources.LoadSprites</c> on a null <c>_default</c>, because the sources had
+            /// not been read yet. The loading screen then scanned again 6 seconds later. Two
+            /// full scans per launch, one of them throwing, for a setting that had not changed.
+            /// </para>
+            /// <para>
+            /// <c>SongContainer.HasCompletedInitialLoad</c> is the guard that answers the actual
+            /// question. A count of zero would not: a player with an empty library reads the
+            /// same as a game that has not loaded one, and they are the player most likely to
+            /// turn this setting on.
+            /// </para>
+            /// <para>
+            /// The <c>SetReload</c> that used to be here was redundant - <c>RunRefresh</c> calls
+            /// it itself, before <c>LoadSprites</c>, so the library reload survived the throw.
+            /// What the throw did cost was
+            /// <c>CustomContentManager.Careers.RefreshSongEntries()</c> on the line after it.
+            /// </para>
+            /// </remarks>
             private static async void RescanForBrowse()
             {
-                if (!IsInitialized)
+                if (!IsInitialized || !SongContainer.HasCompletedInitialLoad)
                 {
                     return;
                 }
@@ -433,7 +465,6 @@ namespace YARG.Settings
                 {
                     using var context = new LoadingContext();
                     await SongContainer.RunRefresh(false, context);
-                    MusicLibraryMenu.SetReload(MusicLibraryReloadState.Full);
                 }
                 catch (System.Exception ex)
                 {

@@ -146,6 +146,18 @@ namespace YARG.Song
         public static IReadOnlyDictionary<int, List<SongEntry>> AggregateDrums => _sortedSongs.AggregateDrums;
 
         public static int Count => _songs.Length;
+
+        /// <summary>
+        /// Whether a library has been built at least once in this session.
+        /// </summary>
+        /// <remarks>
+        /// Exists so a setting whose callback refreshes the library can tell "the player changed
+        /// this" from "the settings file is being loaded during startup". A count of zero does
+        /// not answer that question - a player with no songs at all would read the same - and
+        /// <c>SettingsManager.IsInitialized</c> answers a different one: it is true as soon as
+        /// the settings container exists, which is long before <c>SongSources</c> has been read.
+        /// </remarks>
+        public static bool HasCompletedInitialLoad { get; private set; }
         public static int LibraryRevision { get; private set; }
         // public static IReadOnlyDictionary<HashWrapper, List<SongEntry>> SongsByHash => _songCache.Entries;
         public static IReadOnlyDictionary<HashWrapper, List<SongEntry>> SongsByHash => _songsByHash;
@@ -321,6 +333,16 @@ namespace YARG.Song
 
             SongSorting.SortEntries(_songCache, _sortedSongs);
             FillContainers();
+
+            // Set here, where a library demonstrably exists, because a settings callback that
+            // refreshes the library must not run before the game has built one. See
+            // SettingsManager.SettingContainer.RescanForBrowse: it fired four seconds into
+            // startup, ahead of LoadingScreen's own load, and SongSources.LoadSprites threw a
+            // NullReferenceException on a null _default because the sources had not been read
+            // yet. Deliberately before LoadSprites below, so a throw down there cannot leave
+            // this false for the rest of the session.
+            HasCompletedInitialLoad = true;
+
             // After FillContainers, so Setlist.Changed subscribers resolve songs against the new library
             Setlist.ReplaceUpdatedSongHashes(updatedSongHashes);
             stopwatch.Stop();

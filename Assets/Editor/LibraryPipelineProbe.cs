@@ -111,11 +111,24 @@ namespace YARG.Editor
                 // audio backend. Nothing is played; nothing is heard.
                 GlobalAudioHandler.Initialize<BassAudioManager>();
 
+                // Whether a settings FILE existed, not whether LoadSettings threw. The first
+                // version of this probe reported "Jay's own settings.json" on the strength of
+                // LoadSettings not throwing, and that was a false claim that reached a commit
+                // message and the ROADMAP: in the editor PathHelper points at the `dev` folder,
+                // there is no dev/settings.json on this machine, and LoadSettings quietly
+                // produced DEFAULTS. Reporting provenance means checking the file, which is the
+                // same rule as "say WHICH YARG, and which harness".
+                string settingsPath = Path.Combine(PathHelper.PersistentDataPath, "settings.json");
+                bool settingsFileExists = File.Exists(settingsPath);
+
                 string settingsSource;
                 try
                 {
                     SettingsManager.LoadSettings();
-                    settingsSource = "Jay's own settings.json";
+                    settingsSource = settingsFileExists
+                        ? "the settings.json at " + settingsPath
+                        : "DEFAULTS - LoadSettings succeeded but there is no file at " +
+                          settingsPath;
                 }
                 catch (Exception ex)
                 {
@@ -263,11 +276,32 @@ namespace YARG.Editor
                     .OrderByDescending(g => g.Count())
                     .First();
 
+                // At EVERY sort, not just the one this process happens to be configured for.
+                // The sort decides which container search reads, and the editor and the player
+                // build do not share a settings file: the editor was on Name (1) while the
+                // playtest build that reported the bug was on Artist_Album (4). Measuring one
+                // and reasoning about the other is how the first version of this probe would
+                // have missed it.
                 var searching = new SongSearching();
-                int hits = Total(searching.Search(topArtist.Key, s.LibrarySort));
-                Debug.Log($"PROBE INFO: searching \"{topArtist.Key}\" at sort {s.LibrarySort} " +
-                    $"returns {hits}, catalogue has {topArtist.Count()}");
-                Check($"a search at the player's own sort finds server songs", hits > 0);
+                foreach (var sort in interesting)
+                {
+                    searching.Reset();
+                    int hits;
+                    try
+                    {
+                        hits = Total(searching.Search(topArtist.Key, sort));
+                    }
+                    catch (Exception ex)
+                    {
+                        Fail($"searching at sort {sort} threw: {ex.GetType().Name}: {ex.Message}");
+                        continue;
+                    }
+
+                    string mark = sort == s.LibrarySort ? "  <- this process's sort" : "";
+                    Debug.Log($"PROBE INFO: \"{topArtist.Key}\" at sort {sort} returns {hits}, " +
+                        $"catalogue has {topArtist.Count()}{mark}");
+                    Check($"a search at sort {sort} finds server songs", hits > 0);
+                }
 
                 Debug.Log(_failures == 0 ? "PROBE RESULT: PASS" : $"PROBE RESULT: FAIL ({_failures})");
                 EditorApplication.Exit(_failures == 0 ? 0 : 1);
