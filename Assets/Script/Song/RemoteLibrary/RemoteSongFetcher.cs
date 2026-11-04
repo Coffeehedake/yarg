@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using YARG.Core.Logging;
@@ -127,6 +128,83 @@ namespace YARG.Song.RemoteLibrary
         /// would skip it — but relying on an OS behaviour to protect a player's audio is not a
         /// policy, it is a coincidence that holds on one platform.
         /// </remarks>
+        /// <summary>
+        /// Downloads a song's preview clip, blocking until it has it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Blocking is correct here rather than a compromise. <c>PreviewContext</c> calls
+        /// <c>LoadPreviewAudio</c> inside <c>await Task.Run(..., token)</c> - a thread-pool
+        /// thread, never the main one - so there is no frame to stall, and the alternative
+        /// would be making an abstract YARG.Core loader async for one subclass.
+        /// </para>
+        /// <para>
+        /// <see cref="HttpClient"/> rather than <c>UnityWebRequest</c> for the same reason in
+        /// reverse: UnityWebRequest needs the player loop and does not work off the main thread.
+        /// <c>DiscordController</c> already uses HttpClient in this project.
+        /// </para>
+        /// <para>
+        /// Scrolling a library does not flood the server: <c>PreviewContext</c> waits
+        /// <c>delaySeconds</c> before loading anything and cancels if the selection moves on.
+        /// </para>
+        /// <para>
+        /// Returns null rather than throwing on any failure. A preview that does not play is a
+        /// missing nicety; an exception out of a loader is a broken library screen.
+        /// </para>
+        /// </remarks>
+        public static MemoryStream? DownloadPreview(string serverUrl, string chartHash)
+        {
+            if (string.IsNullOrWhiteSpace(serverUrl) || string.IsNullOrWhiteSpace(chartHash))
+            {
+                return null;
+            }
+
+            var url = serverUrl.TrimEnd('/') + "/song/" + chartHash.ToLowerInvariant() + "/preview.ogg";
+            try
+            {
+                using var response = PreviewClient.GetAsync(url).GetAwaiter().GetResult();
+                if (!response.IsSuccessStatusCode)
+                {
+                    // 415 is the server saying it cannot cut this song's audio yet - mp3 and wav
+                    // are not implemented. Expected, and not worth an error-level line every time
+                    // somebody highlights one of those songs.
+                    YargLogger.LogFormatInfo("No preview for {0}: the server answered {1}",
+                        chartHash, (int) response.StatusCode);
+                    return null;
+                }
+
+                var bytes = response.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                if (bytes == null || bytes.Length == 0)
+                {
+                    YargLogger.LogFormatWarning("The preview for {0} came back empty", chartHash);
+                    return null;
+                }
+
+                // Owned by the mixer once it is handed over; disposed by the caller when the
+                // mixer refuses it.
+                return new MemoryStream(bytes, writable: false);
+            }
+            catch (Exception ex)
+            {
+                YargLogger.LogWarning(
+                    $"Could not fetch a preview for {chartHash}: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// One client for every preview, with a short timeout.
+        /// </summary>
+        /// <remarks>
+        /// A new HttpClient per request exhausts sockets under exactly this usage - one call per
+        /// song somebody lingers on - and the timeout is short because a preview that has not
+        /// arrived in a few seconds has already missed its moment.
+        /// </remarks>
+        private static readonly HttpClient PreviewClient = new()
+        {
+            Timeout = TimeSpan.FromSeconds(8),
+        };
+
         private static void EnforceBudget(string justFetched)
         {
             try

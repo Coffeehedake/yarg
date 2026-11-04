@@ -7,6 +7,9 @@ using YARG.Core.Chart;
 using YARG.Core.IO;
 using YARG.Core.Song;
 using YARG.Core.Venue;
+using YARG.Song.RemoteLibrary;
+using YARG.Settings;
+using YARG.Core.Logging;
 
 namespace YARG.Song
 {
@@ -177,20 +180,87 @@ namespace YARG.Song
             _materialised = real;
         }
 
-        public override SongChart? LoadChart() => null;
+        // Every loader below asks the materialised entry first.
+        //
+        // They all used to return null unconditionally, and that was wrong in a way that is easy
+        // to miss: once a song HAS been fetched, its bytes are on this disk and _materialised is
+        // a real scanned entry that can answer any of these - yet a preview, album art and the
+        // background all stayed blank for the rest of the session. The sibling
+        // GetLastModifiedTime had been delegating correctly all along, which is what made the
+        // omission look deliberate.
+        //
+        // Narrower than it sounds, and worth saying so: after a restart a cached song is scanned
+        // as an ordinary local entry and never becomes a RemoteSongEntry at all, so this only
+        // bites for songs fetched earlier in the same session. It is still wrong.
+
+        public override SongChart? LoadChart() => _materialised?.LoadChart();
 
         public override StemMixer? LoadAudio(float speed, double volume, bool enableCensoring,
-            params SongStem[] ignoreStems) => null;
+            params SongStem[] ignoreStems)
+            => _materialised?.LoadAudio(speed, volume, enableCensoring, ignoreStems);
 
-        public override StemMixer? LoadPreviewAudio(float speed, bool enableCensoring) => null;
+        /// <summary>
+        /// The song's preview, fetched from the server when this machine holds no bytes.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is ADR-009 reaching the client. The server cuts about thirty seconds out of the
+        /// song's own audio by copying whole Ogg pages - no decoding, no transcoding - so a
+        /// preview costs a few hundred kilobytes instead of the ~50 MB the whole package would.
+        /// </para>
+        /// <para>
+        /// Blocking the thread is deliberate: <c>PreviewContext</c> calls this inside
+        /// <c>await Task.Run(..., token)</c>, so it never runs on the main thread, and it waits
+        /// <c>delaySeconds</c> first - scrolling past a song does not fetch it.
+        /// </para>
+        /// <para>
+        /// The stream is handed to the mixer, which owns it from then on; it is disposed here
+        /// only when the mixer refuses it, because an undisposed MemoryStream per rejected
+        /// preview is a leak nobody would look for.
+        /// </para>
+        /// </remarks>
+        public override StemMixer? LoadPreviewAudio(float speed, bool enableCensoring)
+        {
+            if (_materialised != null)
+            {
+                return _materialised.LoadPreviewAudio(speed, enableCensoring);
+            }
 
-        public override YARGImage? LoadAlbumData() => null;
+            var server = SettingsManager.Settings?.SongServerUrl.Value;
+            if (string.IsNullOrWhiteSpace(server))
+            {
+                return null;
+            }
+
+            var stream = RemoteSongFetcher.DownloadPreview(server, _chartHash);
+            if (stream == null)
+            {
+                return null;
+            }
+
+            // A name, not a path. GlobalAudioHandler only uses it to identify and log the
+            // stream, and there is no file here to name.
+            var mixer = GlobalAudioHandler.LoadCustomFile(
+                "server://" + _chartHash + "/preview.ogg", stream, speed, 0, true,
+                SongStem.Preview);
+
+            if (mixer == null)
+            {
+                stream.Dispose();
+                YargLogger.LogFormatWarning("The server's preview for {0} would not decode",
+                    _chartHash);
+            }
+            return mixer;
+        }
+
+        public override YARGImage? LoadAlbumData() => _materialised?.LoadAlbumData();
 
         public override BackgroundResult? LoadBackground(bool enableCensoring,
-            bool excludeYarground = false) => null;
+            bool excludeYarground = false)
+            => _materialised?.LoadBackground(enableCensoring, excludeYarground);
 
-        public override FixedArray<byte>? LoadMiloData() => null;
+        public override FixedArray<byte>? LoadMiloData() => _materialised?.LoadMiloData();
 
-        public override FixedArray<byte>? LoadVocData() => null;
+        public override FixedArray<byte>? LoadVocData() => _materialised?.LoadVocData();
     }
 }
