@@ -240,7 +240,7 @@ namespace YARG.Settings
             ///
             /// Costs nothing until a URL is set, on the same terms as the rest of this group.
             /// </remarks>
-            public ToggleSetting BrowseServerLibrary { get; } = new(false);
+            public ToggleSetting BrowseServerLibrary { get; } = new(false, _ => RescanForBrowse());
 
             /// <summary>
             /// How much disk the songs fetched by <see cref="BrowseServerLibrary"/> may use,
@@ -402,6 +402,46 @@ namespace YARG.Settings
             #endregion
 
             #region Songs
+
+            /// <summary>
+            /// Rescans the library after <see cref="BrowseServerLibrary"/> is switched.
+            /// </summary>
+            /// <remarks>
+            /// Deliberately NOT <see cref="RefreshSongs"/>, which is what every other
+            /// library-affecting setting uses. That calls
+            /// <c>SongContainer.RequestContainerRefresh()</c>, which re-sorts and re-fills from
+            /// the cache already in memory — right for a filter or a sort order, useless here.
+            /// The server's catalogue is merged inside <c>SongContainer.RunRefresh</c>, so
+            /// nothing short of a real scan can add or remove the browsed songs.
+            ///
+            /// Reported by Jay on 2026-11-03: turning the setting on "doesn't change the
+            /// quickplay song list". It needed a restart, and nothing said so.
+            ///
+            /// <c>async void</c> on purpose: the callback is an <c>Action&lt;bool&gt;</c> and
+            /// <see cref="SyncFromSongServer"/> beside it is the same shape for the same reason.
+            /// The <see cref="IsInitialized"/> guard is what stops this firing once per setting
+            /// while settings are being loaded at startup — the scan is about to happen anyway.
+            /// </remarks>
+            private static async void RescanForBrowse()
+            {
+                if (!IsInitialized)
+                {
+                    return;
+                }
+
+                try
+                {
+                    using var context = new LoadingContext();
+                    await SongContainer.RunRefresh(false, context);
+                    MusicLibraryMenu.SetReload(MusicLibraryReloadState.Full);
+                }
+                catch (System.Exception ex)
+                {
+                    // A library that did not refresh is a worse day than a thrown settings
+                    // callback, but it is not worth taking the settings menu down over.
+                    YargLogger.LogException(ex, "Could not rescan after changing Browse Server Library");
+                }
+            }
 
             private static void RefreshSongs()
             {
