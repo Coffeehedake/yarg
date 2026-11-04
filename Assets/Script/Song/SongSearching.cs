@@ -26,6 +26,8 @@ namespace YARG.Song
 
         public SongCategory[] Search(string value, SortAttribute sort)
         {
+            string asTyped = value;
+
             // "server:" is pulled out before the ordinary pipeline runs, because that
             // pipeline keys every filter on SortAttribute and "came from the mirror" can
             // never be a sort order. See MirroredSongs.ExtractWant.
@@ -110,7 +112,65 @@ namespace YARG.Song
                 searches.RemoveRange(filterIndex, searches.Count - filterIndex);
             }
             var result = searches.Count > 0 ? searches[^1].Nodes[^1].Songs : _baseList;
-            return ApplyMirrorFilter(result, want);
+            var filtered = ApplyMirrorFilter(result, want);
+            LogSearch(asTyped, value, sort, want, filtered);
+            return filtered;
+        }
+
+        /// <summary>
+        /// Records what a search was asked and what it answered. TEMPORARY DIAGNOSTIC.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Added 2026-11-03 for one open bug: "the search does not work with the server
+        /// connection / Only local songs". Six mechanisms have been eliminated by probes
+        /// (<c>SearchRemoteProbe</c>, <c>LibraryPipelineProbe</c>, <c>MixedLibraryProbe</c>) and
+        /// the last of those reproduces the reported library exactly — 4,080 songs, 133 local and
+        /// 3,947 remote — and finds 155 server songs for "nirvana" at the sort the reporting
+        /// build was on. So the code is not reproducibly wrong, and what is missing is not
+        /// another hypothesis: it is THE QUERY, and what the list actually held.
+        /// </para>
+        /// <para>
+        /// Asking somebody to read counts off a screen and remember what they typed is the kind
+        /// of measurement that has already sent this investigation down several wrong roads. The
+        /// game can record it precisely instead, at no cost to anyone's attention.
+        /// </para>
+        /// <para>
+        /// The breakdown is remote-versus-local rather than a total on purpose: a library with
+        /// 133 local songs returns a plausible-looking number for a search that found ONLY those,
+        /// which is why every earlier measurement of a total left the question open.
+        /// </para>
+        /// <para>
+        /// Quiet for an empty query, so the ordinary browse path — which calls this on every
+        /// refresh — does not fill the log. <b>Remove this once the bug is closed;</b> it is an
+        /// instrument for one question, not a feature.
+        /// </para>
+        /// </remarks>
+        private static void LogSearch(string asTyped, string remaining, SortAttribute sort,
+            MirroredSongs.Want want, SongCategory[] answer)
+        {
+            if (string.IsNullOrWhiteSpace(asTyped))
+            {
+                return;
+            }
+
+            int remote = 0, local = 0;
+            if (answer != null)
+            {
+                foreach (var category in answer)
+                {
+                    foreach (var song in category.Songs)
+                    {
+                        if (song is RemoteSongEntry) { ++remote; } else { ++local; }
+                    }
+                }
+            }
+
+            YargLogger.LogFormatInfo(
+                "SEARCH DIAG: typed \"{0}\" -> query \"{1}\", sort {2}, mirror {3} == " +
+                "{4} results ({5} local, {6} from the server); library holds {7}",
+                asTyped, remaining, sort, want, remote + local, local, remote,
+                SongContainer.Count);
         }
 
         /// <summary>
