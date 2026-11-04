@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
@@ -275,25 +275,39 @@ namespace YARG.Integration.RemoteQueue
             }
         }
 
+        /// <summary>
+        /// GET /api/library?q=&amp;sort=&amp;offset=&amp;limit=
+        /// </summary>
+        /// <remarks>
+        /// Paged on purpose. This used to answer with the first <c>limit</c> matches, clamped to
+        /// 500, which against a 4,085-song library meant a phone could not reach most of it -
+        /// and made sorting on the phone meaningless, because it would only ever have been
+        /// ordering whatever arrived.
+        ///
+        /// An unknown or missing sort falls back to the player's current library sort rather
+        /// than being refused: the phone showing what the game is showing is the sane default,
+        /// and the answer always states which sort was used so a client is never guessing.
+        /// </remarks>
         private static void HandleLibrary(HttpListenerContext ctx)
         {
             var q = ctx.Request.QueryString["q"] ?? string.Empty;
-            var limitText = ctx.Request.QueryString["limit"];
 
             var limit = 100;
-            if (int.TryParse(limitText, out var parsed))
+            if (int.TryParse(ctx.Request.QueryString["limit"], out var parsedLimit))
             {
-                limit = Math.Clamp(parsed, 1, 500);
+                limit = Math.Clamp(parsedLimit, 1, 500);
             }
 
-            var songs = RemoteQueueBridge.Search(q, limit);
-            SendJson(ctx, 200, new
+            var offset = 0;
+            if (int.TryParse(ctx.Request.QueryString["offset"], out var parsedOffset))
             {
-                query = q,
-                total = RemoteQueueBridge.LibraryCount,
-                shown = songs.Count,
-                songs,
-            });
+                offset = Math.Max(0, parsedOffset);
+            }
+
+            var sort = RemoteQueueBridge.ParseSort(ctx.Request.QueryString["sort"])
+                ?? RemoteQueueBridge.CurrentLibrarySort;
+
+            SendJson(ctx, 200, RemoteQueueBridge.Page(q, sort, offset, limit));
         }
 
         private static void HandleQueue(HttpListenerContext ctx, string method)

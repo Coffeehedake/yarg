@@ -6,6 +6,8 @@ using UnityEngine;
 using YARG.Core.Logging;
 using YARG.Core.Song;
 using YARG.Menu.MusicLibrary;
+using YARG.Localization;
+using YARG.Settings;
 using YARG.Playlists;
 using YARG.Song;
 
@@ -23,6 +25,63 @@ namespace YARG.Integration.RemoteQueue
 
         /// <summary>Net votes, when this song is in the queue.</summary>
         public int    score;
+
+        /// <summary>
+        /// The heading this song sits under in the current sort - "A", "Metallica", "2016".
+        /// Empty for the queue and for suggestions, where a song has no sort to sit in.
+        /// </summary>
+        /// <remarks>
+        /// The game's own library groups songs under headings rather than presenting one flat
+        /// list, and a phone showing the same ORDER without the same HEADINGS is a different
+        /// list that happens to agree. This is whatever
+        /// <see cref="SongContainer.GetSortedCategory"/> put the song under, carried verbatim.
+        /// </remarks>
+        public string category;
+    }
+
+    /// <summary>One sort the library offers, with the game's own label for it.</summary>
+    public sealed class RemoteSortOption
+    {
+        /// <summary>The wire value, e.g. "Artist_Album". Case-insensitive on the way back in.</summary>
+        public string name;
+
+        /// <summary>What the game calls it on screen, localised.</summary>
+        public string label;
+    }
+
+    /// <summary>
+    /// One page of the library, with enough around it to page through the rest.
+    /// </summary>
+    /// <remarks>
+    /// <c>total</c> and <c>matched</c> are different numbers and both are needed: the first is
+    /// how many songs the game has, the second how many this query matches. A client that only
+    /// knew <c>total</c> could not tell when a filtered list had ended, and would either stop
+    /// early or keep asking for pages that are not there.
+    /// </remarks>
+    public sealed class RemoteLibraryPage
+    {
+        public string query;
+
+        /// <summary>The sort actually used - not necessarily the one asked for.</summary>
+        public string sort;
+
+        /// <summary>Songs in the whole library.</summary>
+        public int total;
+
+        /// <summary>Songs matching <see cref="query"/>, across every page.</summary>
+        public int matched;
+
+        public int offset;
+
+        /// <summary>Songs on this page. Fewer than asked for means the end.</summary>
+        public int shown;
+
+        public List<RemoteSong> songs;
+
+        /// <summary>
+        /// Every sort on offer, sent with each page so the phone never holds its own copy.
+        /// </summary>
+        public List<RemoteSortOption> sorts;
     }
 
     /// <summary>A song somebody suggested, and how the room feels about it.</summary>
@@ -171,40 +230,174 @@ namespace YARG.Integration.RemoteQueue
         // Reads
         // ------------------------------------------------------------------
 
-        public static List<RemoteSong> Search(string query, int limit)
+        /// <summary>
+        /// The sorts the library offers, in the order its own cycle visits them.
+        /// </summary>
+        /// <remarks>
+        /// Derived from <c>MusicLibraryMenu.NextSort</c> rather than listed by hand: it walks
+        /// from <see cref="SortAttribute.Name"/> up to <see cref="SortAttribute.Random"/> and
+        /// SKIPS <see cref="SortAttribute.Playable"/>. A hand-written copy here would be a
+        /// second list to keep in step, and the phone would quietly offer a sort the game does
+        /// not - or miss one it does.
+        /// </remarks>
+        public static readonly SortAttribute[] LibrarySorts = BuildLibrarySorts();
+
+        private static SortAttribute[] BuildLibrarySorts()
+        {
+            var sorts = new List<SortAttribute>();
+            for (var sort = SortAttribute.Name; sort <= SortAttribute.Random; sort++)
+            {
+                if (sort == SortAttribute.Playable)
+                {
+                    continue;
+                }
+                sorts.Add(sort);
+            }
+            return sorts.ToArray();
+        }
+
+        /// <summary>
+        /// Turns a sort name from the wire into one the library offers, or null.
+        /// </summary>
+        /// <remarks>
+        /// Only the sorts in <see cref="LibrarySorts"/> are accepted. <c>Enum.TryParse</c> alone
+        /// would also take "Playable", every instrument sort and "Unspecified" - values the menu
+        /// never offers, which would either throw inside GetSortedCategory or hand back a list
+        /// the game itself would never show.
+        /// </remarks>
+        public static SortAttribute? ParseSort(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            foreach (var sort in LibrarySorts)
+            {
+                if (string.Equals(sort.ToString(), text.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return sort;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// One page of the library, in the game's own sort order.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The ordering comes from <see cref="SongContainer.GetSortedCategory"/> - the very call
+        /// the quickplay menu makes - rather than being done here. That is the point of the
+        /// feature rather than a shortcut: YARG's ordering has quirks that look like defects and
+        /// are not (only an UPPERCASE AE ligature expands, comparison is by UTF-16 code unit, the
+        /// article list has no "a" or "an"), and the song server's rules already say a browse
+        /// list that disagrees with the game is wrong even when it is more sensible. A second
+        /// comparator on the phone would drift from this one the first time either changed.
+        /// </para>
+        /// <para>
+        /// <b>Paged, so the phone can reach every song.</b> This used to answer with the first
+        /// <c>limit</c> matches and nothing else, capped at 500 against a 4,085-song library -
+        /// so the far end could not see most of the library at all, and anything it sorted would
+        /// have been an ordering of whatever happened to arrive.
+        /// </para>
+        /// <para>
+        /// <c>matched</c> counts every song the query matches, not just the ones on this page,
+        /// because a client cannot lazily load without knowing when to stop. It costs a full walk
+        /// of the library per request; at 4,085 songs that is nothing, and guessing would be
+        /// worse than measuring.
+        /// </para>
+        /// <para>
+        /// A song can appear more than once when a sort groups it under several headings - the
+        /// Folder sort puts a song in every playlist it belongs to. That is what the game's own
+        /// list does, so it is kept rather than de-duplicated here.
+        /// </para>
+        /// </remarks>
+        public static RemoteLibraryPage Page(string query, SortAttribute sort, int offset, int limit)
         {
             return RunOnMain(() =>
             {
-                var results = new List<RemoteSong>();
-                var songs = SongContainer.Songs;
+                var page = new RemoteLibraryPage
+                {
+                    query = query ?? string.Empty,
+                    sort = sort.ToString(),
+                    offset = offset,
+                    total = SongContainer.Count,
+                    songs = new List<RemoteSong>(),
+                    sorts = SortOptions(),
+                };
 
-                // SortString carries a pre-normalised SearchStr, which is what the
-                // game's own search uses - so matching here behaves the way the
-                // in-game library behaves rather than approximating it.
+                // SortString carries a pre-normalised SearchStr, which is what the game's own
+                // search uses - so matching here behaves the way the in-game library behaves
+                // rather than approximating it.
                 var needle = string.IsNullOrWhiteSpace(query)
                     ? null
                     : new SortString(query.Trim()).SearchStr;
 
-                foreach (var song in songs)
+                var matched = 0;
+                foreach (var category in SongContainer.GetSortedCategory(sort))
                 {
-                    if (needle != null &&
-                        !song.Name.SearchStr.Contains(needle) &&
-                        !song.Artist.SearchStr.Contains(needle) &&
-                        !song.Album.SearchStr.Contains(needle))
+                    foreach (var song in category.Songs)
                     {
-                        continue;
-                    }
+                        if (needle != null &&
+                            !song.Name.SearchStr.Contains(needle) &&
+                            !song.Artist.SearchStr.Contains(needle) &&
+                            !song.Album.SearchStr.Contains(needle))
+                        {
+                            continue;
+                        }
 
-                    results.Add(ToRemote(song));
-                    if (results.Count >= limit)
-                    {
-                        break;
+                        if (matched >= offset && page.songs.Count < limit)
+                        {
+                            var remote = ToRemote(song);
+                            remote.category = category.Category ?? string.Empty;
+                            page.songs.Add(remote);
+                        }
+
+                        matched++;
                     }
                 }
 
-                return results;
+                page.matched = matched;
+                page.shown = page.songs.Count;
+                return page;
             });
         }
+
+        /// <summary>
+        /// Every sort the library offers, with the label the game itself shows for it.
+        /// </summary>
+        /// <remarks>
+        /// The label is sent rather than left to the phone to invent, so the two cannot disagree
+        /// and so a player sees the same words in both places - localised, in whatever language
+        /// the game is running.
+        /// </remarks>
+        private static List<RemoteSortOption> SortOptions()
+        {
+            var options = new List<RemoteSortOption>(LibrarySorts.Length);
+            foreach (var sort in LibrarySorts)
+            {
+                options.Add(new RemoteSortOption
+                {
+                    name = sort.ToString(),
+                    label = sort.ToLocalizedName(),
+                });
+            }
+            return options;
+        }
+
+        /// <summary>
+        /// The sort the game's own library is showing right now.
+        /// </summary>
+        /// <remarks>
+        /// The default when a phone names no sort, so an app that asks for nothing mirrors what
+        /// is on the television instead of imposing an order of its own. Run through
+        /// <see cref="ParseSort"/> because the player's setting can hold values the menu's cycle
+        /// never visits - an instrument sort, or Playable - and those must not reach
+        /// GetSortedCategory from here.
+        /// </remarks>
+        public static SortAttribute CurrentLibrarySort => RunOnMain(() =>
+            ParseSort(SettingsManager.Settings.LibrarySort.ToString()) ?? SortAttribute.Name);
 
         public static int LibraryCount => RunOnMain(() => SongContainer.Count);
 
