@@ -19,9 +19,9 @@ the commit this file lands in. Every claim cites the code that makes it true.
 
 | Confidence | What it covers |
 |---|---|
+| **Verified by building one** | The whole pipeline, end to end — on 2026-11-07 we exported a `.yargchar` from a VRM and watched it load, render and idle in the character selector |
 | **Verified by running it** | The install location, and that a stock `.yargchar` loads and renders in a self-built fork |
-| **Read from source** | Everything else below — the bundle layout, the rig and expression requirements, the animator contract |
-| **Not verified** | Nothing here has been proved by *building* a `.yargchar`. We have never run the exporter |
+| **Read from source** | The remaining details below — the bundle layout and the animator contract |
 
 The one thing a file cannot tell you from outside: a `.yargchar`'s block data is compressed, so
 `strings` on a shipped bundle yields only its `CAB-…` archive name. The internal layout below is
@@ -36,9 +36,16 @@ rename a `.vrm` into one.
 |---|---|---|
 | The root asset | A `GameObject` at **`Assets/_Character.prefab`**, loaded lowercased | `BackgroundHelper.CHARACTER_PREFAB_PATH`; `BackgroundManager.GetCustomCharacterFromBundle` |
 | macOS shaders | A sibling bundle `_character_metal_shaders.bytes`, materials cloned with the prefix `_metal_` | `BackgroundHelper.CHARACTER_SHADER_BUNDLE_NAME`, `BACKGOUND_OSX_MATERIAL_PREFIX` |
-| Display name | **The filename**, minus the extension. No metadata is read | `CustomCharacterSetting.ValueToString` |
+| Display name | **VRM metadata first**, filename as fallback | `CharacterDisplayManager.LoadCharacterFromFile` |
 
-Name the file as you want it to read in the picker.
+The Character Select screen reads `Vrm10Instance.Vrm.Meta.Name` and `.Authors`, and only falls
+back to `Path.GetFileNameWithoutExtension` when the name is null or whitespace. The author line
+under the podium is `Meta.Authors` — joined with commas when there is more than one, and the
+localised *UnspecifiedAuthor* string when the list is empty. Verified 2026-11-07: a VRM whose
+meta carried a single author rendered that author verbatim beneath the character.
+
+The settings picker is the one place that *is* filename-only
+(`CustomCharacterSetting.ValueToString`), so the two can disagree. Set both to the same thing.
 
 ## The model
 
@@ -55,8 +62,81 @@ Missing finger bones broke the game outright until **2026-10-31** (`b712ad83`, *
 completely when custom characters are missing hand bones"*). Treat a fully rigged hand as
 required; the tolerance for one is weeks old.
 
+### The right hand is clamped shut on purpose
+
+`DefaultController` has a second layer named **`Hold Microphone`**, and in its clips every
+`RightHand.*` finger muscle is a **two-key constant** at a closed value, while the matching
+`LeftHand.*` muscles carry 19–31 keys and animate freely:
+
+```
+R 'RightHand.Index.2 Stretched'  keys=2  range=[-0.615,-0.615]  CONSTANT
+L 'LeftHand.Index.2 Stretched'   keys=30 range=[ 0.182, 0.498]  animated
+```
+
+So a vocalist's right hand holds a fixed grip while the left performs. This is **not** a rigging
+fault, and it is worth knowing before you go looking for one: a correctly weighted, correctly
+mapped hand still renders as a motionless fist.
+
+Two consequences:
+
+- **In the character-select screen there is no microphone in it.** `AddMicrophoneToCharacter`
+  runs from `BackgroundManager.LoadCharacter` — the gameplay path only — so the selector shows a
+  fist closed around nothing.
+- **The grip was authored for slim hands.** A bulky or armoured hand closing to the same muscle
+  values will self-intersect and look crushed. Relaxing it means supplying your own controller
+  and setting `UseCustomAnimations`, which costs you the stock performance animations.
+
 Nothing requires an anime style. MToon is the convention, not the contract — the project's own
 macOS shader bug report tested URP Lit materials alongside MToon ones on the same model.
+
+## Materials must be URP
+
+**This project renders with URP** (`com.unity.render-pipelines.universal`). A material on the
+built-in pipeline's **`Standard`** shader compiles, bundles and loads without a single warning,
+and then draws **solid magenta** in game, because an SRP cannot render it.
+
+This is a trap worth naming, because it does not look like a missing asset:
+
+```
+[YARGCHAR] MAT 'Silver Part' shader='Standard' findable=True
+```
+
+`findable=True`. The shader is present — it is simply the wrong pipeline's. Searching for an
+absent shader finds nothing and the bundle build reports success.
+
+It bites specifically when the VRM did **not** come from a VRM-native authoring tool. A VRM
+carrying `VRMC_materials_mtoon` imports onto `VRM10/MToon10`, which the player ships, and works.
+A VRM exported from Blender as plain glTF PBR has no MToon extension, so UniGLTF imports it onto
+`Standard` — and you get a magenta silhouette on the podium.
+
+Fix it before export by retargeting every material to **`Universal Render Pipeline/Lit`** (or to
+`VRM10/MToon10` for a toon look), carrying the maps across:
+
+| From glTF/Standard | To URP/Lit |
+|---|---|
+| `_MainTex` | `_BaseMap` (and `_BaseColor` for the tint) |
+| `_BumpMap` | `_BumpMap` + enable `_NORMALMAP` |
+| `_MetallicGlossMap` | `_MetallicGlossMap` + enable `_METALLICSPECGLOSSMAP` |
+| `_EmissionMap` | `_EmissionMap` + enable `_EMISSION` |
+
+Both shaders resolve in the editor (`URP/Lit found=True  MToon10 found=True`), so either is a
+valid target.
+
+## Ship an animator controller
+
+`BackgroundManager.LoadAnimationDefaults` assigns `Animations/{Type}/{genre}/DefaultController`
+from Resources at **gameplay** when a character has none, so a controller-less character still
+performs on stage.
+
+**The character-select screen has no such fallback.** `CharacterDisplayManager` instantiates the
+prefab only to read its name and author; it never touches the `Animator`. A character that ships
+no `RuntimeAnimatorController` therefore stands in its bind pose — usually a T-pose — in the
+picker, while the ones that ship one idle normally. Two of the nine characters measured on
+2026-11-07 had this, and it is cosmetic only.
+
+Assign `Assets/Resources/Animations/Vocals/Default/DefaultController.controller` to the Animator
+before exporting and the character idles in the selector too. Gameplay still overrides it unless
+`UseCustomAnimations` is set, so this costs nothing.
 
 ## The animator contract
 
@@ -98,6 +178,29 @@ both `#if UNITY_EDITOR`. A standalone content-creation package has been
 [proposed upstream](https://discord.com/channels/1086048856678084609/1530274700989825084) and is
 still an open suggestion with no replies.
 
+### It can be driven headlessly
+
+`BackgroundHelper.Export` has **two** overloads. The one the context menu calls opens an
+`EditorUtility.SaveFilePanel`; the other takes an explicit `path`. The second makes the whole
+thing scriptable from `-batchmode`, with no editor window and no dialog:
+
+```
+Unity.exe -batchmode -nographics -quit -projectPath <repo> \
+  -executeMethod <YourClass>.<YourMethod> -logFile <log>
+```
+
+Proven on 2026-11-07. Gotchas that cost time:
+
+- **The prefab must carry a `VRMCharacter`** with `Type = Vocals`. There is no null check —
+  `BackgroundManager.LoadAnimationDefaults` dereferences it immediately, so a bundle without one
+  throws rather than degrading.
+- **`Unity.exe` detaches on Windows.** The launcher returns instantly with exit code 0 while the
+  editor carries on in another process. Waiting on the launcher looks exactly like a silent
+  failure; wait on the `Unity.exe` process that holds the project lock instead.
+- **Export always builds a `StandaloneOSX` shader bundle first** and throws `FileNotFoundException`
+  if the module is absent. "MacOS Build Support (Mono)" is required even to export on Windows.
+- Quote paths. `-projectPath` splits on spaces if the arguments are passed unquoted.
+
 ## Installing
 
 `<persistent data>/<release channel>/custom/characters/*.yargchar`
@@ -133,9 +236,15 @@ organised?" was *"you probably aren't going to find any place more organized tha
 
 Not answered by the code, and worth measuring before authoring anything expensive:
 
-- **Scale and height.** Nothing normalises the model. The podium expects a figure of some size;
-  we have not measured what.
+- **Scale and height.** Nothing normalises the model. A figure built at **1.70 m**, feet on z=0
+  and centred on the origin, sits correctly on the podium — measured 2026-11-07. Whether the
+  podium tolerates much taller or shorter is still unmeasured.
 - **Polygon and texture budget.** No limit is enforced or documented. The eight cleared models
-  run 5.6–10.7 MB as bundles.
+  run 5.6–10.7 MB as bundles. A deliberately heavy character — 639,859 triangles with 1K
+  textures — bundled to **31.4 MB** and loaded and rendered without complaint, so the ceiling is
+  well above the cleared set. Note the compression ratio: that same model was a 63 MB `.vrm`.
+  Geometry is cheap in the bundle; textures dominate. Dropping 4K maps to 1K took the `.vrm`
+  from 215 MB to 63 MB, while discarding 73% of the triangles saved only ~24 MB and visibly
+  faceted every curved panel.
 - **Whether a non-`Vocals` type loads from a file at all**, or only from a venue.
 - **What a missing viseme does** — silent fallback, or a visible mouth stuck shut.
