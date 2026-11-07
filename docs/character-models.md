@@ -138,6 +138,37 @@ Assign `Assets/Resources/Animations/Vocals/Default/DefaultController.controller`
 before exporting and the character idles in the selector too. Gameplay still overrides it unless
 `UseCustomAnimations` is set, so this costs nothing.
 
+## A valid avatar is not enough: the mesh must be skinned
+
+A character can have a humanoid avatar that reports `isHuman` **and** `isValid`, an animator
+controller, and all six bones YARG needs for the microphone grip, and still be incapable of
+moving a single vertex. Unity drives the skeleton; the skeleton only drags geometry with it
+through a **`SkinnedMeshRenderer`**. A mesh exported as a static `MeshRenderer` is parented to a
+node and nothing more.
+
+Measured 2026-11-07 on a hand-built cartoon rig. In Blender every mesh was correctly parented to
+the armature, carried an Armature modifier and had 65–71 vertex groups naming real bones. The
+exported VRM had **18 mesh nodes and not one of them referencing a skin** — a skin existed, with
+75 joints, and nothing used it. In engine the avatar built, the controller ran and the character
+stood perfectly still.
+
+The cause was residual object transforms. The VRM exporter writes a mesh as a static node
+carrying a scale rather than as a skinned one when the object is not at identity, and the scale
+that survives is easy to miss:
+
+- `matrix_basis` does **not** include Blender's delta transforms. Clear the basis, leave a
+  `delta_scale`, and the object still has a non-identity `matrix_world` — so assert on
+  `matrix_world`, never on `matrix_basis`.
+- Baking a child's transform does not bake its parent's. `transform_apply` on a mesh parented to
+  an armature bakes only that object's own local matrix; Blender pushes the parent's share into
+  `matrix_parent_inverse` so the viewport does not jump. Detach every object first, bake each as
+  a root, then re-parent with an identity parent inverse.
+
+**Check the exported file, not the editor's report.** Parse the glTF JSON and count how many
+nodes with a `mesh` also have a `skin`. The answer should be all of them. Nothing upstream of
+that file — not the viewport, not `isValid` — distinguishes a character that will move from one
+that will not.
+
 ## The animator contract
 
 From the wiki page, which remains the authority here, and from `VenueCharacter`:
@@ -163,6 +194,33 @@ found by name or not at all.
 read `CustomCharacters[CharacterType.Vocals]` only (`CharacterDisplayManager`,
 `BackgroundManager.GetCustomVocalsCharacter`). The other four types exist in the enum and in
 venues.
+
+## Measure the base mesh, not the scene
+
+**A morph target's weight is zero in engine.** Whatever the authoring tool composites for its
+viewport, the base mesh is what YARG renders — so a build that measures the evaluated scene can
+describe a model that will never exist.
+
+Measured 2026-11-07, and it cost three rounds of wrong diagnosis. A downloaded FBX shipped 37
+shape keys with six set to non-zero values, at least one holding a corrupt body four times
+oversized. Blender's viewport, `evaluated_get()` bounds and every render therefore agreed the
+character was 1.95 m of tangled shards. The base mesh — the real character, a clean T-pose — was
+0.478 m. The builder scaled to make the *garbage* 1.70 m, which left the real geometry at
+**0.416 m**, and that is exactly the size the character arrived at in game.
+
+Every symptom pointed at a scale bug: it looked like a unit conversion, then like a scale trapped
+in the armature's bind pose. Both stories fitted and both were false. The giveaway was that the
+evaluated bounds and the raw vertex data disagreed, which no amount of rescaling can reconcile.
+
+So, when preparing a model:
+
+- Zero every shape key and keep the base mesh before measuring anything. This is strictly more
+  faithful than collapsing at the author's values, because zero is what the engine uses.
+- Assert on the **raw vertex extent** after baking, and make it fatal. The scene measuring 1.7000 m
+  proves nothing — it measured exactly that in both of the builds that shipped broken.
+- Render the result before shipping it. A metrics-only check passed a model that was visibly
+  shattered; a 700×1000 front render took seconds and settled it. Render a known-good character
+  through the same path first, or an empty frame reads as a pass.
 
 ## Exporting
 
@@ -225,6 +283,11 @@ organised?" was *"you probably aren't going to find any place more organized tha
 
 ## Known traps
 
+- **VRM 1.0 rejects a negative scale**, and the export *cancels* rather than warning. One
+  mirror-duplicated eyelash with `scale = -1` on an axis is enough to stop the whole file being
+  written. Bake the mirror into the geometry and flip the winding to match.
+- **The VRM add-on's validator wants a `CollectionProperty`,** not a list. Hand `detect_errors`
+  a plain list and it raises `AttributeError`, so a cancelled export reports no reason at all.
 - **VRM 0.x will not load.** `GetComponent<Vrm10Instance>()` returns null and `Initialize` dies.
 - **macOS transparency is broken** for UniVRM10 MToon materials in front of opaque geometry —
   reported 2026-02-23 with a four-eye test rig; Windows under Vulkan and DX11 is correct.
@@ -238,7 +301,8 @@ Not answered by the code, and worth measuring before authoring anything expensiv
 
 - **Scale and height.** Nothing normalises the model. A figure built at **1.70 m**, feet on z=0
   and centred on the origin, sits correctly on the podium — measured 2026-11-07. Whether the
-  podium tolerates much taller or shorter is still unmeasured.
+  podium tolerates much taller or shorter is still unmeasured. Measure the base mesh — see
+  *Measure the base mesh, not the scene* above.
 - **Polygon and texture budget.** No limit is enforced or documented. The eight cleared models
   run 5.6–10.7 MB as bundles. A deliberately heavy character — 639,859 triangles with 1K
   textures — bundled to **31.4 MB** and loaded and rendered without complaint, so the ceiling is
