@@ -2532,7 +2532,15 @@ if (os.environ.get("VRM_STANDUP") and (not os.environ.get("VRM_NO_TPOSE"))
         bpy.context.view_layer.objects.active = arm
         bpy.ops.object.mode_set(mode="POSE")
         _DOWN = Vector((0.0, 0.0, -1.0))
-        for _s in ("left", "right"):
+        # VRM_STANDUP_LEGS=0 keeps only the rigid rotation and skips the legs.
+        # Straightening a leg is a DEFORMATION, and on a model whose weights
+        # came from automatic weighting of a contorted pose it is the
+        # deformation that tears: Anakin's legs smear while his arms come out
+        # clean, because his knee was folded against his chest when it was
+        # bound. His legs are already apart, so for an upload that is only going
+        # to be re-rigged elsewhere there is nothing to gain by moving them.
+        for _s in (() if os.environ.get("VRM_STANDUP_LEGS") == "0"
+                   else ("left", "right")):
             _ul, _ll = MAP.get("%s_upper_leg" % _s), MAP.get("%s_lower_leg" % _s)
             _ft = MAP.get("%s_foot" % _s)
             if not (_ul in bone_names and _ll in bone_names):
