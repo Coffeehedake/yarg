@@ -1825,6 +1825,34 @@ elif RIG == "anakin":
         MAP["%s_thumb_metacarpal" % s_] = "Bone.%03d" % t_
         MAP["%s_thumb_proximal" % s_] = "Bone.%03d" % (t_ + 1)
         MAP["%s_thumb_distal" % s_] = "Bone.%03d" % (t_ + 3)
+elif RIG == "judyusd":
+    # A USDZ whose bones are called 'n13', 'n14' ... and carry no information at
+    # all, so the map is read off the hierarchy, the rest positions and what
+    # each bone actually deforms: 123 bones, of which only 56 deform anything --
+    # the rest are a subtree of zero-length controls parked at the origin.
+    #
+    # Y is up in this file, so the sides come off X and the chain off Y. Both
+    # shoulders hang off the NECK rather than the chest, which is the 3ds Max
+    # Biped trap the hierarchy repair already knows how to fix.
+    #
+    # Her fingers are two-bone chains where VRM wants three, so they are left
+    # unmapped: a finger mapped to the wrong joint is worse than no finger. Her
+    # ears are two five-bone chains and want spring bones -- pass
+    # '^n(29|3[0-8])$' as the spring pattern, since nothing in the names says
+    # "ear".
+    MAP = {"hips": "n14", "spine": "n15", "chest": "n26",
+           "neck": "n27", "head": "n28"}
+    for s_, sh, ua, la, hd, ul, ll, ft, to in (
+            ("left", "n76", "n77", "n78", "n79", "n21", "n22", "n23", "n24"),
+            ("right", "n47", "n48", "n49", "n50", "n16", "n17", "n18", "n19")):
+        MAP["%s_shoulder" % s_] = sh
+        MAP["%s_upper_arm" % s_] = ua
+        MAP["%s_lower_arm" % s_] = la
+        MAP["%s_hand" % s_] = hd
+        MAP["%s_upper_leg" % s_] = ul
+        MAP["%s_lower_leg" % s_] = ll
+        MAP["%s_foot" % s_] = ft
+        MAP["%s_toes" % s_] = to
 elif RIG == "simple":
     # A minimal hand-built rig: one bone per limb segment, no neck, no fingers.
     MAP = {"hips": "Hip_Bone", "spine": "Spine_Bone", "head": "Head_Bone"}
@@ -2356,8 +2384,25 @@ if _fwd.length > 1e-6:
     else:
         print("  facing: feet point %s - already forward" % (tuple(round(v, 2) for v in _fwd),))
 
+# VRM_ARMS_SWAP=1 reverses which way each arm is straightened.
+#
+# AN OVERRIDE, NOT AN EXPLANATION. Some models come out of the T-pose step with
+# each arm rooted on one side of the centreline and reaching across to the
+# other, which roughly halves the span: Judy Hopps measured 0.429 m on a 1.05 m
+# body against 0.729 once reversed, and Power Girl 1.150 m on 1.800 m. The
+# geometry follows the bones correctly in both, so it is the target side that is
+# wrong, not the skinning.
+#
+# What I could not find is the rule. Measuring which side each arm sits on --
+# from the shoulders, from the upper arms, from the spine, before the rotation
+# or immediately at it -- reports the side the arm is already on, and reversing
+# the result by hand is what actually produces a straight arm. Something
+# inverts between the frame those measurements read and the frame the rotation
+# applies in, and until that is understood this stays a per-model switch rather
+# than a heuristic that would quietly mirror the other 60 characters.
+_ARMS_SWAP = -1.0 if os.environ.get("VRM_ARMS_SWAP") else 1.0
 _arms = []
-for _side, _sx in (("left", 1.0), ("right", -1.0)):
+for _side, _sx in (("left", 1.0 * _ARMS_SWAP), ("right", -1.0 * _ARMS_SWAP)):
     _ua, _la = MAP.get("%s_upper_arm" % _side), MAP.get("%s_lower_arm" % _side)
     _hd = MAP.get("%s_hand" % _side)
     if _ua and _hd and _ua in bone_names and _hd in bone_names:
