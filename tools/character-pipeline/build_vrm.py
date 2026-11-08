@@ -2979,6 +2979,9 @@ _CODE = {"n": "normal", "nrm": "normal", "norm": "normal", "nor": "normal",
 
 def code_kind(stem):
     """The map type a short code at the end of the name implies, or None."""
+    k = channel_kind(stem)
+    if k:
+        return k
     parts = [x for x in re.split(r"[^A-Za-z0-9]+", stem) if x]
     for x in reversed(parts):
         k = _CODE.get(x.lower())
@@ -3304,6 +3307,48 @@ def already_good(bsdf, slot):
     return None
 
 
+# A packed metallicRoughness map, shipped pre-split into per-channel files.
+#
+# glTF packs one texture: R = occlusion, G = ROUGHNESS, B = METALLIC. A material
+# that wires that single file to BOTH its Metallic and its Roughness input is
+# correct -- the shader reads a different channel for each. But some archives
+# ship it already split, as 'BODY_metallicRoughness@channels=B.png' and
+# '...@channels=G.png', and then the material's own reference is no longer
+# enough: following it faithfully hands ONE channel's file to both slots.
+#
+# The Mandalorian shipped chrome-plated for exactly that. His armour's real
+# roughness map is a flat 1.000 and his cape's is 1.000, and both were given the
+# B channel instead -- 0.520 and 0.613 -- so fully rough plate and cloth
+# rendered as polished metal, which reads as smeared, shifted texturing.
+#
+# Every one of these filenames contains "metallicRoughness" and "metal", so no
+# amount of word matching separates them. The channel letter is the only thing
+# that does.
+_CHANNEL_KIND = {"r": "ao", "g": "rough", "b": "metal"}
+_CHANNEL_RE = re.compile(r"(channels?\s*=\s*)([RGB])(?![A-Za-z0-9])", re.I)
+
+
+def channel_kind(name):
+    """The map type an '@channels=X' marker implies, or None."""
+    m = _CHANNEL_RE.search(name)
+    return _CHANNEL_KIND.get(m.group(2).lower()) if m else None
+
+
+def channel_sibling(path, kind):
+    """The same split set's file for `kind`, if this one is the wrong channel."""
+    want = next((c for c, k in _CHANNEL_KIND.items() if k == kind), None)
+    if want is None or not path:
+        return None
+    base = os.path.basename(path)
+    if channel_kind(base) in (None, kind):
+        return None
+    alt = _CHANNEL_RE.sub(lambda m: m.group(1) + want.upper(), base)
+    for f in files:
+        if f.lower() == alt.lower():
+            return os.path.join(TEXDIR, f)
+    return None
+
+
 def authored(bsdf, slot):
     """The file the SOURCE material points at for this slot, if the pool has it.
 
@@ -3331,12 +3376,24 @@ def authored(bsdf, slot):
     # -- the same trap SHARED_STEMS exists for on the name-matching path.
     if SHARED_STEMS and os.path.splitext(base)[0] in SHARED_STEMS:
         return None
+    _hit = None
     if stem in _STEM_POOL:
-        return _STEM_POOL[stem]
-    hits = [v for k, v in _STEM_POOL.items()
-            if len(os.path.commonprefix([k, stem])) >= 12
-            and (k.startswith(stem) or stem.startswith(k))]
-    return hits[0] if len(hits) == 1 else None
+        _hit = _STEM_POOL[stem]
+    else:
+        hits = [v for k, v in _STEM_POOL.items()
+                if len(os.path.commonprefix([k, stem])) >= 12
+                and (k.startswith(stem) or stem.startswith(k))]
+        _hit = hits[0] if len(hits) == 1 else None
+    # The author named one packed map; the folder holds it split per channel.
+    # Take the channel this slot actually wants.
+    _kind = {"Metallic": "metal", "Roughness": "rough"}.get(slot)
+    if _hit and _kind:
+        _sib = channel_sibling(_hit, _kind)
+        if _sib:
+            print("    channels: %s wants %s, so '%s' -> '%s'"
+                  % (slot, _kind, os.path.basename(_hit), os.path.basename(_sib)))
+            return _sib
+    return _hit
 
 
 def mat_stem(mat):
