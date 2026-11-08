@@ -591,6 +591,32 @@ def flatten(pre):
         o.matrix_parent_inverse.identity()
         o.matrix_basis.identity()
     bpy.context.view_layer.update()
+    # Force the ARMATURE to rebuild from its edit bones.
+    #
+    # Transforming arm.data moves the rest bones, and view_layer.update() does
+    # NOT rebuild the evaluated pose from them: pose_bone.head keeps returning
+    # the positions from before the transform. Every later measurement taken in
+    # pose space then describes a skeleton that no longer exists.
+    #
+    # That is what made the facing turn so destructive. Judy Hopps faces +Y, so
+    # she is turned 180 degrees about Z, and immediately afterwards her left
+    # upper arm read POSE +0.0748 against REST -0.0748 -- mirror images, with an
+    # identity matrix_basis, no constraints and an identity object matrix. The
+    # T-pose step measures the pose, decides the arm is on +X, and then rotates
+    # a bone whose rest is on -X, so the arm ends up rooted on one side and
+    # reaching across to the other. Her span came out 0.429 m on a 1.05 m body
+    # instead of 0.729, and Power Girl's 1.150 on 1.800. Measuring the side more
+    # cleverly could never have fixed it: the measurement was right and the
+    # skeleton under it was stale.
+    #
+    # A trip through edit mode is what actually refreshes it.
+    _act = bpy.context.view_layer.objects.active
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.objects.active = _act
+    bpy.context.view_layer.update()
 
 
 
@@ -2384,25 +2410,8 @@ if _fwd.length > 1e-6:
     else:
         print("  facing: feet point %s - already forward" % (tuple(round(v, 2) for v in _fwd),))
 
-# VRM_ARMS_SWAP=1 reverses which way each arm is straightened.
-#
-# AN OVERRIDE, NOT AN EXPLANATION. Some models come out of the T-pose step with
-# each arm rooted on one side of the centreline and reaching across to the
-# other, which roughly halves the span: Judy Hopps measured 0.429 m on a 1.05 m
-# body against 0.729 once reversed, and Power Girl 1.150 m on 1.800 m. The
-# geometry follows the bones correctly in both, so it is the target side that is
-# wrong, not the skinning.
-#
-# What I could not find is the rule. Measuring which side each arm sits on --
-# from the shoulders, from the upper arms, from the spine, before the rotation
-# or immediately at it -- reports the side the arm is already on, and reversing
-# the result by hand is what actually produces a straight arm. Something
-# inverts between the frame those measurements read and the frame the rotation
-# applies in, and until that is understood this stays a per-model switch rather
-# than a heuristic that would quietly mirror the other 60 characters.
-_ARMS_SWAP = -1.0 if os.environ.get("VRM_ARMS_SWAP") else 1.0
 _arms = []
-for _side, _sx in (("left", 1.0 * _ARMS_SWAP), ("right", -1.0 * _ARMS_SWAP)):
+for _side, _sx in (("left", 1.0), ("right", -1.0)):
     _ua, _la = MAP.get("%s_upper_arm" % _side), MAP.get("%s_lower_arm" % _side)
     _hd = MAP.get("%s_hand" % _side)
     if _ua and _hd and _ua in bone_names and _hd in bone_names:
@@ -2624,6 +2633,29 @@ if (os.environ.get("VRM_STANDUP") and (not os.environ.get("VRM_NO_TPOSE"))
         print("  stand up: feet now point %s"
               % (tuple(round(v, 2) for v in _f),))
 
+
+# Which way is +X for THIS model? Ask the arms, not their names.
+#
+# "Left" is the modeller's label and +X is this pipeline's convention, and the
+# facing step turns a character that faces the wrong way 180 degrees about Z,
+# which swaps them. Straightening an arm toward the wrong side sweeps it ACROSS
+# the body instead of outward and roughly halves the span.
+#
+# This is only answerable now that flatten() rebuilds the armature: until it
+# did, pose space and rest space disagreed by exactly this 180 degrees, so the
+# measurement said one thing and the bone it governed was the other way round.
+# Compare the two upper arms with each other rather than against the spine --
+# the hips bone is not always centred, and on Power Girl it is not.
+if len(_arms) == 2:
+    _x = {sd: arm.pose.bones[ua].head.x for sd, _s, ua, _l, _h in _arms}
+    if abs(_x["left"] - _x["right"]) > 1e-5:
+        _lx = 1.0 if _x["left"] > _x["right"] else -1.0
+        if _lx != 1.0:
+            print("  arms: this model's LEFT is -X (upper arms at %.3f / %.3f) "
+                  "-- straightening each arm outward from its own side"
+                  % (_x["left"], _x["right"]))
+        _arms = [(sd, (_lx if sd == "left" else -_lx), ua, la, hd)
+                 for sd, _s, ua, la, hd in _arms]
 
 if (not os.environ.get("VRM_NO_TPOSE")) and any(
         _arm_error(_ua, _hd, _sx)[0] >= 15.0 for _, _sx, _ua, _la, _hd in _arms):
