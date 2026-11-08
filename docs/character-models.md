@@ -19,7 +19,7 @@ the commit this file lands in. Every claim cites the code that makes it true.
 
 | Confidence | What it covers |
 |---|---|
-| **Verified by building 46** | The whole pipeline, end to end — on 2026-11-07 we exported a `.yargchar` from a VRM and watched it load, render and idle in the character selector, then converted 45 more third-party models through the same pipeline |
+| **Verified by building 59** | The whole pipeline, end to end — on 2026-11-07 we exported a `.yargchar` from a VRM and watched it load, render and idle in the character selector, then converted 58 more third-party models through the same pipeline. Only that first one has been watched **in game**; the rest are verified by measurement and by rendering the pre-export scene, which is a weaker claim and is why the traps below are stated as measurements rather than as appearances |
 | **Verified by running it** | The install location, and that a stock `.yargchar` loads and renders in a self-built fork |
 | **Read from source** | The remaining details below — the bundle layout and the animator contract |
 
@@ -181,7 +181,38 @@ them far apart in **X**. A character whose arms hang at its sides has them at th
 both sat at 0.1030, while the two characters that looked right, the Xenomorph and Prix, both ran
 shoulder-to-wrist along X.
 
-Correcting it takes three steps, and each has a trap:
+**Before correcting it, look for a T-pose the file already contains.** A rig auto-rigged on
+mixamo.com carries its T-pose in an **animation**, not in the rest skeleton; the rest skeleton is
+whatever the uploader supplied, and that is usually arms-down. Two measured: Sonic HD rests 57.9
+degrees off X, Yoda 93.4. A pipeline that drops every attached action on sight — which is the
+right default, since most clips in these archives are jumps, ragdolls and walk cycles — throws
+away the only T-pose in the file and then has to rebuild one.
+
+A rebuilt one is not as good, and the gap is invisible to any measurement of *direction*. The
+synthesized rotation puts the arm **on** the X axis while carrying no information about the limb's
+axial **roll** or the orientation of the hand, so the arm arrives twisted along its own length. It
+reads as a wavy, squiggly arm, and on a robed character it webs the sleeves to the body. An
+animator posed the clip and got all of that right.
+
+So measure both poses and keep the better one. The test has to be narrow, because a clip that is
+*not* a T-pose must still be dropped:
+
+- the animated pose's arms within 10 degrees of X, and the rest pose's not
+- the animated pose's **legs** within 20 degrees of straight down
+
+The leg test is what separates a T-pose from a frame of motion; arms alone are not enough, because
+a jump or ragdoll frame can have one arm out. Do **not** substitute a test on the root bone's
+translation: Mixamo's own T-pose clip moves the hips 11 units of a 57-unit rig, so a drift test
+rejects the very pose the check exists to keep.
+
+**Take every angle in world space.** Bone heads live in the armature's own space, and an FBX import
+leaves the armature object rotated 90 degrees about X so the source's Y-up becomes Blender's Z-up.
+Measured in that local space Sonic stands 57 units tall along **+Y**, and a perfectly straight pair
+of legs reads 87.9 degrees away from -Z — so a real T-pose looks like a frame of motion and the
+check above rejects it. X survives the rotation unchanged, which is exactly why an arms-only test
+passes anyway and hides the bug.
+
+When there is no authored pose to keep, correcting it takes three steps, and each has a trap:
 
 - **Converge, do not compute.** One rotation lands on some rigs and not others: on a Mixamo rig
   carrying a shoulder bone, a single computed 53-degree correction left the arm **74 degrees out,
@@ -193,6 +224,11 @@ Correcting it takes three steps, and each has a trap:
 - **Move the geometry with the bones** before making the pose the rest pose, or the mesh keeps the
   old bind. Compute the deformation by hand rather than applying the armature modifier: these
   meshes also carry Solidify and Subdivision, so the evaluated mesh has a different vertex count.
+- **Straighten the arm joint by joint, not shoulder-to-hand.** Driving the *hand* onto the X axis
+  satisfies every shoulder-to-wrist measurement while leaving the elbow bent, because a bent elbow
+  and a straight one can put the hand in the same place. Alcina Dimitrescu's rest elbow bends 5.4
+  degrees and her posed elbow 119.3; the correction put her hand on X and left the crimp, which
+  pinched the sleeve. Drive shoulder-to-elbow onto the axis, then elbow-to-wrist, measuring each.
 
 **Facing** matters just as much, and is easy to miss because the model still *looks* like itself.
 Batman's model faces +X, so the T-pose correction swung his arms front-to-back instead of out, and
@@ -202,6 +238,31 @@ where the character does, and turn the whole rig about Z.
 Do not trust the feet blindly, though: a cartoon rig can have them splayed sideways. Sonic's point
 along -X, which would have cost him a 79-degree turn and taken his already-correct T-pose off axis.
 If the arms already lie along X the orientation is right, and only a ~180-degree turn preserves it.
+
+## A hand posed around a prop that is no longer there
+
+Props get excluded because they inflate the bounds or skewer the model, and the hand that was
+holding one stays clamped around the hole where it was. Alcina Dimitrescu's cigarette holder is
+dropped from the build; her left thumb and middle finger stayed clenched around nothing, which
+reads as a mangled hand.
+
+The model usually supplies its own control, and that is what makes this safe to correct
+automatically. Her **right** hand's pose is identical to its rest pose on all five finger chains,
+to 0.0 degrees, while her left thumb is 125.7 degrees further curled than rest and her middle
+finger 112.9 — with the index left straight, which is a holder gripped between thumb and middle
+finger. So the rest pose **is** the modeller's own neutral hand, and relaxing the posed hand to
+rest reproduces the hand the model already has on the other side rather than inventing one.
+
+Fire only on that asymmetry: one hand at rest, the other 20 or more degrees from it. A character
+posed with **both** hands gripping shows no asymmetry and must be left alone — YARG puts a
+microphone in the hand, so a deliberate two-handed grip is a real thing to ship. Touch finger bones
+only: a blanket reset to rest is a different and far more destructive operation, and it is what
+compressed Alcina's head and torso to 59% of their size the first time she was built.
+
+**Measure the shape of the hand, never the direction its bones point.** A direction test also sees
+the whole arm's rotation: her right hand measures 65.9 degrees "off rest" purely because her static
+pose lifts that arm, and the asymmetry the check depends on vanishes. Compare **curl** — the angle
+between consecutive bones, summed down each finger — which rotating the whole hand does not change.
 
 ## VRM checks the hierarchy, not the names
 
@@ -283,7 +344,23 @@ blaming the pipeline:
 - **Unrigged bodies.** A mesh with no armature modifier and no vertex groups exports as a static
   node. Automatic weighting can sometimes rescue it, but only after excluding the `_end` tips an FBX
   import adds and any facial bones — both sit inside the mesh, and bone-heat hands them whole limbs.
-  Even then the result may not be usable; see the open questions.
+  Where it will not converge, **mixamo.com's auto-rigger** is the answer rather than more weighting
+  experiments; see the open questions, where this is now measured rather than open.
+- **The texture folder is the whole extracted archive.** It also holds the `.fbx`, the `.blend`,
+  `readme.txt` and a `.mtl`. Left in the candidate pool those compete as textures like any other
+  file — and since the last-resort rule is "largest file first", the **model** is the strongest
+  candidate in the folder. Yoda's eye material was assigned `yoda_rigged.fbx` and his eyes rendered
+  magenta, which reads as a missing texture rather than as a texture that is a 3D model. Blender
+  reports only `failed to load image buffer`, one line among a hundred packing warnings, so nothing
+  in the build output looks wrong. Filter the listing to image extensions.
+
+  It only bites a material with **no other candidate**: two other models load a model file the same
+  way and came out correct, because every one of their materials had a packed image to win with.
+  Finding that line in a log does not by itself mean the build is wrong — check whether a material
+  actually took it.
+- **A part can be textured in one container and not another.** Yoda's USDZ carries no eye map at
+  all; the original `.zip` of the same character does. Merging both folders and pinning the material
+  to the file by name is cheaper than re-authoring the map.
 
 ## Rig families mapped so far
 
@@ -304,6 +381,9 @@ of the pipeline is identical.
 | Auto-Rig Pro | `root.x`, `arm_stretch.l` |
 | MultiVersus | `fml_un_L_uparm` |
 | Maya namespaced | `<ns>:jnt_l_arm_wrist` |
+| Smash Bros / NUD rip | `_15_-_LShoulderJ` — every bone numbered in hierarchy order. The ordinal is position, not identity, so map on what follows it; `LShoulderN` is the clavicle and `LShoulderJ` the upper arm |
+| Zelda OoT (Blender rip) | CamelCase parts with `.l`/`.r`, a numbered `Spine_NN` chain, and the forearm spelled `Upperarm.l.001`. A parallel `_ik` skeleton sits beside it and must **not** be mapped — an IK control is not a deform bone |
+| Mario N64-era rip | Short Maya-style joints with an `L_`/`R_` prefix (`L_Shold`, `L_Elb`). No chest bone, and the clavicles hang off the **neck** |
 | Hand-built | Meaningless `Bone.0NN`; map it by reading the hierarchy |
 
 ## The animator contract
@@ -447,13 +527,16 @@ Not answered by the code, and worth measuring before authoring anything expensiv
   Geometry is cheap in the bundle; textures dominate. Dropping 4K maps to 1K took the `.vrm`
   from 215 MB to 63 MB, while discarding 73% of the triangles saved only ~24 MB and visibly
   faceted every curved panel.
-- **How far automatic weighting can rescue an unrigged body.** One model arrived with a 17,064
-  vertex body carrying no armature modifier and no vertex groups at all. Binding it is easy;
-  binding it *well* is not. Excluding the `_end` tips and the facial bones moved the arm bones
-  into the top weights, but the arm geometry still would not follow the skeleton into a T-pose,
-  and a further attempt tore the arms apart instead. The skeleton was provably right at that
-  point — upper arm and hand shared a Z and ran along X — so the failure is in the binding, not
-  the rig. Where the line falls between "worth auto-weighting" and "needs rigging by hand" is
-  unmeasured.
+- **How far automatic weighting can rescue an unrigged body — now answered, and the answer is
+  "not far enough; use a service".** One model arrived with a 17,064 vertex body carrying no
+  armature modifier and no vertex groups at all. Binding it is easy; binding it *well* is not.
+  Excluding the `_end` tips and the facial bones moved the arm bones into the top weights, but the
+  arm geometry still would not follow the skeleton into a T-pose, and a further attempt tore the
+  arms apart instead. Occlusion-aware variants were tried twice and made it worse. The skeleton was
+  provably right throughout — upper arm and hand shared a Z and ran along X — so the failure was
+  always in the binding, not the rig. The route that works is to upload the bare geometry to
+  **mixamo.com's auto-rigger** and build from what comes back; four models were rescued that way.
+  Note what the download actually is — a rest skeleton in the uploader's own pose plus a T-pose
+  *animation* — and keep that animation, per *The skeleton must be a T-pose facing -Y*.
 - **Whether a non-`Vocals` type loads from a file at all**, or only from a venue.
 - **What a missing viseme does** — silent fallback, or a visible mouth stuck shut.
