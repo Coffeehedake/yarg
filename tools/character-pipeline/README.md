@@ -66,7 +66,7 @@ Install to `%USERPROFILE%\AppData\LocalLow\FatalException\YARG-FE\release\custom
 `mixamo` (auto-detects a prefix) · `cc_base` · `rigify_def` · `rigify_plain` · `ue4` · `rp`
 (Renderpeople) · `daz` · `bip` · `valvebiped` · `maxbiped` (auto-detects `Bip001`/`Bip01`) ·
 `advskel` · `arp` · `multiversus` · `mayajnt` · `xeno` · `pomni` · `steve` · `b1` · `sonic` ·
-`sonicforces` · `linkoot` · `mariojnt` · `smash` · `simple`
+`sonicforces` · `linkoot` · `mariojnt` · `smash` · `anakin` · `simple`
 
 Mapped names are resolved case-insensitively and tolerate a trailing `_NN` index, so a Source rig
 shipped as `ValveBiped.Bip01_L_Forearm_41` still maps (it mapped 0 of 52 without that).
@@ -184,6 +184,49 @@ her static pose lifts that arm, and the asymmetry the check depends on vanished.
 the angle between consecutive bones, summed down each finger -- which a rotation of the whole hand
 does not change. `fingerpose.py <model>` prints it per chain for both hands.
 
+## A posed sculpt: Anakin, and the switches he needs
+
+Some archives are not a character plus a rig, they are a **scene** -- one figure frozen in an
+action pose, most of it unrigged, props and a second character in the same file. The pipeline now
+converts one, but it has to be told to.
+
+```
+VRM_REBIND_STALE=1 VRM_STANDUP=1 blender --background --python build_vrm.py --   "<src>/anakin pose.fbx" "<src>/textures" 1.85 anakin "Anakin" Anakin.vrm 1024   '^(Luke_Saber|obiwan\.002|Circle\.00[23]|Cylinder)$'
+```
+
+- `VRM_STANDUP=1` -- his spine lies 102 degrees off vertical, so he must be stood up before a
+  T-pose means anything. **Opt-in on purpose:** measured automatically it fires on characters that
+  are already standing (Sonic reads 115.4 degrees "off vertical" while perfectly upright).
+- `VRM_REBIND_STALE=1` -- his head, eyes, hair and tabards are bound to four bones between them,
+  against a rest pose this build replaces. Dropping those and re-binding everything in one pass is
+  what stops them floating half a metre above the body. **Opt-in:** it claimed Yoda's eyes and
+  eyelashes and moved his scale factor from 0.6471 to 0.1022.
+- `VRM_REBIND_MAX_GROUPS` (default 4) -- how few bones a binding must use to count as a rigid
+  attachment rather than real authored weights.
+- The exclude list is doing real work: `Luke_Saber` is a prop, `obiwan.002` is a **different
+  character** in the same file, `Cylinder` is the lightsaber blade (match it exactly, or it also
+  catches `Cylinder.004`, which is part of him), and the two `Circle` meshes have zero size.
+
+**Always check both arms AND legs after.** His bones all finish at 0.0 degrees and one leg's
+geometry still smears, which is the limit described in `docs/character-models.md` under *Where
+automatic weighting actually gives out*.
+
+## Regression-test before committing a builder change
+
+Three of these changes passed their own model and broke others. Sonic, Yoda and Alcina are the
+cheap regression set, because between them they cover a kept T-pose clip, a hair rigger, a static
+pose that is the model's shape, and a relaxed hand. Re-run all three and compare the numbers --
+not the renders, the numbers, which are in their build logs:
+
+| Model | height | scale factor | humanoid | other |
+|---|---|---|---|---|
+| Sonic | 1.00 | `x0.9968` | 28/52 | keeps the authored T-pose clip |
+| Yoda | 0.66 | `x0.6471` | 28/52 | 1 spring chain |
+| Alcina | 2.90 | `x0.7388` | 52/52 | relaxes the left hand, 61.3 vs 0.0 deg |
+
+A scale factor that moves is the loudest signal available: it says the geometry being measured
+changed size, which means something upstream moved it.
+
 ## Known per-model arguments
 
 | Character | rig | height | notes |
@@ -226,6 +269,8 @@ does not change. `fingerpose.py <model>` prints it per chain for both hands.
 | Gadget Hackwrench | rigify_def | 1.30 | exclude `^(WGT-\|smd_bone_vis)`, hairrig `^Hair$` |
 | Peach | smash | 1.70 | her forearms are stretched in the SOURCE rip, not by the build |
 | Harley Quinn | mixamo | 1.70 | build from the USDZ (names transferred from the .fbx) — the .zip has no colour map and the two have different UVs |
+| Anakin Skywalker | anakin | 1.85 | a posed SCULPT — see the section above; needs `VRM_STANDUP=1 VRM_REBIND_STALE=1`. One leg's mesh still smears |
+| Judy Hopps | rigify_plain | 1.05 | exclude `^NurbsPath` (whiskers). Arms bind straight down at 86.6 deg off X and web to the torso when straightened — needs a Mixamo re-rig |
 | Yoda | mixamo | 0.66 | USDZ, no skeleton at all — auto-rigged; `VRM_RIGID="island:0=Head"`, robe on `island:1` with `HAIR_BONE=Spine1 HAIR_STRANDS=1`. The USDZ has **no** eye map: merge `CHA_yodaEye_C.png` from the original zip and pin it with `VRM_TEX="yoda_mesh_RoninShader7=CHA_yodaEye_C.png"` |
 | Miku | maxbiped | 1.58 | `VRM_FINGER_FILL=1`, hairrig `island:7+8` for the twintails, exclude `^ts_bot` (a detached guitar) |
 | Skibidi Toilet | valvebiped | 1.60 | exclude `^(Icosphere\|Object_2$)` — the toilet shell swamps the model |

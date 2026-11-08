@@ -244,6 +244,91 @@ Do not trust the feet blindly, though: a cartoon rig can have them splayed sidew
 along -X, which would have cost him a 79-degree turn and taken his already-correct T-pose off axis.
 If the arms already lie along X the orientation is right, and only a ~180-degree turn preserves it.
 
+## The bind pose is not always the rest pose
+
+A rest pose is where the skeleton sits; a **bind** pose is the configuration the geometry was
+built around. Usually they are the same and the distinction never comes up. On a posed sculpt
+they are not.
+
+Anakin Skywalker ships as `anakin pose.fbx`: one character frozen in a mid-air leap, a skinned
+head, and sixteen thousand vertices of body carrying no armature modifier and no vertex groups at
+all. Measured against those unrigged meshes, his bone midpoints sit **0.443 m** from the nearest
+vertex at rest and **0.067 m** posed. At rest the skeleton is not inside the body, so there is
+nothing to weight to; the leap is where the model actually lives.
+
+Measure it on the **unrigged** meshes, and on raw vertex coordinates. A skinned mesh stores its
+vertices at bind position, so for those the rest pose wins by construction and the comparison is
+circular. An unrigged mesh is static geometry, so where it sits is evidence.
+
+Two things follow, and both bit:
+
+- **Settle the rest pose before anything binds to it.** A bind is expressed relative to rest, so a
+  rest pose that changes afterwards is applied twice to everything bound before the change and
+  once to everything bound after. Anakin's body was auto-weighted while the armature stood in his
+  leap and the leap was baked into rest underneath it; he exported in pieces.
+- **Weights authored against the discarded rest are stale.** His head, eyes, hair and shoulder
+  tabards — the only parts the file itself had bound — then floated half a metre above a perfectly
+  good body. Neither binding was wrong; they were not the same binding. Dropping those few rigid
+  attachments and re-binding everything in one pass fixed it. This is opt-in, because a properly
+  skinned character carries real weights worth keeping.
+
+## Do not reimplement the armature modifier
+
+Baking a pose into the rest pose means moving the geometry with the bones, and the obvious way to
+do that is to sum `w * (pose @ rest-inverse) @ v` over each vertex's groups. That expression looks
+exactly like the armature modifier and is not it. Weight normalisation, unweighted vertices and
+the object's own parenting all feed into the real deform.
+
+It is wrong in a way that hides: on Anakin it left every unrigged mesh correct to 0.000 m and
+moved the one mesh that was already skinned — his head — by **0.523 m**. One mesh out of fifteen.
+
+Evaluate the object with only its armature modifier enabled and copy the result back. `to_mesh()`
+returns coordinates in the object's own space, which is what the base mesh wants, and a deform
+modifier cannot change the vertex count. This is also why the stack cannot simply be applied: a
+Solidify or Subdivision ahead of the armature *would* change that count.
+
+## A T-pose is a STANDING pose
+
+Every arm measurement assumes a spine that runs up +Z. Anakin's lies **102 degrees** off vertical,
+so the arm correction put both arms neatly along X and left him lying flat on his face — a
+character that passes every check in this document while being unusable.
+
+Standing one up takes three steps, in this order:
+
+1. Turn the whole rig until hips→head runs up. A whole-object rotation cannot break a binding.
+2. Straighten each leg onto -Z joint by joint. A global rotation cannot do this, because the legs
+   are folded *relative* to the spine.
+3. Re-aim the facing. The facing step runs much earlier, and standing him up spun him about the
+   vertical axis as well.
+
+Two traps. `Armature.transform()` did nothing at all here — hips→head read `(-0.748, -0.385,
+-0.183)` before and after, to three decimals — so write `EditBone.matrix` instead, which carries
+head, tail and roll together. And **converge**: a connected bone's head is pinned to its parent's
+tail, so setting every bone's matrix at once is not the rigid rotation it looks like. One pass took
+102.3 degrees only as far as 76.3.
+
+Keep this **opt-in**. Measured automatically it fires on characters that are already standing —
+Sonic reads 115.4 degrees "off vertical" while standing perfectly upright — and standing an
+upright character up is a regression, not a fix.
+
+## Where automatic weighting actually gives out
+
+Not at "unrigged", which the Mixamo route handles. At **contorted**.
+
+Bone heat decides a vertex's owner by proximity, so two body parts that touch in the bind pose
+share weights. That is harmless while they stay together and tears the moment they separate:
+
+- Anakin binds with one knee folded against his chest. Every bone ends up measuring 0.0 degrees —
+  spine vertical, legs down, arms along X — and one leg's *geometry* still smears across the robe,
+  because the bones moved and the vertices were never only that leg's.
+- Judy Hopps binds with her arms straight down against her body, 86.6 degrees off X. Her rest pose
+  is a far better 40.2, but her geometry was sculpted in the posed one, so that is where the bones
+  are. Straightening the arms webs them to her torso.
+
+The tell is precise and worth knowing: **the bones measure correct and the mesh does not follow.**
+When that happens the rig is fine and the weights are not, so more rig correction will not help.
+Re-rig the bare geometry from scratch — see the open questions — rather than refining the pose.
+
 ## A hand posed around a prop that is no longer there
 
 Props get excluded because they inflate the bounds or skewer the model, and the hand that was
@@ -389,7 +474,7 @@ of the pipeline is identical.
 | Smash Bros / NUD rip | `_15_-_LShoulderJ` — every bone numbered in hierarchy order. The ordinal is position, not identity, so map on what follows it; `LShoulderN` is the clavicle and `LShoulderJ` the upper arm |
 | Zelda OoT (Blender rip) | CamelCase parts with `.l`/`.r`, a numbered `Spine_NN` chain, and the forearm spelled `Upperarm.l.001`. A parallel `_ik` skeleton sits beside it and must **not** be mapped — an IK control is not a deform bone |
 | Mario N64-era rip | Short Maya-style joints with an `L_`/`R_` prefix (`L_Shold`, `L_Elb`). No chest bone, and the clavicles hang off the **neck** |
-| Hand-built | Meaningless `Bone.0NN`; map it by reading the hierarchy |
+| Hand-built | Meaningless `Bone.0NN`; map it by reading the hierarchy, the rest geometry and what each bone actually deforms |
 
 ## The animator contract
 
