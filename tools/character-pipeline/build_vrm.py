@@ -1385,6 +1385,31 @@ if RIG == "mixamo":
         if b.name.startswith("mixamorig:"):
             b.name = b.name[len("mixamorig:"):]; n += 1
     print("stripped mixamorig: from", n, "bones")
+    # Some rips also number every bone: 'mixamorig:Hips_02', 'Spine_03',
+    # 'LeftForeArm_011'. The Fortnite Mandalorian is one, and it carries a
+    # SECOND, Unreal-named skeleton beside the Mixamo one, so a blind strip of
+    # every trailing _NNN would collide names across the two. Rename only where
+    # stripping the suffix produces a name Mixamo is expected to have, and only
+    # where that name is still free -- so this cannot invent a mapping that was
+    # not already there, and does nothing at all on a normal Mixamo rig.
+    _EXPECT = {"Hips", "Spine", "Spine1", "Spine2", "Neck", "Head"}
+    for _S in ("Left", "Right"):
+        _EXPECT |= {_S + x for x in ("Shoulder", "Arm", "ForeArm", "Hand",
+                                     "UpLeg", "Leg", "Foot", "ToeBase")}
+        for _f in ("Thumb", "Index", "Middle", "Ring", "Pinky"):
+            _EXPECT |= {"%sHand%s%d" % (_S, _f, _i) for _i in (1, 2, 3)}
+    if "Hips" not in {b.name for b in arm.data.bones}:
+        _taken = {b.name for b in arm.data.bones}
+        _renamed = 0
+        for b in arm.data.bones:
+            _base = re.sub(r"_\d+$", "", b.name)
+            if _base != b.name and _base in _EXPECT and _base not in _taken:
+                _taken.discard(b.name)
+                b.name = _base
+                _taken.add(_base)
+                _renamed += 1
+        if _renamed:
+            print("stripped a numeric suffix from %d Mixamo bone(s)" % _renamed)
 
 bone_names = {b.name for b in arm.data.bones}
 

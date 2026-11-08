@@ -329,6 +329,22 @@ The tell is precise and worth knowing: **the bones measure correct and the mesh 
 When that happens the rig is fine and the weights are not, so more rig correction will not help.
 Re-rig the bare geometry from scratch — see the open questions — rather than refining the pose.
 
+## A skeleton can be in the file and not be in the MODEL
+
+A rig that deforms the mesh is not necessarily a rig that fits it. The Fortnite
+Mandalorian ships two complete skeletons, a Mixamo-named one and an Unreal-named one, and
+**both are collapsed**: his foot bone sits at z -150.40 and his head bone at z -149.76, two units
+apart, on a mesh 144 units tall. Every bone is stacked at roughly one height.
+
+He still renders perfectly, because at rest the deformation is the identity and the vertices sit
+where the artist left them. Nothing is visibly wrong until something moves a bone -- and then the
+whole character smears, which is exactly what the T-pose correction did to him.
+
+So before trusting a skeleton, check that it is **inside** the mesh: mean distance from bone
+midpoints to the nearest vertex, against the mesh's own size. The same measurement that identifies
+a bind pose (above) identifies a useless skeleton, and a rig whose head and foot share a height is
+not a rig at all. The fix is the same as for no rig: re-rig the geometry.
+
 ## A hand posed around a prop that is no longer there
 
 Props get excluded because they inflate the bounds or skewer the model, and the hand that was
@@ -431,6 +447,12 @@ blaming the pipeline:
 - **Inverted-hull outlines.** A Solidify shell plus a black "line art" material draws an outline in
   Blender; exported, the shell is just more geometry and wraps the character in translucent
   duplicates.
+- **Two skeletons, neither usable.** A game rip can carry both the engine's rig and an imported
+  one. Check which deforms the mesh, and check that it fits -- see *A skeleton can be in the file
+  and not be in the MODEL*.
+- **A format Blender cannot read.** One Judy Hopps archive is an FBX 7300 whose import dies with
+  `KeyError: Root Model` on every combination of import options. Yoda's first archive was an ASCII
+  FBX, which Blender also refuses. Ask for another format rather than fighting the importer.
 - **Unrigged bodies.** A mesh with no armature modifier and no vertex groups exports as a static
   node. Automatic weighting can sometimes rescue it, but only after excluding the `_end` tips an FBX
   import adds and any facial bones — both sit inside the mesh, and bone-heat hands them whole limbs.

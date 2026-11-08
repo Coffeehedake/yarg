@@ -211,6 +211,51 @@ VRM_REBIND_STALE=1 VRM_STANDUP=1 blender --background --python build_vrm.py --  
 geometry still smears, which is the limit described in `docs/character-models.md` under *Where
 automatic weighting actually gives out*.
 
+## Mixamo's auto-rigger: what it needs, and how it fails
+
+The route for a model whose own rig cannot be used. Prepare the upload with
+`strip_for_mixamo.py`, which now does four things that each turned out to be necessary:
+
+- **Bakes any existing skinning into the geometry first.** A partly-rigged model keeps its skinned
+  meshes at bind position while its unrigged ones sit where they were sculpted. Anakin uploaded as
+  a headless body with his head floating beside it, because his head was the one mesh the file had
+  skinned.
+- **Joins everything into ONE mesh.** Every model that has rigged successfully here went up as one.
+- **Stands a posed sculpt up** (`MIXAMO_UP="<hipsBone>,<headBone>"`). Mixamo will not make sense of
+  a character lying at 102 degrees off vertical, and a rigid rotation deforms nothing.
+- **Can drop embedded textures** (`MIXAMO_NO_TEX=1`). The browser upload is capped at 10 MB and
+  Mando's embedded export was 12.6 MB; the rigger only needs geometry, and `build_vrm.py` re-applies
+  textures from the archive's own folder afterwards.
+
+**It fails SILENTLY, and that is the thing to know.** There is no error anywhere on screen: the
+page simply returns to the marker step with the markers still in place. What actually happens is
+visible only in the network and console:
+
+```
+PUT  /api/v1/characters/<id>/rig        -> 202
+GET  /api/v1/characters/<id>/monitor    -> 202, 202, 200
+console:  app:autorigger inputs: ...
+console:  app:viewer  .../assets/UNRIGGED/verold.json     <- it reloaded the unrigged asset
+```
+
+Seeing `assets/unrigged/` after the monitor returns 200 is the failure signature. Each attempt
+costs about 25 seconds, so a human watching it just sees the dialog bounce.
+
+**What it rejects: limbs against the body.** Measured across attempts on one afternoon:
+
+| Model | pose | result |
+|---|---|---|
+| Mandalorian | upright, arms clear of the torso | **rigged** |
+| Anakin | mid-lunge, one arm up, legs crossed | rejected, 4 attempts |
+| Judy Hopps | upright but arms straight down against her sides | rejected, 2 attempts |
+
+Mixamo's own orient screen says it: *"have your character in T-pose and fingers spread apart"*.
+Joining the mesh, standing it up and placing the markers carefully do not substitute for limbs
+that are actually apart.
+
+Working the dialog: **turn off Use Symmetry** for any asymmetric pose, or the mirrored marker lands
+in mid-air. The orient step's up-arrow is "Rotate On X-Axis" and moves in 90-degree steps.
+
 ## Regression-test before committing a builder change
 
 Three of these changes passed their own model and broke others. Sonic, Yoda and Alcina are the
@@ -269,6 +314,8 @@ changed size, which means something upstream moved it.
 | Gadget Hackwrench | rigify_def | 1.30 | exclude `^(WGT-\|smd_bone_vis)`, hairrig `^Hair$` |
 | Peach | smash | 1.70 | her forearms are stretched in the SOURCE rip, not by the build |
 | Harley Quinn | mixamo | 1.70 | build from the USDZ (names transferred from the .fbx) — the .zip has no colour map and the two have different UVs |
+| The Mandalorian | mixamo | 1.83 | glTF; BOTH its skeletons are collapsed, so re-rig via Mixamo. Exclude `^(grogu\|.*CRADLE\|.*JetPack\|.*RIFLE\|Icosphere)` — the pack also contains Grogu, his cradle and a rifle |
+| Power Girl | mixamo | 1.80 | Injustice 2 rip, 417 bones, builds clean. Materials are called `mesh0`/`mesh1`, so pin them: `VRM_TEX="mesh0=Supergirl_A_Body_Color.png,mesh0.001=Supergirl_A_FACE_30hz_Color.png,mesh0.002=Supergirl_A_Cape_Color.png,mesh1=Supergirl_A__EyesMouth_Color.png,mesh2=Supergirl_A_Hair_Color.png"` |
 | Anakin Skywalker | anakin | 1.85 | a posed SCULPT — see the section above; needs `VRM_STANDUP=1 VRM_REBIND_STALE=1`. One leg's mesh still smears |
 | Judy Hopps | rigify_plain | 1.05 | exclude `^NurbsPath` (whiskers). Arms bind straight down at 86.6 deg off X and web to the torso when straightened — needs a Mixamo re-rig |
 | Yoda | mixamo | 0.66 | USDZ, no skeleton at all — auto-rigged; `VRM_RIGID="island:0=Head"`, robe on `island:1` with `HAIR_BONE=Spine1 HAIR_STRANDS=1`. The USDZ has **no** eye map: merge `CHA_yodaEye_C.png` from the original zip and pin it with `VRM_TEX="yoda_mesh_RoninShader7=CHA_yodaEye_C.png"` |
