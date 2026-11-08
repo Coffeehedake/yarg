@@ -19,7 +19,7 @@ the commit this file lands in. Every claim cites the code that makes it true.
 
 | Confidence | What it covers |
 |---|---|
-| **Verified by building one** | The whole pipeline, end to end — on 2026-11-07 we exported a `.yargchar` from a VRM and watched it load, render and idle in the character selector |
+| **Verified by building 46** | The whole pipeline, end to end — on 2026-11-07 we exported a `.yargchar` from a VRM and watched it load, render and idle in the character selector, then converted 45 more third-party models through the same pipeline |
 | **Verified by running it** | The install location, and that a stock `.yargchar` loads and renders in a self-built fork |
 | **Read from source** | The remaining details below — the bundle layout and the animator contract |
 
@@ -168,6 +168,143 @@ that survives is easy to miss:
 nodes with a `mesh` also have a `skin`. The answer should be all of them. Nothing upstream of
 that file — not the viewport, not `isValid` — distinguishes a character that will move from one
 that will not.
+
+## The skeleton must be a T-pose facing -Y
+
+VRM 1.0 requires it and Unity builds the humanoid avatar on that assumption, so a model that
+ships otherwise is not merely untidy — every arm muscle is retargeted from the wrong rest
+orientation. In game it reads as **arms bending the wrong way the moment an animation plays**,
+while the character looks perfectly fine standing still.
+
+The measurement that identifies it: compare the upper-arm bone's head to the hand's. A T-pose has
+them far apart in **X**. A character whose arms hang at its sides has them at the same X — Pomni's
+both sat at 0.1030, while the two characters that looked right, the Xenomorph and Prix, both ran
+shoulder-to-wrist along X.
+
+Correcting it takes three steps, and each has a trap:
+
+- **Converge, do not compute.** One rotation lands on some rigs and not others: on a Mixamo rig
+  carrying a shoulder bone, a single computed 53-degree correction left the arm **74 degrees out,
+  worse than it started**. Measure after each attempt and apply the remainder.
+- **Keep the rotation and nothing else.** Assigning `pose_bone.matrix` can leave scale and
+  translation in the basis when the parent chain is not unit-scaled, and a convergence loop then
+  re-applies it on every iteration. Gordon Freeman came out **7.58 m wide** — a copper rod.
+  Decompose and write back rotation only.
+- **Move the geometry with the bones** before making the pose the rest pose, or the mesh keeps the
+  old bind. Compute the deformation by hand rather than applying the armature modifier: these
+  meshes also carry Solidify and Subdivision, so the evaluated mesh has a different vertex count.
+
+**Facing** matters just as much, and is easy to miss because the model still *looks* like itself.
+Batman's model faces +X, so the T-pose correction swung his arms front-to-back instead of out, and
+his cape, seen edge-on, read as destroyed geometry. Read the facing off the **feet**, which point
+where the character does, and turn the whole rig about Z.
+
+Do not trust the feet blindly, though: a cartoon rig can have them splayed sideways. Sonic's point
+along -X, which would have cost him a 79-degree turn and taken his already-correct T-pose off axis.
+If the arms already lie along X the orientation is right, and only a ~180-degree turn preserves it.
+
+## VRM checks the hierarchy, not the names
+
+Every humanoid bone must be a descendant of the one above it, **and the chain must not pass through
+another mapped bone**. The export cancels with a message naming only the bone it gave up on, which
+says nothing about the real cause. Four shapes of this turned up in a single batch:
+
+| What the rig does | Example | What it needs |
+|---|---|---|
+| Legs hang off a *sibling* of the pelvis | Batman: spine under `C_pelvis`, legs under `C_pelvis_att` | Hips is the nearest common ancestor of the spine and both legs |
+| Legs hang off the **spine** | 3ds Max Biped: thighs parented to `Bip001 Spine` | That bone is really the hips — promote it and shift the spine chain up |
+| Shoulders hang off the **neck** | 3ds Max Biped again: `Bip001 L Clavicle` under `Bip001 Neck` | Re-parent: reaching the right ancestor is not enough if a mapped bone sits between |
+| The rig is **flat** | Tenna: a Rigify DEF export whose shoulders, arms and thighs were all unparented roots | Rebuild the hierarchy from the map |
+
+Re-parenting at rest is **deformation-neutral** — the armature reads `bone.matrix_local`, which
+re-parenting does not move — so repairing the hierarchy costs nothing and can be automated.
+
+## Spring bones need bones
+
+Hair, a skirt or a cape stays rigid however well the character animates, because Unity's humanoid
+rig has no muscle for it. VRM moves them with spring bones and YARG drives those at runtime, but
+only if the chains exist in the skeleton. Three of five models checked had their hair skinned
+straight to the head bone with no chain at all, so there was nothing to spring.
+
+Where chains do exist, detect them rather than naming them per model — `hair`, `ponytail`, `braid`,
+`bang`, `tail`, `skirt`, `cape`, `coat`, `hat` and the like — excluding any bone that is also a
+humanoid bone. Two things are easy to get wrong:
+
+- **Follow every branch.** A walk that takes only the first child silently sprang one of Prix's
+  three hair strands and left the other two rigid, because all three hang off a shared `hairAll`.
+- **A bone may belong to only one chain**, so emit a shared trunk separately rather than repeating
+  it in every branch.
+
+Chains can also be **built** for a model that has none: find the hair by mesh or material name,
+anchor the top third to the head, split the loose remainder into strands, run a short bone chain
+down each, and weight the hair onto them with a ramp that holds it to the scalp. Verify by **posing
+the chains**, never at rest — at rest every weighting is the identity, so a torn rig and a good one
+look exactly alike. And clear whatever held the hair before: a model that keeps its hair on one
+rigid bone leaves that weight at 1.0, and the armature normalises by total weight, so the old bone
+simply out-votes the new chain.
+
+## Three ways a material lies
+
+- **Emission with no map.** An imported material can carry a leftover white emission colour, and
+  the exporter writes it out as `emissiveFactor [1,1,1]`. The surface then glows pure white and
+  drowns its own base colour. Thanos had a blank face for this reason while his armour textured
+  correctly, and every obvious check came back clean: the texture was a real purple map, the UVs
+  were healthy, the normals were sound, and the exported file genuinely carried the right
+  `baseColorTexture`. The proof was dimming the render lights to 15% — everything went dark and
+  **the face stayed pure white**, which over-exposure cannot do. Zero emission wherever no emissive
+  map is wired; a material that really glows has one.
+- **Alpha mode is not inferred.** Blender 4.2 removed `Material.blend_method`, and with nothing
+  left to read the VRM add-on wrote `alphaMode=BLEND` for **every** material in the file, skin and
+  all. Blended opaque geometry sorts against itself and samples the base map's alpha channel, which
+  turned one character's skin into brown and white blotches. Set `mtoon1.alpha_mode` explicitly.
+- **Texture matching needs more than the material's name.** Materials called `ai_skin`, `phong1` or
+  `lambert8` name nothing. Try, narrowest first: files naming the material; files sharing a *word*
+  with it (`shoes` and `sonic_shoes`, which slug matching misses); files sharing a word with the
+  **mesh** it sits on (`female_body_Prinx` and `body 3_initialShadingGroup_BaseColor.png`); then
+  everything. Never let the widest pool assign a base colour to a material that already carries a
+  real one — doing so handed Pomni's flat Blue, Red and Yellow an unrelated texture and wiped her
+  colours out.
+
+## What actually arrives in an archive
+
+Converting 45 downloads turned up the same handful of surprises repeatedly. Check for them before
+blaming the pipeline:
+
+- **Props inflate the bounds.** Alastor's microphone sat 3 m from his body, so scaling to a target
+  height shrank *him* to a doll. Jessica Rabbit arrived with a mic stand skewering her.
+- **Empty placeholder meshes.** Four of the B1 droid's five mesh objects had zero vertices. They
+  still count as meshes, so the real geometry can be mistaken for scenery.
+- **Two half-characters on two armatures.** Batman ships a body and a separate cape-plus-head
+  attachment, the cape mesh being 2,099 vertices of which 1,901 are cape. The body skeleton carries
+  the cape bones too, so rebind the cape onto it and discard the second armature.
+- **Inverted-hull outlines.** A Solidify shell plus a black "line art" material draws an outline in
+  Blender; exported, the shell is just more geometry and wraps the character in translucent
+  duplicates.
+- **Unrigged bodies.** A mesh with no armature modifier and no vertex groups exports as a static
+  node. Automatic weighting can sometimes rescue it, but only after excluding the `_end` tips an FBX
+  import adds and any facial bones — both sit inside the mesh, and bone-heat hands them whole limbs.
+  Even then the result may not be usable; see the open questions.
+
+## Rig families mapped so far
+
+Each is a bone-naming convention rather than a tool. Recognise it from the bone names and the rest
+of the pipeline is identical.
+
+| Family | Tell |
+|---|---|
+| Mixamo | `mixamorig:Hips`, or the same names under another prefix |
+| Reallusion / Character Creator | `CC_Base_Hip` |
+| Rigify | `DEF-spine`, or the same names with no prefix |
+| Unreal mannequin | `pelvis`, `clavicle_l`, `thigh_l` |
+| Renderpeople | `<scan name>_upperarm_l` |
+| DAZ Genesis | `lShldrBend`, `lThighBend` |
+| Source engine | `ValveBiped.Bip01_L_UpperArm` |
+| 3ds Max Biped | `Bip001 L UpperArm` — space separated, prefix varies |
+| Advanced Skeleton | `Root_M`, and `Shoulder_L` is the upper arm |
+| Auto-Rig Pro | `root.x`, `arm_stretch.l` |
+| MultiVersus | `fml_un_L_uparm` |
+| Maya namespaced | `<ns>:jnt_l_arm_wrist` |
+| Hand-built | Meaningless `Bone.0NN`; map it by reading the hierarchy |
 
 ## The animator contract
 
