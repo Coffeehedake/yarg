@@ -447,5 +447,13 @@ Not answered by the code, and worth measuring before authoring anything expensiv
   Geometry is cheap in the bundle; textures dominate. Dropping 4K maps to 1K took the `.vrm`
   from 215 MB to 63 MB, while discarding 73% of the triangles saved only ~24 MB and visibly
   faceted every curved panel.
+- **How far automatic weighting can rescue an unrigged body.** One model arrived with a 17,064
+  vertex body carrying no armature modifier and no vertex groups at all. Binding it is easy;
+  binding it *well* is not. Excluding the `_end` tips and the facial bones moved the arm bones
+  into the top weights, but the arm geometry still would not follow the skeleton into a T-pose,
+  and a further attempt tore the arms apart instead. The skeleton was provably right at that
+  point — upper arm and hand shared a Z and ran along X — so the failure is in the binding, not
+  the rig. Where the line falls between "worth auto-weighting" and "needs rigging by hand" is
+  unmeasured.
 - **Whether a non-`Vocals` type loads from a file at all**, or only from a venue.
 - **What a missing viseme does** — silent fallback, or a visible mouth stuck shut.
