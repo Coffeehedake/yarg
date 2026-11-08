@@ -1,0 +1,24 @@
+# The tooling is published; what it produces is not.
+# These are personal-use conversions of third-party models.
+*.yargchar
+*.vrm
+*.fbx
+*.glb
+*.gltf
+*.blend
+*.blend1
+*.usd
+*.usda
+*.usdc
+*.usdz
+*.obj
+*.dae
+*.mtl
+*.png
+*.jpg
+*.jpeg
+*.tga
+*.dds
+*.exr
+*.zip
+*.log

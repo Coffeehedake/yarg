@@ -15,6 +15,11 @@ knowledge is a 22-minute tutorial video in a role-gated Discord channel.
 So the specification below was **read out of this repository's own source**, on 2026-11-06, at
 the commit this file lands in. Every claim cites the code that makes it true.
 
+The pipeline that applies it lives in [`tools/character-pipeline/`](../tools/character-pipeline/)
+— a Blender builder, a Unity exporter and the diagnostic scripts each trap below was found
+with. The **characters** it produces are personal-use conversions of third-party models and are
+deliberately not in this repository.
+
 ## Status of each claim
 
 | Confidence | What it covers |
