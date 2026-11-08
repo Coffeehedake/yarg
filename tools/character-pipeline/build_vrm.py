@@ -282,6 +282,62 @@ if _had_anim:
                   "is not, so it is the authored bind the model wants. Synthesizing "
                   "a T from the rest pose instead would lose the limb roll.")
 
+# The second reason to keep an animated pose: the GEOMETRY was sculpted around
+# it, so it is the bind pose no matter what the clip looks like.
+#
+# Anakin Skywalker ships as "anakin pose.fbx" -- a character frozen in a mid-air
+# leap, with one skinned head and sixteen thousand vertices of unrigged body. The
+# clip is not a T-pose and never will be, so the test above correctly declines
+# it. But the skeleton still belongs to that leap: measured against the UNRIGGED
+# meshes, bone midpoints sit 0.443 m from the nearest vertex at rest and 0.067 m
+# when posed. At rest the skeleton is simply not in the body.
+#
+# Reset such a rig to its rest pose and the bones walk out of the mesh, so
+# nothing can be weighted to them and the automatic rescue below has no chance.
+# Bake the pose instead and bones and geometry coincide, which is the one
+# configuration worth binding in.
+#
+# Measure on the unrigged meshes ONLY, and on raw vertex coordinates. A SKINNED
+# mesh stores its vertices at bind position, so for those the rest pose always
+# wins by construction and the comparison says nothing. An unrigged mesh is
+# static geometry, so where it sits is evidence.
+if _had_anim and not _keep_anim_pose:
+    _loose = [o for o in meshes
+              if not any(m.type == "ARMATURE" for m in o.modifiers)
+              and not o.vertex_groups and len(o.data.vertices) >= 50]
+    _pts = [o.matrix_world @ _v.co for o in _loose for _v in o.data.vertices]
+    if len(_pts) >= 200:
+        from mathutils.kdtree import KDTree
+        _kd = KDTree(len(_pts))
+        for _i, _q in enumerate(_pts):
+            _kd.insert(_q, _i)
+        _kd.balance()
+        _M = arm.matrix_world
+        _fit = {}
+        for _lbl, _posed in (("rest", False), ("pose", True)):
+            _ds = []
+            for _b in arm.data.bones:
+                if "_end" in _b.name:
+                    continue
+                if _posed:
+                    _pb = arm.pose.bones[_b.name]
+                    _mid = _M @ ((_pb.head + _pb.tail) / 2.0)
+                else:
+                    _mid = _M @ ((_b.head_local + _b.tail_local) / 2.0)
+                _ds.append(_kd.find(_mid)[2])
+            _fit[_lbl] = sum(_ds) / len(_ds) if _ds else 0.0
+        _hs = [(_M @ _b.head_local).z for _b in arm.data.bones]
+        _span = (max(_hs) - min(_hs)) or 1.0
+        print("  rig fit against %d unrigged mesh(es): rest %.3f m from the "
+              "geometry, posed %.3f m (rig spans %.2f m)"
+              % (len(_loose), _fit["rest"], _fit["pose"], _span))
+        if _fit["pose"] < 0.5 * _fit["rest"] and _fit["pose"] < 0.08 * _span:
+            _keep_anim_pose = True
+            print("  KEEPING the animated pose: the skeleton lies INSIDE the "
+                  "unrigged geometry when posed and outside it at rest, so the "
+                  "model was sculpted in this pose and this is its bind. "
+                  "Resetting to rest would move the bones out of the mesh.")
+
 # Reset the bones ONLY if an animation was actually attached. A static pose in
 # matrix_basis is not a stray animation frame -- it can be the model's SHAPE.
 # Alcina Dimitrescu is 9 feet 6 inches because her pose says so, with no action
@@ -297,11 +353,86 @@ else:
                          for i in range(4) for j in range(4)))
     if _static:
         print("keeping a static pose on %d bones (%s)"
-              % (_static, "the clip is the authored T-pose" if _keep_anim_pose
+              % (_static, "this pose is the bind, per the reason above"
+                 if _keep_anim_pose
                  else "no animation was attached, so this is the model's shape, "
                       "not a stray frame"))
 bpy.context.view_layer.update()
 print("actions left in file:", [a.name for a in bpy.data.actions])
+
+
+def bake_pose_to_rest(why):
+    """Make the current pose the rest pose, moving the geometry with it.
+
+    A BIND is defined relative to the rest pose, so the rest pose has to be
+    final before anything is bound to the skeleton. Bind first and bake second
+    and the pose is applied twice to whatever was just bound: Anakin Skywalker's
+    body was auto-weighted while the armature stood in his leap, then the leap
+    was baked into rest underneath it, and he exported in pieces -- head, hair
+    and eyes in one place and the body half a metre away, because the head was
+    skinned before the bake and the body after it.
+
+    Compute the deformation by hand rather than applying the armature modifier:
+    these meshes also carry Solidify and Subdivision, so the evaluated mesh has a
+    different vertex count from the one being written back.
+    """
+    posed = [pb for pb in arm.pose.bones
+             if any(abs(pb.matrix_basis[i][j] - (1.0 if i == j else 0.0)) > 1e-5
+                    for i in range(4) for j in range(4))]
+    if not posed:
+        return False
+    # Let BLENDER compute the deformation; do not reimplement it.
+    #
+    # The obvious hand-rolled version -- sum w * (pose @ rest-inverse) @ v over
+    # each vertex's groups -- looks like the armature modifier and is not it. On
+    # Anakin it left every unrigged mesh correct and moved the one already
+    # skinned mesh, his head, by 0.523 m, which read as a head floating above a
+    # perfectly good body. Weight normalisation, unweighted vertices and the
+    # object's own parenting all feed into the real deform.
+    #
+    # So evaluate the object with ONLY its armature modifier switched on and
+    # copy the result back. to_mesh() returns coordinates in the object's own
+    # space, which is what the base mesh wants, and a deform modifier cannot
+    # change the vertex count. The other modifiers are the reason this cannot
+    # simply apply the modifier stack: a Solidify or Subdivision ahead of it
+    # would change that count.
+    _skipped = []
+    for _o in meshes:
+        if not any(m.type == "ARMATURE" and m.object is arm for m in _o.modifiers):
+            continue
+        _saved = [(m, m.show_viewport) for m in _o.modifiers]
+        for _m, _ in _saved:
+            if _m.type != "ARMATURE":
+                _m.show_viewport = False
+        _dg = bpy.context.evaluated_depsgraph_get()
+        _ev = _o.evaluated_get(_dg)
+        _me = _ev.to_mesh()
+        _coords = [_v.co.copy() for _v in _me.vertices]
+        _ev.to_mesh_clear()
+        for _m, _flag in _saved:
+            _m.show_viewport = _flag
+        if len(_coords) != len(_o.data.vertices):
+            _skipped.append(_o.name)
+            continue
+        if _o.data.users > 1:
+            _o.data = _o.data.copy()
+        for _v, _c in zip(_o.data.vertices, _coords):
+            _v.co = _c
+        _o.data.update()
+    if _skipped:
+        print("  WARNING: could not bake the pose into %s -- evaluating with "
+              "only the armature modifier still changed the vertex count"
+              % _skipped)
+    bpy.context.view_layer.update()
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="POSE")
+    bpy.ops.pose.armature_apply()
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.update()
+    print("  baked a non-identity rest pose (%d bones) into the rest pose%s"
+          % (len(posed), why))
+    return True
 
 # Drop shape keys and keep the BASE mesh.
 #
@@ -545,6 +676,17 @@ if os.environ.get("VRM_FINGER_FILL"):
 # then re-evaluated against an armature that had moved: Alcina Dimitrescu's hat
 # was already 0.362 m tall instead of 0.651 by the time the conversion ran, and
 # every fix aimed at the conversion was aimed at the wrong stage.
+# If the pose we decided to KEEP is the bind, settle it into the rest pose now,
+# before any of that conversion or the rescue binds a single vertex. A bind is
+# expressed relative to rest, so a rest pose that changes afterwards is applied
+# twice to everything bound before the change and once to everything bound
+# after. That is what shattered Anakin: his head was skinned in the file and his
+# body was auto-weighted here, so the two were bound on opposite sides of the
+# bake and ended up half a metre apart.
+if _keep_anim_pose:
+    bake_pose_to_rest(" -- doing this BEFORE anything binds to the skeleton, "
+                      "since a bind is relative to the rest pose")
+
 bpy.context.view_layer.update()   # pose matrices below must be evaluated
 CHILD_OF = [(o, c) for o in meshes for c in list(o.constraints)
             if c.type == "CHILD_OF" and c.target is arm]
@@ -672,6 +814,45 @@ if BONE_PARENTED:
 # correction - Judy Hopps' 17,064-vertex body arrived this way while a 355-vertex
 # offcut was the only skinned thing in the file. Bind it with automatic weights;
 # an approximate binding that moves beats a perfect one that cannot.
+# A model whose bind pose we had to REPLACE cannot keep its old weights.
+#
+# When the animated pose turns out to be the bind, the rest pose the file
+# shipped with is discarded -- and every weight already in the file was authored
+# against that discarded rest. Meshes bound before the swap and meshes bound
+# after it then describe two different skeletons. Anakin is the worked example:
+# his body, auto-weighted here, came out a clean standing figure, while his
+# head, eyes, hair and shoulder tabards -- the only parts the file itself had
+# bound, to four bones between them -- floated half a metre above it. Nothing
+# was wrong with either binding; they simply were not the same binding.
+#
+# So when the pose was swapped in, re-bind everything in one pass, in one
+# configuration, at one moment. Only meshes bound to FEW bones are taken: a
+# properly skinned character carries real weights worth keeping, whereas these
+# are rigid attachments that automatic weighting reproduces at no loss.
+_REBIND_MAXG = int(os.environ.get("VRM_REBIND_MAX_GROUPS", "4"))
+# OPT-IN. Measured on Yoda, whose eyes and eyelashes this claimed and whose
+# scale factor then moved from 0.6471 to 0.1022 -- a six-fold change in the
+# geometry it was measuring. It is right for a model whose own bindings are
+# a handful of rigid attachments (Anakin), and wrong where those bindings
+# were authored and good. Ask for it.
+if _keep_anim_pose and os.environ.get("VRM_REBIND_STALE"):
+    _stale = [o for o in meshes
+              if any(m.type == "ARMATURE" and m.object is arm for m in o.modifiers)
+              and 0 < len(o.vertex_groups) <= _REBIND_MAXG]
+    for _o in _stale:
+        for _m in [m for m in _o.modifiers if m.type == "ARMATURE"]:
+            _o.modifiers.remove(_m)
+        for _g in list(_o.vertex_groups):
+            _o.vertex_groups.remove(_g)
+        _o.parent_type = "OBJECT"
+    if _stale:
+        bpy.context.view_layer.update()
+        print("  dropped the old weights on %d mesh(es) bound to %d bones or "
+              "fewer (%s): their weights were authored against the rest pose "
+              "this build just replaced, so they are re-bound below with "
+              "everything else"
+              % (len(_stale), _REBIND_MAXG, [o.name for o in _stale][:6]))
+
 UNRIGGED = [o for o in meshes
             if not any(m.type == "ARMATURE" for m in o.modifiers)
             and not o.vertex_groups
@@ -1086,34 +1267,7 @@ if _FING_BONES and not os.environ.get("VRM_KEEP_GRIP"):
 # -- she measured 7.26 m wide the moment the character was scaled, while the
 # source scene was perfectly fine. Move the geometry with the bones and make the
 # pose the rest, so there is nothing left to re-interpret.
-_POSED = [pb for pb in arm.pose.bones
-          if any(abs(pb.matrix_basis[i][j] - (1.0 if i == j else 0.0)) > 1e-5
-                 for i in range(4) for j in range(4))]
-if _POSED:
-    for _o in meshes:
-        _g2n = {g.index: g.name for g in _o.vertex_groups}
-        _new = []
-        for _v in _o.data.vertices:
-            _acc = Vector((0.0, 0.0, 0.0))
-            _tot = 0.0
-            for _g in _v.groups:
-                _pb = arm.pose.bones.get(_g2n.get(_g.group, ""))
-                if _pb is None or _g.weight <= 0.0:
-                    continue
-                _acc += ((_pb.matrix @ _pb.bone.matrix_local.inverted()) @ _v.co) * _g.weight
-                _tot += _g.weight
-            _new.append(_acc / _tot if _tot > 1e-9 else _v.co.copy())
-        for _v, _c in zip(_o.data.vertices, _new):
-            _v.co = _c
-        _o.data.update()
-    bpy.ops.object.select_all(action="DESELECT")
-    bpy.context.view_layer.objects.active = arm
-    bpy.ops.object.mode_set(mode="POSE")
-    bpy.ops.pose.armature_apply()
-    bpy.ops.object.mode_set(mode="OBJECT")
-    bpy.context.view_layer.update()
-    print("  baked a non-identity rest pose (%d bones) into the rest pose"
-          % len(_POSED))
+bake_pose_to_rest("")
 
 trace("after pose bake")
 
@@ -1604,6 +1758,48 @@ elif RIG == "maxbiped":
         MAP["%s_lower_leg" % s_] = q + "Calf"
         MAP["%s_foot" % s_] = q + "Foot"
         MAP["%s_toes" % s_] = q + "Toe0"
+elif RIG == "anakin":
+    # Another meaningless 'Bone.0NN' rig, read off the hierarchy and the rest
+    # geometry exactly as 'steve' was. 85 bones, three roots, and a full set of
+    # fingers. Sides by X, with +X the character's LEFT; the feet point -Y, which
+    # is what fixes that convention here.
+    #
+    # Two shapes in it that VRM will reject until the hierarchy repair runs:
+    # both hands hang off 'Bone.057', a two-hand control bone under the chest
+    # rather than off their own forearms, and the toes are their own ROOTS
+    # instead of children of the feet.
+    #
+    # Each finger has four bones where VRM wants three: the first is a
+    # metacarpal, which VRM only has a slot for on the thumb, so fingers map
+    # from the second bone on. The thumb keeps its metacarpal and skips its
+    # intermediate instead, since VRM gives the thumb no intermediate slot.
+    MAP = {"hips": "Bone", "spine": "Bone.001", "chest": "Bone.002",
+           "neck": "Bone.003", "head": "Bone.004"}
+    for s_, sh, ua, la, hd, ul, ll, ft, to in (
+            ("left", "Bone.059", "Bone.011", "Bone.012", "Bone.013",
+             "Bone.005", "Bone.006", "Bone.060", "Bone.007"),
+            ("right", "Bone.058", "Bone.034", "Bone.035", "Bone.036",
+             "Bone.008", "Bone.009", "Bone.061", "Bone.010")):
+        MAP["%s_shoulder" % s_] = sh
+        MAP["%s_upper_arm" % s_] = ua
+        MAP["%s_lower_arm" % s_] = la
+        MAP["%s_hand" % s_] = hd
+        MAP["%s_upper_leg" % s_] = ul
+        MAP["%s_lower_leg" % s_] = ll
+        MAP["%s_foot" % s_] = ft
+        MAP["%s_toes" % s_] = to
+    # Finger chains, listed by their metacarpal. Ordered little -> thumb, which
+    # is how they run in Y: the index sits nearest the thumb, furthest forward.
+    for s_, base in (("left", 14), ("right", 37)):
+        for i_, f_ in enumerate(("little", "ring", "middle", "index")):
+            n_ = base + i_ * 4
+            MAP["%s_%s_proximal" % (s_, f_)] = "Bone.%03d" % (n_ + 1)
+            MAP["%s_%s_intermediate" % (s_, f_)] = "Bone.%03d" % (n_ + 2)
+            MAP["%s_%s_distal" % (s_, f_)] = "Bone.%03d" % (n_ + 3)
+        t_ = base + 16
+        MAP["%s_thumb_metacarpal" % s_] = "Bone.%03d" % t_
+        MAP["%s_thumb_proximal" % s_] = "Bone.%03d" % (t_ + 1)
+        MAP["%s_thumb_distal" % s_] = "Bone.%03d" % (t_ + 3)
 elif RIG == "simple":
     # A minimal hand-built rig: one bone per limb segment, no neck, no fingers.
     MAP = {"hips": "Hip_Bone", "spine": "Spine_Bone", "head": "Head_Bone"}
@@ -2201,6 +2397,154 @@ def _straighten(rot_bone, from_bone, to_bone, sx):
             Vector((0.0, 0.0, 0.0)), _r, Vector((1.0, 1.0, 1.0)))
         bpy.context.view_layer.update()
     return _arm_error(from_bone, to_bone, sx)[0]
+
+
+def _axis_error(a_name, b_name, tgt):
+    """Degrees between the a->b bone line and `tgt`, plus the rotation closing it."""
+    v = arm.pose.bones[b_name].head - arm.pose.bones[a_name].head
+    if v.length < 1e-9:
+        return 0.0, None
+    v = v.normalized()
+    return math.degrees(math.acos(max(-1.0, min(1.0, v.dot(tgt))))), v.rotation_difference(tgt)
+
+
+def _straighten_axis(rot_bone, from_bone, to_bone, tgt):
+    """_straighten, for any target direction rather than only the X axis."""
+    for _ in range(8):
+        _ang, _q = _axis_error(from_bone, to_bone, tgt)
+        if _ang < 2.0 or _q is None:
+            break
+        _pb = arm.pose.bones[rot_bone]
+        _pb.rotation_mode = "QUATERNION"
+        _h = _pb.head.copy()
+        _pb.matrix = (Matrix.Translation(_h) @ _q.to_matrix().to_4x4()
+                      @ Matrix.Translation(-_h)) @ _pb.matrix
+        bpy.context.view_layer.update()
+        _l, _r, _sc = _pb.matrix_basis.decompose()
+        _pb.matrix_basis = Matrix.LocRotScale(
+            Vector((0.0, 0.0, 0.0)), _r, Vector((1.0, 1.0, 1.0)))
+        bpy.context.view_layer.update()
+    return _axis_error(from_bone, to_bone, tgt)[0]
+
+
+def _rotate_rig(M):
+    """Turn the whole rig and all its geometry by M, keeping them together.
+
+    flatten() cannot do this: it hands the matrix to Armature.transform(), which
+    on this file left every bone exactly where it was -- hips->head stayed
+    (-0.748, -0.385, -0.183) before and after, to three decimals. Write the rest
+    bones directly instead, through EditBone.matrix so that head, tail and ROLL
+    all move together, and transform each mesh by the same matrix. Requires the
+    pose to be identity, which it is once the bind pose has been baked.
+    """
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for _o in meshes:
+        if _o.data.users > 1:
+            _o.data = _o.data.copy()
+        _o.data.transform(M, shape_keys=True)
+        _o.data.update()
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="EDIT")
+    for _eb in arm.data.edit_bones:
+        _eb.matrix = M @ _eb.matrix
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.update()
+
+
+# Stand the character UP before asking anything about its arms.
+#
+# A T-pose is a standing pose, and every arm measurement here assumes a spine
+# that runs up +Z. Anakin Skywalker's bind pose is a mid-air leap -- the file is
+# literally called "anakin pose.fbx" -- so his spine lies nearly horizontal. The
+# arm correction duly put both arms along X and left him lying down, a perfectly
+# straight-armed character flat on his face, because nothing in the pipeline had
+# ever had to rotate a whole character upright.
+#
+# Do it in two parts, and in this order. First turn the WHOLE rig so hips->head
+# runs up: a whole-object rotation cannot break a binding, and it fixes the bulk
+# of the error in one step. Then straighten each leg joint by joint onto -Z,
+# which a global rotation cannot do because the legs are folded relative to the
+# spine. Arms come after, below, and are left exactly as they were.
+_SPINE_TILT = float(os.environ.get("VRM_STANDUP_DEG", "25"))
+_hipsb, _headb = MAP.get("hips"), MAP.get("head")
+# OPT-IN, and it stays that way until the measurement below is trustworthy.
+# Sonic reads 115.4 degrees off vertical here and Yoda 93.4, yet both stand
+# up perfectly well without this step: whatever space this is measuring in,
+# it is not the one it looks like. Standing an upright character "up" is a
+# regression, so only a model known to need it asks for it.
+if (os.environ.get("VRM_STANDUP") and (not os.environ.get("VRM_NO_TPOSE"))
+        and _hipsb in bone_names and _headb in bone_names):
+    _A = arm.matrix_world
+    _up = (_A @ arm.pose.bones[_headb].head) - (_A @ arm.pose.bones[_hipsb].head)
+    _tilt = (math.degrees(math.acos(max(-1.0, min(1.0,
+             _up.normalized().dot(Vector((0.0, 0.0, 1.0)))))))
+             if _up.length > 1e-6 else 0.0)
+    if _tilt > _SPINE_TILT:
+        print("  stand up: the spine lies %.1f deg off vertical -- this bind "
+              "pose is not a standing one" % _tilt)
+        # Converge, do not compute. A connected bone's head is pinned to its
+        # parent's tail, so setting every EditBone.matrix at once is not the
+        # rigid rotation it looks like -- the first pass took the spine from
+        # 102.3 degrees off vertical only as far as 76.3. Re-measure and apply
+        # what is left.
+        _UP = Vector((0.0, 0.0, 1.0))
+        for _ in range(12):
+            _v = (arm.matrix_world @ arm.pose.bones[_headb].head
+                  - arm.matrix_world @ arm.pose.bones[_hipsb].head)
+            if _v.length < 1e-9:
+                break
+            _off = math.degrees(math.acos(max(-1.0, min(1.0,
+                _v.normalized().dot(_UP)))))
+            if _off < 2.0:
+                break
+            _rotate_rig(_v.normalized().rotation_difference(_UP)
+                        .to_matrix().to_4x4())
+        _up2 = (arm.matrix_world @ arm.pose.bones[_headb].head
+                - arm.matrix_world @ arm.pose.bones[_hipsb].head)
+        print("  stand up: spine now %.1f deg off vertical"
+              % math.degrees(math.acos(max(-1.0, min(1.0,
+                  _up2.normalized().dot(Vector((0.0, 0.0, 1.0))))))))
+        bpy.context.view_layer.objects.active = arm
+        bpy.ops.object.mode_set(mode="POSE")
+        _DOWN = Vector((0.0, 0.0, -1.0))
+        for _s in ("left", "right"):
+            _ul, _ll = MAP.get("%s_upper_leg" % _s), MAP.get("%s_lower_leg" % _s)
+            _ft = MAP.get("%s_foot" % _s)
+            if not (_ul in bone_names and _ll in bone_names):
+                continue
+            _e1 = _straighten_axis(_ul, _ul, _ll, _DOWN)
+            _e2 = (_straighten_axis(_ll, _ll, _ft, _DOWN)
+                   if _ft in bone_names else 0.0)
+            print("  stand up: %s leg thigh %.1f deg off -Z, shin %.1f deg"
+                  % (_s, _e1, _e2))
+        bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.context.view_layer.update()
+        # Standing him up spun him round the vertical axis too, and the facing
+        # step ran long before this, so re-aim him now. The feet say where a
+        # character looks; flatten them to the ground plane and turn the rig
+        # about Z until they point -Y. Converge, for the same reason as above.
+        _WANT = Vector((0.0, -1.0, 0.0))
+        for _ in range(12):
+            _f = Vector((0.0, 0.0, 0.0))
+            for _s in ("left", "right"):
+                _fb = MAP.get("%s_foot" % _s)
+                if _fb not in bone_names:
+                    continue
+                _pb = arm.pose.bones[_fb]
+                _d = (_pb.tail - _pb.head)
+                _d.z = 0.0
+                if _d.length > 1e-6:
+                    _f += _d.normalized()
+            if _f.length < 1e-6:
+                break
+            _f.normalize()
+            _ang = math.degrees(math.acos(max(-1.0, min(1.0, _f.dot(_WANT)))))
+            if _ang < 2.0:
+                break
+            _rotate_rig(Matrix.Rotation(
+                math.atan2(_WANT.y, _WANT.x) - math.atan2(_f.y, _f.x), 4, "Z"))
+        print("  stand up: feet now point %s"
+              % (tuple(round(v, 2) for v in _f),))
 
 
 if (not os.environ.get("VRM_NO_TPOSE")) and any(
