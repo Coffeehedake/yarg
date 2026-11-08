@@ -1851,6 +1851,41 @@ elif RIG == "anakin":
         MAP["%s_thumb_metacarpal" % s_] = "Bone.%03d" % t_
         MAP["%s_thumb_proximal" % s_] = "Bone.%03d" % (t_ + 1)
         MAP["%s_thumb_distal" % s_] = "Bone.%03d" % (t_ + 3)
+elif RIG == "mandousd":
+    # The Fortnite Mandalorian's USDZ. Blender reads it natively, and unlike the
+    # glTF of the same pack its skeleton is REAL: 150 bones, 121 of them
+    # deforming, sitting 0.08 inside a body 0.84 wide. The glTF's is collapsed --
+    # foot bone and head bone two units apart on a 144-unit mesh -- which is why
+    # that route needed Mixamo and a mesh join at all.
+    #
+    # Numbered bones again, so the map comes off the hierarchy and the rest
+    # positions. Mando hangs entirely off root n29; Grogu has his own root n101,
+    # along with the cradle, jetpack and rifle, and those meshes are excluded.
+    # Up is -Y here: the head sits at y=-144 and the feet at y=-10.
+    MAP = {"hips": "n29", "spine": "n30", "chest": "n31",
+           "upper_chest": "n32", "neck": "n36", "head": "n37"}
+    for s_, sh, ua, la, hd, ul, ll, ft, to, th, f1, f2, f3, f4 in (
+            ("left", "n39", "n40", "n41", "n42", "n90", "n91", "n92", "n93",
+             46, 62, 58, 54, 50),
+            ("right", "n66", "n67", "n68", "n69", "n95", "n96", "n97", "n98",
+             70, 86, 82, 78, 74)):
+        MAP["%s_shoulder" % s_] = sh
+        MAP["%s_upper_arm" % s_] = ua
+        MAP["%s_lower_arm" % s_] = la
+        MAP["%s_hand" % s_] = hd
+        MAP["%s_upper_leg" % s_] = ul
+        MAP["%s_lower_leg" % s_] = ll
+        MAP["%s_foot" % s_] = ft
+        MAP["%s_toes" % s_] = to
+        MAP["%s_thumb_metacarpal" % s_] = "n%d" % th
+        MAP["%s_thumb_proximal" % s_] = "n%d" % (th + 1)
+        MAP["%s_thumb_distal" % s_] = "n%d" % (th + 2)
+        # The four chains run in Z across the hand; the one nearest the thumb is
+        # the index. Each is three bones, which is exactly what VRM wants.
+        for _f, _b in (("index", f1), ("middle", f2), ("ring", f3), ("little", f4)):
+            MAP["%s_%s_proximal" % (s_, _f)] = "n%d" % _b
+            MAP["%s_%s_intermediate" % (s_, _f)] = "n%d" % (_b + 1)
+            MAP["%s_%s_distal" % (s_, _f)] = "n%d" % (_b + 2)
 elif RIG == "judyusd":
     # A USDZ whose bones are called 'n13', 'n14' ... and carry no information at
     # all, so the map is read off the hierarchy, the rest positions and what
