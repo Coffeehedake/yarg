@@ -307,9 +307,19 @@ because every entry below has already been rediscovered at least once.
      `normal`, so her base stem kept `difuselmap` whole, the texture SET derived from it
      contained one file — itself — and the rule "take only from this set" quietly meant "take
      nothing". A set of one carries no information and now falls back to the ordinary pick.
-   - **Judy Hopps** rebuilt 132% heavier than the installed one, so the installed character did
-     not come from `judy-hopps-not-game-ready.zip`. Find out which source it did come from
-     before replacing her.
+   - **Judy Hopps: the source in this workspace is not her, and the rebuild is not usable.**
+     Settled by measurement rather than by size. Her geometry matches the installed character
+     to 0.6% — 38,268 triangles against 38,044 — which looks like the same model, but her
+     textures are a different set entirely: the installed build carries `Judy_A_01_Cloth_baseColor`
+     and `Judy_A_01_Face_baseColor` at 512², the rebuild carries `Material_ColorMap` and
+     `Material_NormalMap` at 1024². **Rendered, the rebuild is almost entirely white**: the
+     maps are present and are not reaching the surface.
+     She also exports 13 glTF texture ENTRIES for 2 images, so UniGLTF materialises seven
+     copies of the same colour map and she lands at 14.2 MB against 2.3 MB installed.
+     Her rebuild does fix two real things — the sides check reports "all 4 limb pairs are on
+     the side their names claim", so this source has no mirrored rig, and the belt is attached
+     — which makes her tempting and makes the white render the only thing standing in the way.
+     **She is held back**; the installed build stays until a source is found that textures.
    - ~~Lola Bunny and Peach produced no model file.~~ **Both archives hold another archive**:
      Lola's `source/` is a `.rar` containing her `.glb`, Peach's is a `model.zip` containing
      four spellings of her (`.dae`, `.fbx`, `.mtl`, `.obj`). Lola rebuilds identically and
