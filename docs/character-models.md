@@ -424,6 +424,45 @@ someone. Alcina's floating hat was the same failure and cost a 0.5568 rescale of
 
 Check the extremes of the bounding box against the body, not just its size.
 
+## A prop can share a MESH with the kit
+
+An exclude pattern is a blunt instrument: it takes whole meshes, and a model is not obliged to
+put the character in one mesh and its props in another. Vigilante's weapons, the sheath on his
+back and the holster on his hip are **four islands of one mesh**. Excluding it disarms him and
+strips his kit; keeping it leaves a sword and a gun in the hands where YARG puts a microphone.
+
+What separates them is not the name but the BONE: a held weapon is weighted to a hand, worn gear
+to the spine or the hips. So `VRM_DROP_ISLAND="<mesh-pattern>=<bone>[+<bone>]"` drops the islands
+of a named mesh that a named bone CARRIES — 540 vertices on `n17`/`n50` out, 204 on `n10`/`n8`
+left where they are.
+
+**The mesh pattern is not optional, and it is the whole safety of the switch.** A hand is itself
+weighted to the hand bone. A bone named on its own would take the hands off with what they are
+holding, and the only reason it does not here is that the pattern names the prop's own mesh —
+after which the hand islands, 80 vertices each in `Vigilante_obj_Pewter_001_0`, are not even
+candidates.
+
+### "Connected" has to mean welded first
+
+The island walk follows EDGES, and a USD import arrives fully split: every face carries its own
+copy of each corner and no two faces share one. Run on Vigilante's weapons mesh it reported **146
+islands of four vertices each** instead of four islands of 224, 184, 108 and 96 — every quad its
+own island. The drop still removed the right vertices, because the test is per-vertex, but the
+log became 146 lines of nothing and the rule "most of this island is the hand's" was trivially
+true of every single quad. A safety margin that can only ever pass is not one.
+
+So the walk can weld by position first, and the drop asks it to. It is **off by default** because
+island RANKS are addressable elsewhere — `island:7+8` picks Miku's twintails, `island:0` pins
+Sonic's quills — and welding renumbers them.
+
+### Then look at the hands
+
+Removing what a hand holds is the first half. Alcina's lesson is the second: a hand posed around
+a prop stays clamped around the hole. The automatic relax does not fire here, because it needs
+one hand at rest to compare against and Vigilante grips with both — so check the hands rather
+than assume, and **look from above**, where a curl is visible. His open flat, fingers straight,
+thumb clear: nothing to fix. That was luck of the model, not the pipeline being clever.
+
 ## A hand posed around a prop that is no longer there
 
 Props get excluded because they inflate the bounds or skewer the model, and the hand that was

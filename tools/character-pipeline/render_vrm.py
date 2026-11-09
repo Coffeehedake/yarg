@@ -1,52 +1,46 @@
-"""Render a .vrm from the front. Imports via the VRM add-on - obj_import does not
-read a .vrm and fails without raising, which renders an empty frame that looks
-like a successful check.
+"""Render a .vrm from the front, through the glTF importer -- a .vrm IS a glb.
+obj_import does not read one and fails without raising, which renders an empty
+frame that looks like a successful check. The trade is that MToon becomes plain
+PBR, so judge geometry, pose, UVs and texture assignment from these renders,
+not the shading.
 
-Do NOT empty the scene with wm.read_homefile(). In background Blender it leaves
-no window, and both the VRM add-on and the glTF importer then take their
-file-browser path: the add-on returns {'CANCELLED'} and the glTF importer raises
-"Please select a file", neither of which says anything about the file you gave
-it. Removing the objects by hand empties the scene just as well and keeps the
-context the importers need."""
+Three explanations for one failure were written into this file before the cause
+was measured, and all three were wrong: an add-on race, a context that
+`read_homefile` destroys, and an extension filter that refuses '.vrm'. The cause
+was in the CALLER -- a shell-quoting bug that passed a path with an unexpanded
+variable still in it. Measured here afterwards, in this Blender:
+
+    gltf, fresh session, no read_homefile           -> {'FINISHED'}
+    gltf, AFTER read_homefile(use_empty=True)       -> {'FINISHED'}
+    gltf given a .vrm, filepath only                -> {'FINISHED'}
+    gltf given a path that does not exist           -> RAISED Please select a file
+    vrm add-on given a path that does not exist     -> {'CANCELLED'}
+
+"Please select a file" and {'CANCELLED'} are what a MISSING FILE looks like.
+Both read as a broken importer and neither is one. Print the path the importer
+was handed before theorising about the importer."""
 
 
 def clear_scene():
+    """Empty the scene by removing its objects.
+
+    `read_homefile(use_empty=True)` does this just as well; the measurements
+    above are what demote it from "never do this" -- which this file used to
+    say -- to a matter of taste."""
     import bpy as _b
     for _o in list(_b.data.objects):
         _b.data.objects.remove(_o, do_unlink=True)
 
 
 def import_gltf(path):
-    """Import a .glb/.gltf/.vrm, naming the file the way the operator wants.
+    """Import a .glb/.gltf/.vrm.
 
-    `import_scene.gltf` filters candidates by EXTENSION, and '.vrm' is not in
-    its filter_glob, so it refuses one with "Please select a file" -- an error
-    about a dialog, on a file that is present and valid. Copying the same bytes
-    to a '.glb' name is the whole fix; `directory` and `files` are passed
-    because that is the form the filter reads.
-
-    A .vrm IS a glb, so this reads one directly. The VRM add-on's own importer
-    returns {'CANCELLED'} here with nothing on stderr, and reading the shipped
-    bytes through glTF has the advantage of checking what was actually written.
-    The trade is that MToon becomes plain PBR, so judge geometry, pose, UVs and
-    texture assignment from these renders -- not the shading."""
-    import os
-    import shutil
-    import tempfile
-
+    The glTF importer reads a .vrm by filepath alone. An earlier version of this
+    function copied every .vrm to a temporary '.glb' first, on the belief that
+    the operator's filter_glob refuses the extension; the table above is that
+    belief being tested."""
     import bpy as _b
-    # The operator filters on EXTENSION, and '.vrm' is not in its filter_glob.
-    # The refusal it gives is "Please select a file", which reads as a missing
-    # or unreadable path and is neither: the file is there and valid. Hand it
-    # the same bytes under a name the filter accepts.
-    if not path.lower().endswith((".glb", ".gltf")):
-        tmp = os.path.join(tempfile.mkdtemp(prefix="vrmrender_"),
-                           os.path.splitext(os.path.basename(path))[0] + ".glb")
-        shutil.copyfile(path, tmp)
-        path = tmp
-    return _b.ops.import_scene.gltf(
-        filepath=path, directory=os.path.dirname(path),
-        files=[{"name": os.path.basename(path)}])
+    return _b.ops.import_scene.gltf(filepath=path)
 
 
 def imported_meshes():

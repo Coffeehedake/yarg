@@ -80,6 +80,133 @@ if EXCLUDE:
     if not meshes:
         raise SystemExit("ABORT: the exclude pattern /%s/ removed every mesh" % EXCLUDE)
 
+def _islands(o, weld=False):
+    """Connected vertex islands of a mesh, biggest first.
+
+    `weld=True` treats vertices that share a POSITION as one first. A USD
+    import arrives fully SPLIT -- every face carries its own copy of each
+    corner, and no two faces share an edge -- so without welding, Vigilante's
+    weapons mesh reports 146 islands of four vertices each instead of 4, and
+    any rule of the form "most of this island is X" becomes trivially true of a
+    single quad. It is off by default because the island RANKS feed
+    VRM_RIGID and the hair rigger (`island:7+8` picks Miku's twintails), and
+    welding would renumber them.
+    """
+    rep = list(range(len(o.data.vertices)))
+    if weld:
+        seen = {}
+        for v in o.data.vertices:
+            k = (round(v.co.x, 5), round(v.co.y, 5), round(v.co.z, 5))
+            rep[v.index] = seen.setdefault(k, v.index)
+    adj = {}
+    for e in o.data.edges:
+        a, b = rep[e.vertices[0]], rep[e.vertices[1]]
+        adj.setdefault(a, []).append(b)
+        adj.setdefault(b, []).append(a)
+    members = {}
+    for v in range(len(o.data.vertices)):
+        members.setdefault(rep[v], []).append(v)
+    seen, out = set(), []
+    for v in sorted(members):
+        if v in seen:
+            continue
+        comp, stack = [], [v]
+        seen.add(v)
+        while stack:
+            x = stack.pop()
+            comp += members.get(x, [x])
+            for y in adj.get(x, ()):
+                if y not in seen:
+                    seen.add(y)
+                    stack.append(y)
+        out.append(comp)
+    out.sort(key=len, reverse=True)
+    return out
+
+
+# A prop can share a MESH with gear that belongs on the character, and then no
+# name pattern can separate the two. Vigilante's two held weapons, the sheath on
+# his back and the holster on his hip are four islands of ONE mesh: excluding it
+# takes his kit away with the weapons, and keeping it leaves the weapons in his
+# hands -- where YARG puts a microphone.
+#
+#   VRM_DROP_ISLAND="<mesh-pattern>=<bone>[+<bone>...][,<pattern>=<bone>...]"
+#
+# drops every connected island of a matching mesh that is mostly driven by one
+# of those bones -- what the bone CARRIES rather than what it is.
+#
+# The mesh pattern is not optional, and that is the whole safety of it: a hand
+# is itself weighted to the hand bone, so a bone named on its own would take the
+# hand off with what it is holding. Naming the prop's own mesh is what makes the
+# selection safe, and an island that is only partly the bone's (the threshold is
+# four fifths) is left alone, because a part that shares a bone with real body
+# geometry is not a prop.
+for _spec in [x for x in os.environ.get("VRM_DROP_ISLAND", "").split(",")
+              if x.strip()]:
+    _pat, _, _bones = _spec.strip().rpartition("=")
+    if not _pat or not _bones:
+        raise SystemExit("ABORT: VRM_DROP_ISLAND spec %r is not "
+                         "'<mesh-pattern>=<bone>[+<bone>]'" % _spec)
+    _want = []
+    for _b in _bones.split("+"):
+        _hit = [b.name for b in arm.data.bones
+                if b.name == _b or b.name.endswith(":" + _b)
+                or b.name.endswith("_" + _b)]
+        if not _hit:
+            raise SystemExit("ABORT: VRM_DROP_ISLAND names bone %r, which this "
+                             "rig has not got" % _b)
+        _want.append(_hit[0])
+    _hits = [o for o in meshes if re.search(_pat, o.name, re.I)]
+    if not _hits:
+        raise SystemExit("ABORT: VRM_DROP_ISLAND mesh pattern /%s/ matched "
+                         "nothing" % _pat)
+    _dropped = 0
+    for _o in list(_hits):
+        _gi = dict((_g.index, _g.name) for _g in _o.vertex_groups)
+        _kill = []
+        for _isl in _islands(_o, weld=True):
+            _n = 0
+            for _vi in _isl:
+                _gs = _o.data.vertices[_vi].groups
+                _best = max(_gs, key=lambda g: g.weight) if len(_gs) else None
+                if _best is not None and _gi.get(_best.group) in _want:
+                    _n += 1
+            if _n * 5 < len(_isl) * 4:
+                continue
+            _co = [_o.matrix_world @ _o.data.vertices[i].co for i in _isl]
+            print("  drop island: '%s' %d verts carried by %s, "
+                  "x %.3f..%.3f y %.3f..%.3f z %.3f..%.3f"
+                  % (_o.name, len(_isl), "/".join(_want),
+                     min(c.x for c in _co), max(c.x for c in _co),
+                     min(c.y for c in _co), max(c.y for c in _co),
+                     min(c.z for c in _co), max(c.z for c in _co)))
+            _kill += _isl
+            _dropped += len(_isl)
+        if not _kill:
+            continue
+        if len(_kill) == len(_o.data.vertices):
+            print("  drop island: '%s' was ALL prop -- removing the mesh" % _o.name)
+            bpy.data.objects.remove(_o, do_unlink=True)
+            meshes.remove(_o)
+            continue
+        import bmesh as _bmesh
+        _bm = _bmesh.new()
+        _bm.from_mesh(_o.data)
+        _bm.verts.ensure_lookup_table()
+        _bmesh.ops.delete(_bm, geom=[_bm.verts[i] for i in _kill],
+                          context="VERTS")
+        _bm.to_mesh(_o.data)
+        _bm.free()
+    # A spec that matches meshes and drops nothing is a spec that did not do
+    # what it says. Say so here, rather than let a silent no-op be read in a
+    # render as "the prop is gone".
+    if not _dropped:
+        raise SystemExit("ABORT: VRM_DROP_ISLAND %r matched %d mesh(es), but no "
+                         "island of them is carried by %s -- nothing was dropped"
+                         % (_spec, len(_hits), "/".join(_want)))
+if not meshes:
+    raise SystemExit("ABORT: VRM_DROP_ISLAND removed every mesh")
+
 # Anything that is neither the armature nor a kept mesh is studio furniture:
 # lights, cameras, the turntable empty, and TEXT objects, which the VRM exporter
 # happily converts to geometry (Pomni shipped two watermark captions as meshes).
@@ -1067,30 +1194,6 @@ if UNRIGGED:
 # head mass), so naming that island and the bone it belongs to fixes it exactly.
 #   VRM_RIGID="island:0=Head[,island:3=Hand_L]"
 # The bone is matched on the END of its name, so 'Head' finds 'mixamorig:Head'.
-def _islands(o):
-    adj = {}
-    for e in o.data.edges:
-        a, b = e.vertices
-        adj.setdefault(a, []).append(b)
-        adj.setdefault(b, []).append(a)
-    seen, out = set(), []
-    for v in range(len(o.data.vertices)):
-        if v in seen:
-            continue
-        comp, stack = [], [v]
-        seen.add(v)
-        while stack:
-            x = stack.pop()
-            comp.append(x)
-            for y in adj.get(x, ()):
-                if y not in seen:
-                    seen.add(y)
-                    stack.append(y)
-        out.append(comp)
-    out.sort(key=len, reverse=True)
-    return out
-
-
 for _spec in [x for x in os.environ.get("VRM_RIGID", "").split(",") if x.strip()]:
     _sel, _, _bone = _spec.strip().partition("=")
     _hit = [b.name for b in arm.data.bones
