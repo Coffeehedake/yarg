@@ -683,6 +683,16 @@ simply out-votes the new chain.
 
 ## What actually arrives in an archive
 
+**Sometimes another archive.** Lola Bunny's download is a zip holding `textures/` beside a
+`source/` that contains one `.rar`; Peach's holds a `model.zip`. A tool that walks the
+extracted tree looking for a model finds textures and no model, and reports the archive as
+having none — which reads as a bad download rather than as one more layer to open. Both of
+them stalled a rebuild until somebody looked inside by hand.
+
+Peach's inner zip then holds `model.dae`, `model.fbx`, `model.mtl` and `model.obj`: four
+spellings of the same character, and the `.mtl` and the model files are exactly the non-image
+candidates the texture pool has to filter out.
+
 Converting 45 downloads turned up the same handful of surprises repeatedly. Check for them before
 blaming the pipeline:
 

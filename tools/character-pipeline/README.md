@@ -86,8 +86,12 @@ because every entry below has already been rediscovered at least once.
 2. **Sweep the installed set for the floating-prop height bug** — the Peacemaker failure mode,
    where the tallest mesh in the file is not part of the character and the whole figure scales
    down to fit it. Nothing looks wrong until the character stands next to another one.
-3. **Re-check Lola Bunny against the split-channel metallicRoughness fix.** She is the only
-   other model with `@channels=` files.
+3. ~~Re-check Lola Bunny against the split-channel metallicRoughness fix.~~ **Settled: it
+   never applied to her.** Her `.glb` carries its own packed ORM, so every map on her one
+   material arrives wired from the import (`base=packed:C038_Base_C, metal=packed:C038_Base_ORM,
+   rough=packed:C038_Base_ORM, normal=packed`) and the picker is never asked. The
+   `C038_Base_ORM_1@channels=R/G/B.png` files beside her model are extracted channels nothing
+   reads.
 4. **Finish the chest-rig rollout.** The first pass rebuilt thirteen and installed seven —
    Alcina, Prix, Chibi Rem, Sayuri, Alice Ivy, Tenna and Gadget. The installed set now has 10
    characters with sprung chest bones where it had 3, 10 more carrying bones nothing moves, and
@@ -116,8 +120,13 @@ because every entry below has already been rediscovered at least once.
    - **Judy Hopps** rebuilt 132% heavier than the installed one, so the installed character did
      not come from `judy-hopps-not-game-ready.zip`. Find out which source it did come from
      before replacing her.
-   - **Lola Bunny and Peach** produced no model file the picker recognises from their archives.
-     Look inside them by hand.
+   - ~~Lola Bunny and Peach produced no model file.~~ **Both archives hold another archive**:
+     Lola's `source/` is a `.rar` containing her `.glb`, Peach's is a `model.zip` containing
+     four spellings of her (`.dae`, `.fbx`, `.mtl`, `.obj`). Lola rebuilds identically and
+     gains a chest chain — her `fml_un_C_breast` does deform geometry, unlike Batman's copy of
+     the same bone from the same shared rig — so she is installed. Peach rebuilds identically
+     and gains nothing: 94 front vertices a side, under the detail floor, so she is left as
+     she is.
    - **Jinx and Miku** rebuild cleanly and gain nothing: both decline the chest rig (Jinx's two
      sides disagree, Miku has 93 torso vertices). Leave them installed as they are.
    - These carry chest bones but have no recoverable arguments or no locatable source —
