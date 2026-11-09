@@ -3154,6 +3154,53 @@ if HAIRRIG and (_ANCHOR_BONE or MAP.get("head") in bone_names):
             bone_names = {b.name for b in arm.data.bones}
             print("  hair rig: weighted %d hair vertices onto the new chains" % weighted)
 
+# A left/right swap breaks nothing that any count can see. The bone count is
+# right, the humanoid count is right, the character stands up straight, and it
+# only shows when the GAME poses it: Power Girl's legs cross over each other and
+# Judy Hopps' do the same. Measured across the 66 characters built here, 258 of
+# 264 limb pairs agree on which side is which and two characters supply all six
+# of the disagreements.
+#
+# The map is built from bone NAMES, and a name is exactly what cannot be trusted
+# here -- a rip can mirror a rig and leave the names where they were. The
+# geometry cannot lie in the same way, so read the side off the x axis and say
+# so. VRM_KEEP_SIDES=1 keeps a deliberate mapping.
+_PAIRS = (("left_upper_arm", "right_upper_arm"), ("left_hand", "right_hand"),
+          ("left_upper_leg", "right_upper_leg"), ("left_foot", "right_foot"))
+_MWb = arm.matrix_world
+_votes = []
+for _l, _r in _PAIRS:
+    _ln, _rn = MAP.get(_l), MAP.get(_r)
+    if not _ln or not _rn or _ln not in bone_names or _rn not in bone_names:
+        continue
+    _lx = (_MWb @ arm.data.bones[_ln].head_local).x
+    _rx = (_MWb @ arm.data.bones[_rn].head_local).x
+    if abs(_lx - _rx) > 1e-4:
+        _votes.append(1 if _lx > _rx else -1)
+if _votes:
+    # The character's own left is +x once the builder has turned it to face -Y,
+    # which every other stage here already depends on.
+    _wrong = sum(1 for v in _votes if v < 0)
+    if _wrong > len(_votes) / 2.0:
+        if os.environ.get("VRM_KEEP_SIDES"):
+            print("  sides: %d of %d limb pairs are mirrored; VRM_KEEP_SIDES "
+                  "keeps them" % (_wrong, len(_votes)))
+        else:
+            _sw = 0
+            for _k in list(MAP):
+                if _k.startswith("left_"):
+                    _o = "right_" + _k[5:]
+                    if _o in MAP:
+                        MAP[_k], MAP[_o] = MAP[_o], MAP[_k]
+                        _sw += 1
+            print("  sides: %d of %d limb pairs sat on the wrong side of the "
+                  "body, so the rig is mirrored against its own names -- "
+                  "swapped %d left/right mappings"
+                  % (_wrong, len(_votes), _sw))
+    else:
+        print("  sides: all %d limb pairs are on the side their names claim"
+              % len(_votes))
+
 # ---------------------------------------------------------------- chest rig
 # What a rig calls its chest bones, used both to FIND authored ones here
 # and to spring them further down. Defined once, up here, because the
@@ -4415,6 +4462,20 @@ for mat in bpy.data.materials:
         except Exception: pass
     try:
         mt = mat.vrm_addon_extension.mtoon1
+        # `mtoon1.enabled` defaults to FALSE, and the exporter only writes the
+        # extension's alpha_mode when it is on. Setting alpha_mode alone was
+        # therefore inert: every material in every character exported
+        # alphaMode=OPAQUE, and a cutout material -- hair cards, eyelashes,
+        # lace, a tear line -- shipped as a solid slab. Heels is where it
+        # showed: her installed build carries ten textures UniGLTF merged from
+        # a diffuse and an opacity map, which it only does for a material that
+        # is not opaque, and her rebuild had none.
+        #
+        # Turned on only for the materials that NEED a cutout. Enabling MToon
+        # across a whole character swaps its shading model, which is a much
+        # larger change than this defect warrants.
+        if cut:
+            mt.enabled = True
         mt.alpha_mode = "MASK" if cut else "OPAQUE"
         mt.alpha_cutoff = 0.5
         # Once mtoon1 is in play the exporter writes ITS base colour factor,

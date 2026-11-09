@@ -67,6 +67,46 @@ Two ways to lose an hour here, both measured:
 Install to `%USERPROFILE%\AppData\LocalLow\FatalException\YARG-FE\release\custom\characters\`.
 **YARG reads these at startup**, so it must be restarted to see a change.
 
+## What the first in-game playtest found
+
+Everything below was invisible to the build logs, the renders and every count the pipeline
+produces. Eleven characters, found in about twenty minutes of actually looking at them in YARG.
+**The lesson is the list itself**: a pipeline that verifies its own output against its own
+measurements will keep producing confident, broken characters.
+
+Two of these are regressions from the chest-rig work; the other nine were already installed and
+had simply never been looked at.
+
+| character | what is wrong | what it is |
+|---|---|---|
+| The Rock | limbs stretched into metre-long spikes | his humanoid skeleton is sized for a ~3.5 m figure against a 1.96 m mesh: head bone at 2.77 m, hand bone 1.94 m out. Spider-Man and Chibi Rem measure 1.00 and 1.02 on the same head-to-mesh ratio; he is 1.41 |
+| Power Girl, Judy Hopps | legs cross over each other when posed | **left and right are swapped.** Measured across all 66: 258 of 264 limb pairs agree on which side is which, and these two supply all six disagreements |
+| Prix, Pomni | eyes render as solid white; hair reads as a cap | every material in every character exports `alphaMode: OPAQUE` — see below |
+| Ariel, Heels | lower hair hangs in space while the body moves | the hair rigger leaves part of the hair behind. Chains are correctly parented and every vertex is weighted, so it is neither of the obvious two |
+| Mando | cape folded in on itself, static | the documented cloak case: he needs the hair rigger with `HAIR_BONE=Spine1` and was never built with it |
+| Jessica Rabbit | dress static while the body moves; sequin texture on her skin | cloth unrigged, and her `rskin` material took the dress's sequin map |
+| Alcina | chest drifts like a balloon | **chest spring parameters do not scale.** 0.85 stiffness and 0.60 drag were set looking at Prix at 1.70 m; Alcina is 2.9 m and VRM spring stiffness is scale-dependent |
+| Yui | looks out of proportion | not yet measured |
+| Link | eye textures misplaced; still holding the master sword and shield | needs an exclude and a texture pin |
+| Shadow | eyes use the blink/closed frame of the atlas; fingers do not move |
+| Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
+
+### alphaMode: a setting on a disabled extension
+
+`mtoon1.enabled` defaults to **false**, and the exporter only writes that extension's
+`alpha_mode` when it is on. The builder had been setting `alpha_mode` and nothing else, so the
+setting was inert and **every material in every character exported `OPAQUE`**. Hair cards,
+eyelashes, eye whites and lace all depend on that cutout; without it they render as solid
+slabs.
+
+It is turned on now, for the materials that need a cutout only — enabling MToon across a whole
+character swaps its shading model, which is a far larger change than this defect warrants.
+
+Heels is where it surfaced: her installed build carries ten textures that UniGLTF merged from a
+diffuse and an opacity map, which it only does for a material that is not opaque, and her
+rebuild had none. **That comparison is also the cheapest detector for it** — a character whose
+installed version has merged textures and whose rebuild has none has lost its transparency.
+
 ## Runlist
 
 What is left, in the order it is worth doing. Kept here rather than in a conversation,
