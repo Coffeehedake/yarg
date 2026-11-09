@@ -4684,7 +4684,15 @@ if os.environ.get("VRM_BREAST_SPRING", "1") != "0":
         if _skipped:
             print("  breast spring: %d bone(s) named but weighted to nothing, "
                   "so not sprung: %s" % (len(_skipped), ", ".join(_skipped)))
-        _par = os.environ.get("VRM_BREAST_PARAMS", "0.85,0.6,0.0").split(",")
+        # 0.85 / 0.60 was chosen by watching a 1.70 m character bend 12 degrees
+        # in a still render, and in motion it is far too loose: Alcina at 2.9 m
+        # and Killer Clown at 1.80 m were both reported as drifting like
+        # balloons, so it is not only a scale problem. A VRM spring's stiffness
+        # is a restoring force and its drag is damping, so a chest -- which in
+        # life barely moves and settles at once -- wants both near the top of
+        # their range. Hair swings and keeps swinging, which is the opposite,
+        # and keeps its own 0.60 / 0.45.
+        _par = os.environ.get("VRM_BREAST_PARAMS", "1.0,0.9,0.0").split(",")
         _stiff, _drag, _grav = [float(x) for x in _par]
         # Work out every chain BEFORE touching edit mode. Entering edit mode
         # invalidates every Bone reference held across it, and the references
@@ -4720,7 +4728,10 @@ if os.environ.get("VRM_BREAST_SPRING", "1") != "0":
                 _new = arm.data.edit_bones.new(_n + "_springTip")
                 _vec = _eb.tail - _eb.head
                 _new.head = _eb.tail
-                _new.tail = _eb.tail + _vec
+                # Half the bone's length, not all of it. A spring rotates about
+                # the chain's head, so the tip is the lever arm: doubling the
+                # bone doubled the travel at the surface.
+                _new.tail = _eb.tail + _vec * 0.5
                 _new.parent = _eb
                 _new.use_deform = False
             bpy.ops.object.mode_set(mode="OBJECT")

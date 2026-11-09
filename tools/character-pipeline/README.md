@@ -87,9 +87,30 @@ had simply never been looked at.
 | Jessica Rabbit | dress static while the body moves; sequin texture on her skin | cloth unrigged, and her `rskin` material took the dress's sequin map |
 | Alcina | chest drifts like a balloon | **chest spring parameters do not scale.** 0.85 stiffness and 0.60 drag were set looking at Prix at 1.70 m; Alcina is 2.9 m and VRM spring stiffness is scale-dependent |
 | Yui | looks out of proportion | not yet measured |
+| Kasane Teto | does not animate at all, stands in her T-pose | **her bundle has no AnimatorController and no AnimationClip.** 1 of 66; every other character has both. She has an Animator and an Avatar, 20 skinned renderers and a complete humanoid map, so nothing else distinguishes her |
+| Lola Bunny | head floats detached above the neck | a part following a bone that does not follow the body — the same shape as Judy's belt and the static hair |
+| Judy Hopps | belt detached, arms and legs crossed | the crossing is the mirrored rig above; the belt is the detached-part case |
+| Gordon Freeman | every texture misplaced except his head | one material taking another's map, at the scale of a whole character |
+| Miku | dress does not move with her | loose cloth with no chains |
+| Joker | a pistol orbiting him; parts of the suit unrigged | a prop that was never excluded, plus the detached-part case |
+| Peach | eyes missing; dress springs so reactive her legs clip through it | the eye atlas again, and the other end of the cloth problem: hers IS rigged and is too lively. Cloth needs its own parameters, gentler than hair and separate from chest |
 | Link | eye textures misplaced; still holding the master sword and shield | needs an exclude and a texture pin |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and finger bones that are mapped but not weighted |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
+
+### Two of these were predicted before they were reported
+
+Both came out of sweeps run over the installed set rather than out of looking at characters,
+which is the only reason they are not still unknown:
+
+- **Judy Hopps' crossed limbs.** The left/right sweep named her and Power Girl, and nobody had
+  reported her yet. She was reported an hour later, in exactly those terms.
+- **Kasane Teto's missing animator.** She was reported as "still doesn't animate"; a sweep for
+  bundles with no AnimatorController returned her and nobody else.
+
+The pattern worth keeping: **when a defect is reported, sweep the whole set for the same
+signature before fixing the one character.** Every sweep run that way today found between one
+and two more characters with the same fault, and each took one command.
 
 ### alphaMode: a setting on a disabled extension
 
