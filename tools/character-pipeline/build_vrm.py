@@ -3154,6 +3154,329 @@ if HAIRRIG and (_ANCHOR_BONE or MAP.get("head") in bone_names):
             bone_names = {b.name for b in arm.data.bones}
             print("  hair rig: weighted %d hair vertices onto the new chains" % weighted)
 
+# ---------------------------------------------------------------- chest rig
+# What a rig calls its chest bones, used both to FIND authored ones here
+# and to spring them further down. Defined once, up here, because the
+# chest rigger needs it 1100 lines before the spring section does.
+BREAST = r"(breast|bust|boob|pector|chichi|oppai)"
+# Spring bones need bones, and most rigs have no chest bones at all: of the 66
+# characters built here, 16 carry them unsprung, 3 arrive already sprung, and
+# 47 have none -- which includes most of the women. For those the bones have to
+# be built, the way the hair rigger builds hair chains.
+#
+#   VRM_BREASTRIG=1      rig it
+#   VRM_BREASTRIG=check  measure and print, change nothing
+#
+# `check` is not a convenience, it is how this was written. Sixteen characters
+# here ship AUTHORED chest bones, so the detector can be run where a human has
+# already answered and the two compared. A detector that has only ever run
+# where the answer is unknown has not been tested.
+BREASTRIG = os.environ.get("VRM_BREASTRIG", "")
+if BREASTRIG:
+    _cb = MAP.get("upper_chest") or MAP.get("chest") or MAP.get("spine")
+    _nk = MAP.get("neck") or MAP.get("head")
+    # The UPPER ARM heads, not the shoulders. A clavicle begins at the
+    # sternum, so the two shoulder bones' heads are centimetres apart: on
+    # Alcina they gave a "shoulder span" of 0.055 m for a 2.9 m character,
+    # which shrank the search band to |x| < 0.023 and found both apexes on
+    # her sternum, 25 and 40 cm from the bones she actually has.
+    _shl = MAP.get("left_upper_arm") or MAP.get("left_shoulder")
+    _shr = MAP.get("right_upper_arm") or MAP.get("right_shoulder")
+    _missing = [n for n in (_cb, _nk, _shl, _shr) if not n or n not in bone_names]
+    if _missing:
+        raise SystemExit("ABORT: VRM_BREASTRIG needs a chest, a neck and both "
+                         "shoulders mapped; this rig is missing %d of the four"
+                         % len(_missing))
+    _MW = arm.matrix_world
+
+    def _bw(n):
+        return _MW @ arm.data.bones[n].head_local
+
+    _chest_p, _neck_p = _bw(_cb), _bw(_nk)
+    # The MIDLINE is where the spine is, not x=0. Nothing in this build
+    # promises the character is centred on the origin, and Alcina is not: her
+    # spine sits at x=-0.131, so measuring from zero put the search column
+    # 13 cm off-centre and found her left apex at the column's inner edge
+    # while the right one looked 39 cm from the bone she already has. Read off
+    # the authored bones it is obvious -- breast.L at +0.050 and breast.R at
+    # -0.311 are symmetric about -0.131, not about 0.
+    _mid_x = _chest_p.x
+    _span = (_bw(_shl) - _bw(_shr)).length
+    # Every threshold below is a fraction of this, so a wrong span is not a
+    # small error -- it moves the search band, the side split and the
+    # protrusion test together, and all three stay plausible-looking.
+    _torso_h = abs(_neck_p.z - _bw(MAP.get("hips") or _cb).z) or 1e-6
+    if _span < _torso_h * 0.35:
+        raise SystemExit("ABORT: VRM_BREASTRIG measured a shoulder span of "
+                         "%.3f m against a torso %.3f m tall, which cannot be "
+                         "right -- '%s' and '%s' are not the shoulder joints "
+                         "on this rig" % (_span, _torso_h, _shl, _shr))
+    # The arms must be out of this entirely. A vertex by the armpit belongs to
+    # the shoulder as much as to the chest, and pulling one onto a spring bone
+    # is how a sleeve tears the moment the arm comes down.
+    # Which groups actually drive geometry: a bone that is only NAMED is not
+    # a chest bone. Batman carries fml_un_C_breast because MultiVersus skins
+    # its whole cast onto one shared female base, and it deforms nothing of
+    # him.
+    _deform_groups = set()
+    for _m in meshes:
+        _gnm = dict((_g.index, _g.name) for _g in _m.vertex_groups)
+        for _v in _m.data.vertices:
+            for _g in _v.groups:
+                if _g.weight > 0.01:
+                    _deform_groups.add(_gnm.get(_g.group))
+    _armg = set()
+    for _k in ("shoulder", "upper_arm", "lower_arm", "hand"):
+        for _s in ("left", "right"):
+            _n = MAP.get("%s_%s" % (_s, _k))
+            if _n:
+                _armg.add(_n)
+    _torsog = set(n for n in (MAP.get("chest"), MAP.get("upper_chest"),
+                              MAP.get("spine"), MAP.get("hips")) if n)
+    _z_lo = _chest_p.z - (_neck_p.z - _chest_p.z) * 0.35
+    _z_hi = _neck_p.z
+    _x_lim = _span * 0.42
+    _cand = []
+    for _o in meshes:
+        _gn = dict((_g.index, _g.name) for _g in _o.vertex_groups)
+        _mw = _o.matrix_world
+        for _v in _o.data.vertices:
+            _w = _mw @ _v.co
+            if not (_z_lo <= _w.z <= _z_hi) or abs(_w.x - _mid_x) > _x_lim:
+                continue
+            _gs = [(g.weight, _gn.get(g.group)) for g in _v.groups
+                   if g.weight > 0.0]
+            if not _gs:
+                continue
+            # Compare the SHARES, do not veto on a trace. Rejecting any vertex
+            # with 0.05 of arm weight threw away all but 61 of Sophia's chest
+            # vertices: she is a photogrammetry scan whose shoulder weights
+            # bleed a little way across the whole upper chest, which is what
+            # good weighting looks like. The test is whether the arm OWNS the
+            # vertex, not whether it touches it.
+            _wa = sum(w for w, n in _gs if n in _armg)
+            _wt = sum(w for w, n in _gs if n in _torsog)
+            if _wt <= 0.0 or _wa > 0.25 or _wa >= _wt:
+                continue
+            _cand.append((_w, _o, _v.index))
+    print("  chest rig: %d torso vertices in the band z %.3f..%.3f, within "
+          "%.3f of the midline at x=%.3f (shoulder span %.3f)"
+          % (len(_cand), _z_lo, _z_hi, _x_lim, _mid_x, _span))
+    # Front is -Y: the builder has already turned the character to face it.
+    #
+    # Look in a COLUMN at the offset the authored rigs use, not across the whole
+    # chest. Reading the 48 chest bones the 16 authored characters carry, the
+    # one number that transfers between rig families is how far out they sit:
+    # 0.18 to 0.36 of the shoulder span, median 0.25. (Height does not transfer
+    # -- it is measured from whichever bone that family calls the chest -- and
+    # depth is better taken from the mesh than from another model's skeleton.)
+    #
+    # Searching the whole chest instead finds the most forward vertex anywhere
+    # in the band, which on a dressed character is a collar or a bodice at the
+    # midline: on Alcina it put both apexes on her sternum, 24 and 40 cm from
+    # the bones she already has.
+    # Front is -Y: the builder has already turned the character to face it.
+    #
+    # PROFILE the front surface across the half-chest and take its peak, rather
+    # than assuming where the apex is. The 48 authored chest bones on the 16
+    # characters that have them put the bone anywhere from 0.10 of the shoulder
+    # span out (Ariel) to 0.41 (Alcina), so a fixed offset -- even their median
+    # of 0.25 -- lands on the wrong part of most chests: at 0.25 Alcina's apex
+    # came out 11 cm inboard of the bone she already has, pinned against the
+    # edge of the search column, which is what a window in the wrong place
+    # always looks like.
+    #
+    # The peak of the profile is the apex by construction, and it costs nothing
+    # to let the geometry say where it is.
+    _NBIN = 14
+    _sides = {}
+    for _side, _sgn in (("L", 1.0), ("R", -1.0)):
+        _half = [(c, o, i) for c, o, i in _cand
+                 if _span * 0.06 < (c.x - _mid_x) * _sgn < _span * 0.48
+                 and c.y < _chest_p.y]
+        if len(_half) < 24:
+            print("  chest rig: %s half-chest holds %d front vertices, too few "
+                  "to measure" % (_side, len(_half)))
+            continue
+        # Several meshes can occupy this space, stacked: body, underwear,
+        # dress. Alcina's gown hangs 6 cm in front of her body here, and the
+        # most forward vertex in the space is one of its frills -- rigging that
+        # would wobble the GOWN, which is a cloth problem and not this one. The
+        # body is the innermost layer, so pick the layer first, apex second.
+        _layers = {}
+        for _t in _half:
+            _layers.setdefault(_t[1].name, []).append(_t)
+        _ranked = []
+        for _ln, _lv in _layers.items():
+            if len(_lv) < 24:
+                continue
+            _ly = sorted(c.y for c, _, _ in _lv)
+            _ranked.append((_ly[len(_ly) // 2], _ln, _lv))
+        if not _ranked:
+            print("  chest rig: %s no single mesh here has 24 vertices" % _side)
+            continue
+        _ranked.sort(reverse=True)          # largest median y = least forward
+        if len(_ranked) > 1:
+            print("  chest rig: %s layers, front to back: %s" % (
+                _side, "; ".join("%s y=%.3f" % (n, y)
+                                 for y, n, _ in reversed(_ranked))))
+        _own = _ranked[0][2]
+        _lo, _hi = _span * 0.06, _span * 0.48
+        _bins = [[] for _ in range(_NBIN)]
+        for _t in _own:
+            _u = ((_t[0].x - _mid_x) * _sgn - _lo) / (_hi - _lo)
+            _bins[max(0, min(_NBIN - 1, int(_u * _NBIN)))].append(_t)
+        _prof = []
+        for _k, _b in enumerate(_bins):
+            if len(_b) < 6:
+                continue
+            _prof.append((min(t[0].y for t in _b), _k, _b))
+        if not _prof:
+            print("  chest rig: %s profile is too sparse to read" % _side)
+            continue
+        _prof.sort()
+        _peak = _prof[0]
+        _apex = min(_peak[2], key=lambda t: t[0].y)
+        _ao, _ai = _apex[1], _apex[2]
+        _amat = "?"
+        for _poly in _ao.data.polygons:
+            if _ai in _poly.vertices:
+                _slots = _ao.data.materials
+                if len(_slots) > _poly.material_index:
+                    _m = _slots[_poly.material_index]
+                    _amat = _m.name if _m else "(empty slot)"
+                break
+        # Proud of WHAT: the median of the same layer's front surface across
+        # the whole half-chest. A flat chest is a plane, and its peak sits
+        # level with its own surface; a breast stands out of it.
+        _ys = sorted(c.y for c, _, _ in _own)
+        _surf = _ys[len(_ys) // 2]
+        _prot = (_surf - _apex[0].y) / _span if _span else 0.0
+        _sides[_side] = (_apex[0], _prot)
+        print("  chest rig: %s apex (%.3f, %.3f, %.3f) at %.2f of the span out,"
+              " on '%s'/'%s', standing %.1f%% proud of that layer's surface"
+              % (_side, _apex[0].x, _apex[0].y, _apex[0].z,
+                 abs(_apex[0].x - _mid_x) / _span, _ao.name, _amat,
+                 _prot * 100))
+        # Ground truth, where the model carries it.
+        for _b in arm.data.bones:
+            if not re.search(BREAST, _b.name, re.I):
+                continue
+            _t = _MW @ _b.tail_local
+            if (_t.x - _mid_x) * _sgn <= 0:
+                continue
+            _h = _MW @ _b.head_local
+            print("  chest rig: %s authored '%s' head (%.3f, %.3f, %.3f) tail "
+                  "(%.3f, %.3f, %.3f), %.2f of the span out"
+                  % (_side, _b.name, _h.x, _h.y, _h.z, _t.x, _t.y, _t.z,
+                     abs(_t.x - _mid_x) / _span))
+    _authored = set()
+    for _b in arm.data.bones:
+        if re.search(BREAST, _b.name, re.I) and _b.name in _deform_groups:
+            _authored.add(_b.name)
+    _MIN = float(os.environ.get("VRM_BREASTRIG_MIN", "0.06"))
+    _rig = [k for k, v in _sides.items() if v[1] >= _MIN]
+    # Two more tests, both of which the protrusion test alone lets through.
+    #
+    # A peak at the MIDLINE is a sternum, a collar or a bow -- Pomni's chest
+    # peaks 0.06 of a shoulder span from her spine and stands 11% proud of the
+    # surface, which passes a protrusion test comfortably and is not a breast.
+    # Of the 48 authored bones measured here the innermost is Ariel's pectoral
+    # at 0.10, so anything inside that is something else.
+    #
+    # And the two sides must AGREE. A character is symmetric; a detector that
+    # finds the apex 0.22 of the span out on one side and 0.30 on the other has
+    # found noise on at least one of them, which is what sparse or clothed
+    # geometry gives.
+    _OUT = float(os.environ.get("VRM_BREASTRIG_MIN_OUT", "0.12"))
+    _outs = dict((k, abs(v[0].x - _mid_x) / _span) for k, v in _sides.items())
+    _inner = [k for k in _rig if _outs[k] < _OUT]
+    if _inner:
+        print("  chest rig: %s peak(s) only %s of the span from the midline, "
+              "inside the %.2f floor -- that is a sternum, not a bust"
+              % ("/".join(sorted(_inner)),
+                 ", ".join("%.2f" % _outs[k] for k in sorted(_inner)), _OUT))
+        _rig = [k for k in _rig if k not in _inner]
+    if len(_rig) == 2:
+        _gap = abs(_outs["L"] - _outs["R"])
+        if _gap > 0.10:
+            print("  chest rig: the two sides disagree by %.2f of the span "
+                  "(L %.2f, R %.2f), so at least one of them is noise -- "
+                  "nothing rigged" % (_gap, _outs["L"], _outs["R"]))
+            _rig = []
+    if len(_rig) < 2:
+        print("  chest rig: %d of 2 sides survive -- nothing rigged"
+              % len(_rig))
+    elif BREASTRIG == "check":
+        print("  chest rig: check only, nothing changed")
+    elif _authored:
+        # Alcina has breast.L and breast.R already, and rigging her anyway gave
+        # her four chest chains: hers and a second pair 20 cm inboard, both
+        # weighted to the same geometry and pulling against each other. A rig
+        # that has the bones needs the SPRING section below, not this.
+        print("  chest rig: this rig already has weighted chest bones (%s), so "
+              "there is nothing to build -- the spring section below is what "
+              "it needs" % ", ".join(sorted(_authored)))
+    else:
+        bpy.context.view_layer.objects.active = arm
+        bpy.ops.object.mode_set(mode="EDIT")
+        _made = {}
+        for _side in _rig:
+            _apex, _prot = _sides[_side]
+            # A short bone rooted on the ribs behind the apex, pointing
+            # forward -- not a long one reaching back to the spine. The long
+            # version swung Prix's whole bust sideways on a 40-degree test
+            # because the lever ran from the midline: the mass sheared off the
+            # ribcage instead of swinging on it, and the bikini cup was left
+            # hanging over a hollow. A spring rotates a bone about its HEAD, so
+            # the head is the hinge, and the hinge of a breast is its base.
+            _depth = max(_prot * _span, _span * 0.04)
+            _base = Vector((_apex.x + (_mid_x - _apex.x) * 0.12,
+                            _apex.y + _depth,
+                            _apex.z + _depth * 0.25))
+            _nb = arm.data.edit_bones.new("BreastSpring_" + _side)
+            _inv = _MW.inverted()
+            _nb.head = _inv @ _base
+            _nb.tail = _inv @ _apex
+            _nb.parent = arm.data.edit_bones[_cb]
+            _nb.use_connect = False
+            _made[_side] = _nb.name
+        bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.context.view_layer.update()
+        _wtd = 0
+        for _side, _bn in _made.items():
+            _apex = _sides[_side][0]
+            # Size the patch by the character, not by the bone: the bone
+            # reaches back towards the spine, so on a 2.9 m Alcina 1.6 times
+            # its length took in 5,936 vertices -- most of her torso.
+            _R = float(os.environ.get("VRM_BREASTRIG_R", "0.25")) * _span
+            for _o in meshes:
+                _vg = _o.vertex_groups.get(_bn) or _o.vertex_groups.new(name=_bn)
+                _gn = dict((_g.index, _g.name) for _g in _o.vertex_groups)
+                for _w_co, _oo, _i in _cand:
+                    if _oo is not _o:
+                        continue
+                    _d = (_w_co - _apex).length
+                    if _d >= _R:
+                        continue
+                    # Squared falloff, and never the whole vertex: leaving a
+                    # share on the chest is what stops the edge of the patch
+                    # tearing off the ribs when the spring moves.
+                    _w = 0.9 * (1.0 - _d / _R) ** 2
+                    if _w <= 0.01:
+                        continue
+                    _v = _o.data.vertices[_i]
+                    for _g in list(_v.groups):
+                        _n = _gn.get(_g.group)
+                        if _n in _torsog and _g.weight > 0.0:
+                            _o.vertex_groups[_n].add([_i], _g.weight * (1.0 - _w),
+                                                     "REPLACE")
+                    _vg.add([_i], _w, "REPLACE")
+                    _wtd += 1
+        bone_names = {b.name for b in arm.data.bones}
+        print("  chest rig: built %s and weighted %d vertices onto them"
+              % (", ".join(sorted(_made.values())), _wtd))
+
 # Seat on the FEET, not on the lowest vertex. A tail, cape or trailing prop can
 # hang below the soles, and seating on the mesh minimum then lifts the character
 # clear of the podium (measured on the Xenomorph: his tail put him in mid-air).
@@ -4158,6 +4481,117 @@ if SPRING:
             "hair and clothes are skinned to the body, so there is nothing to spring)"))
     except Exception as e:
         print("spring bone setup failed: %s: %s" % (type(e).__name__, e))
+
+# Chest bones are their own case, and the hair pattern above cannot carry them.
+#
+# A rig that has them calls them breast / bust / pectoral, and NONE of those is
+# a humanoid slot, so VRM leaves them rigid: 16 of the 66 characters installed
+# here ship chest bones that nothing ever moves. Three more (the VRoid ones)
+# arrive with their own chains already built, which is the proof that this is
+# the normal thing to do rather than something the pipeline is inventing.
+#
+# Two reasons this is not just a longer DEFAULT_SPRING:
+#
+# - **A lone bone cannot spring.** A VRM chain moves every joint except the
+#   last, so a one-bone chain moves nothing, and the loop above drops it on
+#   `len(chain) < 2`. Alcina, Jessica Rabbit and Killer Clown all have exactly
+#   one bone a side. They need a TIP -- a child at the bone's tail carrying no
+#   weights, which is what the hair rigger builds for the same reason.
+# - **A bone in the rig is not a bone in the MODEL.** Batman carries
+#   `fml_un_C_breast` because MultiVersus skins its cast onto one shared female
+#   base; it deforms nothing on him. Springing it would be invisible, which is
+#   worse than wrong -- it would sit in the file looking like it worked. So the
+#   test is whether the bone actually drives vertices, not whether it is named.
+#
+# VRM_BREAST_SPRING=0 turns it off; VRM_BREAST_PARAMS="stiffness,drag,gravity"
+# overrides the feel. The defaults are stiffer and draggier than the hair ones
+# -- hair swings and keeps swinging, this should move a little and settle.
+if os.environ.get("VRM_BREAST_SPRING", "1") != "0":
+    try:
+        sb = ext.spring_bone1
+        _hum = {v for v in MAP.values()}
+        _deform = set()
+        for _m in meshes:
+            _gn = dict((_g.index, _g.name) for _g in _m.vertex_groups)
+            for _v in _m.data.vertices:
+                for _g in _v.groups:
+                    if _g.weight > 0.01:
+                        _deform.add(_gn.get(_g.group))
+        _cands = [b for b in arm.data.bones
+                  if re.search(BREAST, b.name, re.I) and b.name not in _hum
+                  and not b.name.lower().endswith(("_end", "_att"))]
+        _skipped = [b.name for b in _cands if b.name not in _deform]
+        _cands = [b for b in _cands if b.name in _deform]
+        if _skipped:
+            print("  breast spring: %d bone(s) named but weighted to nothing, "
+                  "so not sprung: %s" % (len(_skipped), ", ".join(_skipped)))
+        _par = os.environ.get("VRM_BREAST_PARAMS", "0.85,0.6,0.0").split(",")
+        _stiff, _drag, _grav = [float(x) for x in _par]
+        # Work out every chain BEFORE touching edit mode. Entering edit mode
+        # invalidates every Bone reference held across it, and the references
+        # do not fail -- they silently address a DIFFERENT bone. Held across a
+        # tip insertion, '_b.name' started reporting 'f_pinky.02.L' and the
+        # second pass sprang a FINGER on a model whose chest bones are called
+        # breast.L and breast.R. Names survive; pointers do not.
+        _names = set(b.name for b in _cands)
+        _chains, _need_tip = [], []
+        for _b in _cands:
+            if _b.parent is not None and _b.parent.name in _names:
+                continue                  # a lower joint of a chain, not a root
+            _chain, _cur = [_b.name], _b
+            while True:
+                _kids = [c for c in _cur.children
+                         if re.search(BREAST, c.name, re.I)]
+                if len(_kids) != 1:
+                    break
+                _cur = _kids[0]
+                _chain.append(_cur.name)
+            if len(_chain) < 2:
+                # Give the lone bone a tip to swing towards. It carries no
+                # weights, so it changes no geometry -- it only gives the last
+                # joint somewhere to be.
+                _need_tip.append(_chain[0])
+                _chain.append(_chain[0] + "_springTip")
+            _chains.append(_chain)
+        if _need_tip:
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.mode_set(mode="EDIT")
+            for _n in _need_tip:
+                _eb = arm.data.edit_bones[_n]
+                _new = arm.data.edit_bones.new(_n + "_springTip")
+                _vec = _eb.tail - _eb.head
+                _new.head = _eb.tail
+                _new.tail = _eb.tail + _vec
+                _new.parent = _eb
+                _new.use_deform = False
+            bpy.ops.object.mode_set(mode="OBJECT")
+            print("  breast spring: %d lone bone(s) given a weightless tip: %s"
+                  % (len(_need_tip), ", ".join(_need_tip)))
+        _made = 0
+        for _chain in _chains:
+            _spring = sb.springs.add()
+            try:
+                _spring.vrm_name = _chain[0]
+            except Exception:
+                pass
+            for _n in _chain:
+                _j = _spring.joints.add()
+                _j.node.bone_name = _n
+                for _prop, _val in (("hit_radius", 0.04), ("stiffness", _stiff),
+                                    ("drag_force", _drag),
+                                    ("gravity_power", _grav)):
+                    try:
+                        setattr(_j, _prop, _val)
+                    except Exception:
+                        pass
+            _made += 1
+            print("  breast spring chain '%s': %d joints (%s) stiffness %.2f, "
+                  "drag %.2f" % (_chain[0], len(_chain), " -> ".join(_chain),
+                                 _stiff, _drag))
+        print("breast spring chains added: %d%s" % (
+            _made, "" if _made else "  (no weighted chest bones in this rig)"))
+    except Exception as _e:
+        print("breast spring setup failed: %s: %s" % (type(_e).__name__, _e))
 
 if os.environ.get("VRM_SAVE_BLEND"):
     bpy.ops.wm.save_as_mainfile(filepath=os.environ["VRM_SAVE_BLEND"])

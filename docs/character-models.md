@@ -424,6 +424,79 @@ someone. Alcina's floating hat was the same failure and cost a 0.5568 rescale of
 
 Check the extremes of the bounding box against the body, not just its size.
 
+## Building a chest bone where there is none
+
+47 of the 66 characters here have no chest bones, so for them the bones have to be built the way
+the hair rigger builds hair chains. The method is: find the bust in the geometry, root a short
+bone on the ribs behind it, weight a patch of the surface onto that bone, and let the spring
+section do the rest.
+
+Finding it is the whole difficulty, and five plausible answers were wrong before one worked.
+
+**The 16 characters that DO carry authored chest bones are the calibration set.** Their skeletons
+and their humanoid maps are both inside the shipped `.yargchar`, so 48 authored bones can be read
+off without rebuilding anything — and what they say is that there is no such thing as a standard
+offset. The bones sit anywhere from 0.10 of the shoulder span out (Ariel's pectorals) to 0.41
+(Alcina), median 0.25. A detector built on that median lands on the wrong part of most chests: at
+0.25 Alcina's apex came out 11 cm inboard of the bone she already has, pinned against the edge of
+its search column, which is what a window in the wrong place always looks like.
+
+So the detector profiles the front surface across the half-chest in bins and takes the peak. The
+peak is the apex by construction, and it costs nothing to let the geometry say where it is.
+
+### The four other wrong answers
+
+- **A clavicle is not a shoulder.** Both shoulder bones begin at the sternum, so measuring the
+  "shoulder span" between them gave 0.055 m for a 2.9 m Alcina. Every threshold here is a fraction
+  of that span, so one wrong number moved the search band, the side split and the protrusion test
+  together, and all three still looked reasonable. It is measured across the UPPER ARMS now, and
+  asserted against the height of the torso.
+- **x = 0 is not the midline.** Nothing promises the character is centred on the origin, and
+  Alcina is not: her spine sits at x = −0.131. Her authored bones at +0.050 and −0.311 look wildly
+  asymmetric until you notice they are symmetric about her spine, not about zero.
+- **The most forward thing on a chest is usually clothing.** Her gown hangs 6 cm in front of her
+  body, and the first apex found was one of its frills — rigging that would wobble the GOWN, which
+  is a cloth problem and not this one. Several meshes stack in this space: body, underwear, dress.
+  The body is the innermost, so the LAYER is chosen first and the apex second.
+- **A trace of shoulder weight is not an arm.** Rejecting any vertex carrying 0.05 of arm weight
+  threw away all but 61 of Sophia's chest vertices: she is a scan whose shoulder weights bleed a
+  little way across the upper chest, which is what good weighting looks like. The test is whether
+  the arm OWNS the vertex, not whether it touches it.
+
+### The hinge of a breast is its base
+
+The first bone ran from the spine out to the apex, which looks right in a wireframe and shears the
+mesh in motion: a spring rotates a bone about its HEAD, so a long bone swings the whole mass
+sideways off the ribcage. On a 30-degree test Prix's bust slid sideways and her bikini cup was
+left hanging over a hollow. The bone is now short — rooted on the ribs directly behind the apex,
+pointing forward, about as long as the bust is deep — and the same test moves the surface the way
+a bust moves.
+
+Judge it at a spring-sized angle, not at the stress-test angle. At 30 degrees everything looks
+broken; a chain at 0.85 stiffness reaches about 12, and that is the render to look at.
+
+### What it refuses
+
+It declines a flat chest, and it has to: the protrusion test is what stops it rigging a man.
+Peacemaker reads flat, and so does Sophia at 5.9% and 1.6% of her shoulder span against a 6%
+threshold — she is clothed and only 8,320 vertices, and on geometry that sparse the two sides
+disagree. A detector that refuses is recoverable; one that invents a bust on a low-poly model
+ships a defect nobody is looking for.
+
+Protrusion alone is not enough, and the first handful proved it. **Pomni passed it and should
+not have:** her chest peaks 0.06 of a shoulder span from her spine and stands 11% proud of the
+surface around it, which is a collar, and the rigger built her a pair of bones and weighted 1,414
+vertices onto them. So two more tests, both read off the calibration set:
+
+- **A floor on how far out the peak is.** The innermost of the 48 authored bones is Ariel's
+  pectoral at 0.10 of the span, so a peak inside 0.12 is something on the sternum.
+- **The two sides must agree.** A character is symmetric, so a detector that puts the apex 0.22
+  of the span out on one side and 0.30 on the other has found noise on at least one of them.
+
+This is the argument for doing a handful before a rollout: the failure was not a crash or a
+missing bone, it was a plausible-looking success on a character nobody would have thought to
+check.
+
 ## A prop can share a MESH with the kit
 
 An exclude pattern is a blunt instrument: it takes whole meshes, and a model is not obliged to

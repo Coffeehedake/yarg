@@ -35,7 +35,10 @@ binds a connected mesh island wholly to one bone, for a part an auto-rigger has 
 (Sonic's back quills); `VRM_DROP_ISLAND="<mesh-pattern>=<bone>[+<bone>]"` drops the islands of a
 mesh that one bone CARRIES, which is how a weapon comes out of a hand when the same mesh also
 holds gear that belongs on the character (the mesh pattern is not optional — a hand is itself
-weighted to the hand bone); `VRM_SAVE_BLEND=<path>` saves the pre-export scene (the single most useful
+weighted to the hand bone); `VRM_BREASTRIG=1` builds chest bones for a rig that has none and weights the bust onto
+them (`check` measures and prints without changing anything, which is how it was written);
+`VRM_BREAST_SPRING=0` stops chest bones being sprung and `VRM_BREAST_PARAMS="stiffness,drag,gravity"`
+changes the feel; `VRM_SAVE_BLEND=<path>` saves the pre-export scene (the single most useful
 debugging aid — renders of it tell you whether a fault is yours or the exporter's),
 `VRM_NO_TPOSE=1`, `VRM_DROP_SOLIDIFY=1` (inverted-hull outlines), `HAIR_ANCHOR` / `HAIR_SEGS` /
 `HAIR_STRANDS` for the hair rigger.
@@ -99,6 +102,31 @@ right.
   numbered mesh is the eyes before pinning a texture to its material
 - `alpha_check.py` / `mat_check.py` / `spring_scan.py` / `uv_test.py` / `tex_stats.py` — material,
   alpha, spring and texture inspection straight out of the exported file
+
+## Chest bones, and the three groups of characters
+
+Unity's humanoid rig has no slot for a chest bone, so VRM leaves one rigid unless a spring chain
+names it. Across the 66 characters installed here that splits three ways, and each wants something
+different:
+
+| | what it needs |
+|---|---|
+| **3** arrive with their own chains (the VRoid models) | nothing |
+| **16** carry chest bones nothing moves | the spring section: name them, give a lone bone a tip |
+| **47** have no chest bones at all | `VRM_BREASTRIG=1`, which builds them |
+
+A lone bone cannot spring: a VRM chain moves every joint but the last, so a one-bone chain moves
+nothing. Alcina, Jessica Rabbit and Killer Clown have exactly one a side, and they get a
+weightless tip — the same trick the hair rigger uses.
+
+**A bone in the rig is not a bone in the model.** Batman carries `fml_un_C_breast` because
+MultiVersus skins its whole cast onto one shared female base; on him it deforms nothing. The test
+is whether the bone drives vertices, so his is skipped. Springing it would have been invisible,
+which is worse than wrong — it would have sat in the file looking like it worked.
+
+`VRM_BREASTRIG` refuses to run on a rig that already has weighted chest bones. Rigging Alcina
+anyway gave her four chains, hers and a generated pair 20 cm inboard, weighted to the same
+geometry and pulling against each other.
 
 ## An authored T-pose beats one you compute
 
