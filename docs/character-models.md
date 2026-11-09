@@ -650,6 +650,37 @@ Such a bone **cannot be adopted**. Every humanoid bone is one of its descendants
 it builds a cycle; Blender refuses, silently, and a fix that re-parents it will log success and
 change nothing. Move the **weight** down to the humanoid root instead.
 
+## A prop with a bone of its own is addressable, however buried
+
+Joker is one mesh with one material, so nothing about his name, material or structure separates
+his pistol from his suit. It is still trivially findable: it is a connected island of 262
+vertices and it hangs off a bone called `Gun_joker`. Link is the same with the master sword and
+shield, on bones called `Sword` and `Shield`.
+
+So the probe worth having is **islands of a BUILT .vrm, each with the bone that carries it**
+(`scratchpad/islands_vrm.py`). Weld by position first, since an imported mesh often arrives
+split, then take the dominant joint per island. Both props fell out of one listing, and Link's
+scabbard `Fourreau` was visible in the same listing as the thing NOT to drop.
+
+## What a texture fault is, before reaching for a fix
+
+Three reports read as "the textures are wrong" and they were three different things. The
+distinction is worth making before changing anything, because only one of them was ours:
+
+| | Gordon Freeman | Batman | Alastor |
+|---|---|---|---|
+| material to image | **wrong** — `gordon_d`, his face map, on his eyes, suit and suit mesh, five copies, with `onefreeman` absent from the bundle | right (he has one base map; there is nothing to get wrong) | right |
+| image content | right | right | right — `aleyes.png` plainly holds a pink iris with a black pupil |
+| UVs | right | right | **wrong** — the eyes land beside the iris; the pupil renders as a stray mark next to the eye |
+| fixed by | a rebuild | nothing; does not reproduce | nothing a rule can do |
+
+**Read the image, not just the filename.** Dumping the base map out of the built file and
+looking at it is what separated Alastor's case from Gordon's: both were "textures wrong", and in
+Alastor's the texture was already correct and already attached.
+
+A pipeline can fix which map a material gets. It cannot fix a mesh whose UVs were authored
+against a different layout, and should not try to guess one.
+
 ## Only bones that deform are exported
 
 The VRM export writes bones with `use_deform` set and drops the rest. That is correct and it is
