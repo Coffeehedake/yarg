@@ -603,6 +603,19 @@ def bake_pose_to_rest(why):
 # MB and ARE her character. So VRM_KEEP_MORPHS=1 asks for them, per character,
 # and the default stays as it was.
 _MORPH_MAX = float(os.environ.get("VRM_MORPH_MAX_DISP", "0.5"))
+# An eye-closing key is worth keeping even when the rest are not. It is ONE
+# key, it is the only expression YARG drives, and dropping it is what left all
+# 66 characters unable to blink. Defined here because the pass below has to
+# know which keys to spare; the binding itself happens after the humanoid map.
+_BLINK_KEY = re.compile(r"^(blink|wink)", re.I)
+_BLINK_EXACT = re.compile(r"^(closed?|eye_?closed?)$", re.I)
+_BLINK_MESH = re.compile(r"(lash|lid|eye|brow)", re.I)
+
+
+def _is_blink(_mesh_name, _key_name):
+    return bool(_BLINK_KEY.match(_key_name)
+                or (_BLINK_EXACT.match(_key_name)
+                    and _BLINK_MESH.search(_mesh_name)))
 for o in meshes:
     sk = o.data.shape_keys
     if not sk or not sk.key_blocks:
@@ -613,12 +626,24 @@ for o in meshes:
     basis = [p.co.copy() for p in sk.key_blocks[0].data]
     bpy.context.view_layer.objects.active = o
     if not os.environ.get("VRM_KEEP_MORPHS"):
-        o.shape_key_clear()
+        _spare = [kb.name for kb in list(sk.key_blocks)[1:]
+                  if _is_blink(o.name, kb.name)]
+        for _kb in list(sk.key_blocks)[1:]:
+            if _kb.name not in _spare:
+                o.shape_key_remove(_kb)
+        if not _spare:
+            o.shape_key_clear()
+        else:
+            for _kb in sk.key_blocks:
+                _kb.value = 0.0
+            o.show_only_shape_key = False
+            o.active_shape_key_index = 0
         for i, c in enumerate(basis):
             o.data.vertices[i].co = c
         o.data.update()
-        print("  dropped %d shape keys on '%s', kept the base mesh%s"
-              % (nkeys, o.name,
+        print("  dropped %d shape keys on '%s', kept the base mesh%s%s"
+              % (nkeys - len(_spare), o.name,
+                 " and %s for the blink expression" % _spare if _spare else "",
                  " (IGNORED non-zero: %s)" % live if live else ""))
         continue
     _bb = [Vector(c) for c in o.bound_box]
@@ -5072,6 +5097,69 @@ wrong = sum(1 for s, b in MAP.items()
 print("humanoid: assigned %d/%d, readback mismatches %d" % (ok, len(MAP), wrong))
 for s, b in missing:
     print("  UNMAPPED %-26s %s" % (s, b))
+
+# Morph targets that nothing can reach are morph targets nobody gets.
+#
+# YARG reads a VRM's expressions (Assets/Script/Venue/Characters/VRMCharacter.cs)
+# and drives exactly one of them from its own events: LipsyncType.Blink maps to
+# ExpressionKey.Blink. Its custom-expression dictionary is only ever looked up
+# BY LIPSYNC EVENT NAME, so a key called 'Big' or 'SpiralEyes' can sit in the
+# file forever and never be asked for.
+#
+# Measured across the 66 installed characters: not one has a morph bind on ANY
+# of its 18 preset expressions. The presets are all there and all empty. So
+# every character that ships an eye-closing shape key -- Pomni has 'Closed' on
+# each set of lashes -- has a blink available and unwired.
+#
+# Bind it. The matching is deliberately narrow, because the cost of a wrong
+# bind is a character whose face collapses whenever the game blinks: a key
+# named blink/wink anywhere counts, and a key named exactly 'Closed' counts
+# only on a mesh that is plainly an eyelid or lash. Pomni's face also carries
+# 'ClosedTeeth' and 'ClosedTeethVariation', which are mouth shapes, and must
+# not be caught. VRM_BLINK="Mesh=Key,Mesh=Key" overrides the lot.
+_blink_binds = []
+for _spec in [x for x in os.environ.get("VRM_BLINK", "").split(",") if x.strip()]:
+    _mn, _, _kn = _spec.partition("=")
+    _o = bpy.data.objects.get(_mn.strip())
+    if _o is None or not _o.data.shape_keys:
+        raise SystemExit("ABORT: VRM_BLINK names mesh %r, which this file has "
+                         "not got (or it has no shape keys)" % _mn.strip())
+    _blink_binds.append((_o, _kn.strip()))
+if not _blink_binds:
+    for _o in meshes:
+        _sk = _o.data.shape_keys
+        if not _sk:
+            continue
+        for _kb in list(_sk.key_blocks)[1:]:
+            if _is_blink(_o.name, _kb.name):
+                _blink_binds.append((_o, _kb.name))
+if _blink_binds:
+    _pre = ext.vrm1.expressions.preset
+    _side = {"blink": _pre.blink}
+    for _attr, _pat in (("blink_left", r"(^|[._ ])(l|left)([._ ]|$)"),
+                        ("blink_right", r"(^|[._ ])(r|right)([._ ]|$)")):
+        _e = getattr(_pre, _attr, None)
+        if _e is not None:
+            _side[_attr] = _e
+    _done = []
+    for _o, _kn in _blink_binds:
+        _targets = ["blink"]
+        for _attr, _pat in (("blink_left", r"(^|[._ ])(l|left)([._ ]|$)"),
+                            ("blink_right", r"(^|[._ ])(r|right)([._ ]|$)")):
+            if _attr in _side and re.search(_pat, _o.name, re.I):
+                _targets.append(_attr)
+        for _t in _targets:
+            _b = _side[_t].morph_target_binds.add()
+            _b.node.mesh_object_name = _o.name
+            _b.index = _kn
+            _b.weight = 1.0
+        _done.append("%s/%s -> %s" % (_o.name, _kn, "+".join(_targets)))
+    print("  blink: bound %d eye-closing shape key(s) to the blink "
+          "expression, which is the one expression YARG drives: %s"
+          % (len(_blink_binds), ", ".join(_done[:6])))
+else:
+    print("  blink: no eye-closing shape key in this model, so the blink "
+          "expression stays empty")
 
 # ---------------------------------------------------------------- spring bones
 # Unity's humanoid system has no muscle for a tail, hair or cloth, so those stay
