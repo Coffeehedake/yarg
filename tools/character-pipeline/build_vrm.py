@@ -3706,6 +3706,20 @@ if _hb:
         for _bn, _vs in _byb.items():
             _vg = _m.vertex_groups.get(_bn) or _m.vertex_groups.new(name=_bn)
             _vg.add(_vs, 1.0, "REPLACE")
+        # A vertex group is a name until something reads it. Without an
+        # ARMATURE modifier the mesh is not skinned at all, the exporter
+        # writes it as a static node, and the weights just added are inert.
+        #
+        # Lola Bunny measured this: THREE of her four meshes -- both sets of
+        # teeth and her hair -- came out with skin=None while her body was
+        # skinned normally. They are not weighted wrongly, they are not
+        # weighted at all, and nothing in the file can ever move them. That is
+        # "her hair and teeth don't animate with her body".
+        if not any(_md.type == "ARMATURE" and _md.object is arm
+                   for _md in _m.modifiers):
+            _amd = _m.modifiers.new(name="Armature", type="ARMATURE")
+            _amd.object = arm
+            _m.parent = arm
         _strays.append((_m.name, len(_loose), sorted(_byb, key=lambda k: -len(_byb[k]))[0]))
 if _strays:
     print("  stray geometry: %d mesh(es) carried vertices with no weight at "
