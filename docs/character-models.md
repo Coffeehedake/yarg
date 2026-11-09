@@ -728,6 +728,59 @@ Nothing caught it because the map was complete and self-consistent: every bone i
 and the readback matched. **A mis-mapping is only visible if you ask where the bone IS.** Count
 the chain instead of indexing into it.
 
+## Shape keys: zero them, do not delete them
+
+A shape key's weight is ZERO in engine, so the base mesh is what to MEASURE. Prix proves why
+that matters: her FBX ships six keys non-zero, one holding a corrupt four-times-oversized body,
+so Blender's viewport and every render showed a 1.95 m tangle while the real character was
+0.478 m. The build scaled the garbage to 1.70 m and she arrived in game at 0.416 m.
+
+All of that argues for **zeroing**. None of it argues for deleting, and for a long time the
+build did the second. Pomni is what it cost: her irises are supposed to resize -- that is the
+character -- and her source carries `Big`, `Small`, `SpiralEyes`, three doodle keys, eight
+facial expressions and `Closed` on each set of lashes. Every one was deleted, so she exported
+with zero morph targets and the eyes that are meant to animate had nothing to animate. Nothing
+downstream reported a loss; by then there was nothing left to lose.
+
+Two things fall out of keeping them:
+
+- **`Mesh.transform()` leaves shape keys behind unless asked.** A mesh that has keys is
+  EVALUATED from the keys, so moving the vertices without them is invisible in every render and
+  shows up only as the mesh DATA and the evaluated bounds disagreeing. Pomni's lashes went
+  through `flatten()` that way and her mesh DATA measured 1.3949 m against a 1.70 m target. The
+  height guard caught it. Those call sites were correct for exactly as long as the keys were
+  being thrown away.
+- **They are not free.** Prix's 37 keys on a 61k-vertex mesh take her from 8.6 MB to 28.3 MB,
+  for morphs that are no part of her. So keeping the full set is opt-in (`VRM_KEEP_MORPHS=1`)
+  and a blink key is spared regardless -- one key, not thirty-seven.
+
+## What YARG actually drives, which is one expression
+
+Before adding anything a character "could" use, read `VRMCharacter.cs`. YARG builds a
+dictionary of the VRM's custom expressions and then looks one up **only by lipsync event
+name**; `LipsyncType.Blink` maps to `ExpressionKey.Blink`. Nothing emits "Big" or "SpiralEyes",
+so those can sit in the file forever and never be asked for.
+
+Measured across all 66 installed characters: **not one has a morph bind on any of its 18 preset
+expressions.** The presets are all present and all empty. So every character that ships an
+eye-closing shape key has had a blink available and unwired the whole time.
+
+The matching has to be narrow, because a wrong bind is a face that collapses every time the
+game blinks:
+
+| | Pomni | Heels (Character Creator) |
+|---|---|---|
+| key | `Closed` | `Eye_Blink_L`, `Eye_Blink_R` |
+| on | `Lashes.L`, `Lashes.R` | one `CC_Base_Body`, plus eye occlusion and tear line |
+| side comes from | the mesh name | the KEY name |
+| must NOT catch | `ClosedTeeth`, `ClosedTeethVariation` | `Mouth_Close` |
+
+Both faults in the first cut looked identical from the outside -- "this model has no blink key":
+the pattern was anchored with `match()`, which cannot see the word in `Eye_Blink_L` and so found
+nothing across a whole rig family while reporting cleanly; and the side was read off the mesh,
+which would have called both of Heels' eyes the same side. **A matcher that reports absence is
+making a claim, and it is only as good as what it looked at.**
+
 ## Spring bones need bones
 
 Hair, a skirt or a cape stays rigid however well the character animates, because Unity's humanoid
