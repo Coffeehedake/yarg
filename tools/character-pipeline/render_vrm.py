@@ -1,6 +1,76 @@
 """Render a .vrm from the front. Imports via the VRM add-on - obj_import does not
 read a .vrm and fails without raising, which renders an empty frame that looks
-like a successful check."""
+like a successful check.
+
+Do NOT empty the scene with wm.read_homefile(). In background Blender it leaves
+no window, and both the VRM add-on and the glTF importer then take their
+file-browser path: the add-on returns {'CANCELLED'} and the glTF importer raises
+"Please select a file", neither of which says anything about the file you gave
+it. Removing the objects by hand empties the scene just as well and keeps the
+context the importers need."""
+
+
+def clear_scene():
+    import bpy as _b
+    for _o in list(_b.data.objects):
+        _b.data.objects.remove(_o, do_unlink=True)
+
+
+def import_gltf(path):
+    """Import a .glb/.gltf/.vrm, naming the file the way the operator wants.
+
+    `import_scene.gltf` filters candidates by EXTENSION, and '.vrm' is not in
+    its filter_glob, so it refuses one with "Please select a file" -- an error
+    about a dialog, on a file that is present and valid. Copying the same bytes
+    to a '.glb' name is the whole fix; `directory` and `files` are passed
+    because that is the form the filter reads.
+
+    A .vrm IS a glb, so this reads one directly. The VRM add-on's own importer
+    returns {'CANCELLED'} here with nothing on stderr, and reading the shipped
+    bytes through glTF has the advantage of checking what was actually written.
+    The trade is that MToon becomes plain PBR, so judge geometry, pose, UVs and
+    texture assignment from these renders -- not the shading."""
+    import os
+    import shutil
+    import tempfile
+
+    import bpy as _b
+    # The operator filters on EXTENSION, and '.vrm' is not in its filter_glob.
+    # The refusal it gives is "Please select a file", which reads as a missing
+    # or unreadable path and is neither: the file is there and valid. Hand it
+    # the same bytes under a name the filter accepts.
+    if not path.lower().endswith((".glb", ".gltf")):
+        tmp = os.path.join(tempfile.mkdtemp(prefix="vrmrender_"),
+                           os.path.splitext(os.path.basename(path))[0] + ".glb")
+        shutil.copyfile(path, tmp)
+        path = tmp
+    return _b.ops.import_scene.gltf(
+        filepath=path, directory=os.path.dirname(path),
+        files=[{"name": os.path.basename(path)}])
+
+
+def imported_meshes():
+    """The meshes this import brought in, and only those.
+
+    Anything else in the scene has to stay out of the bounding box that aims the
+    camera, and an add-on sharing this Blender can put objects in the scene at
+    any moment: BlenderMCP leaves a 2 m 'Icosphere' at the origin, which
+    survives clear_scene() because it arrives DURING the import. It stretched
+    Peacemaker's measured extent from 1.85 m to 2.85 m and framed the shot
+    around a sphere. The character was fine; the ruler was not.
+
+    Comparing the scene before and after cannot separate them, for exactly that
+    reason. Every importer here leaves what it created SELECTED, which does not
+    depend on when anything else appeared."""
+    import bpy as _b
+    sel = [o for o in _b.context.selected_objects if o.type == "MESH"]
+    if sel:
+        return sel
+    # No selection means the importer did not make one: fall back to the whole
+    # scene rather than render an empty frame, and say so.
+    print("render: importer left nothing selected - framing every mesh in the "
+          "scene, which may include objects it did not create")
+    return [o for o in _b.data.objects if o.type == "MESH"]
 import math
 import sys
 
@@ -14,20 +84,28 @@ if SRC.lower().endswith(".blend"):
         if o.type in {"CAMERA", "LIGHT"}:
             bpy.data.objects.remove(o, do_unlink=True)
 elif SRC.lower().endswith((".fbx", ".glb", ".gltf", ".usd", ".usdc", ".usda", ".usdz")):
-    bpy.ops.wm.read_homefile(use_empty=True)
+    clear_scene()
     low = SRC.lower()
     if low.endswith(".fbx"):
         bpy.ops.import_scene.fbx(filepath=SRC)
     elif low.endswith((".glb", ".gltf")):
-        bpy.ops.import_scene.gltf(filepath=SRC)
+        import_gltf(SRC)
     else:
         bpy.ops.wm.usd_import(filepath=SRC)
 else:
-    bpy.ops.wm.read_homefile(use_empty=True)
-    res = bpy.ops.import_scene.vrm(filepath=SRC)
+    clear_scene()
+    res = import_gltf(SRC)
     if res != {"FINISHED"}:
         raise SystemExit("ABORT: vrm import returned %s" % res)
-meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+if SRC.lower().endswith(".blend"):
+    meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+else:
+    meshes = imported_meshes()
+    _skip = sorted(o.name for o in bpy.data.objects
+                   if o.type == "MESH" and o not in set(meshes))
+    if _skip:
+        print("render: ignoring %d mesh(es) the import did not create: %s"
+              % (len(_skip), ", ".join(_skip[:6])))
 if not meshes:
     raise SystemExit("ABORT: import produced no meshes - the frame would be empty")
 

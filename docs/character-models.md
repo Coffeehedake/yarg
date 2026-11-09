@@ -329,6 +329,43 @@ The tell is precise and worth knowing: **the bones measure correct and the mesh 
 When that happens the rig is fine and the weights are not, so more rig correction will not help.
 Re-rig the bare geometry from scratch — see the open questions — rather than refining the pose.
 
+## Numbered rigs come in families
+
+Bones called `n8`, `n115`, `Bone.057` carry no information, so the map has to be read off the
+hierarchy and the rest positions. That was done by hand for Judy Hopps and for the Mandalorian,
+and the third time it turned out not to be a third time at all: **Peacemaker and Vigilante are the
+same rig.** Identical tree, identical rest positions to three decimals, and names offset by a
+constant — Peacemaker's hips are `n115`, Vigilante's are `n8`, and every other bone sits the same
+distance behind.
+
+So a family of this kind is a table of OFFSETS from the hips, and the hips are found rather than
+named: the parentless bone with three children, which in a numbered rig is the only thing that can
+be the junction of a spine and two legs. Then **check every name the table produces exists**, and
+abort if one does not. Without that check a wrong base does not fail, it maps a leg to a finger.
+
+Reading one of these takes four numbers per bone and nothing else:
+
+- **The spine** is the chain from the hips to the furthest bone along the body's long axis.
+- **Thumb or finger**: a thumb's first bone starts at the PALM, level with the wrist; the fingers'
+  proximals start out at the knuckles. Peacemaker's thumb is two bones beginning at x 0.585 with
+  his hand at 0.581, so the first of them is the metacarpal and the distal joint is simply absent.
+  Leave it unmapped. A finger bone on the wrong joint is worse than a missing one.
+- **Which finger is which**: they run in order across the hand, so sort them on the across-hand
+  axis and the sequence is index to little. Confirm it with chain length — the little finger is
+  always the shortest — and with the thumb, which sits beside the index.
+- **Left or right** comes off the sign of X, never off the name.
+
+### Do not generalise this into an automatic mapper
+
+It is tempting, and it was tried. A mapper that found the extremities and walked the hierarchy was
+checked against the two rigs already mapped by hand, and on Judy it returned `hips n15` with
+`chest` ALSO `n15`, both legs sharing one chain, and a fingertip for the hand — against a
+hand-written map of `hips n14 ... head n28` that is known to build 47 of 47. It took four lines of
+output to reject.
+
+The check is the point. Validating a new mapper against rigs whose answers are already known costs
+one run, and it is the difference between finding this out now and finding it out in a render.
+
 ## A skeleton can be in the file and not be in the MODEL
 
 A rig that deforms the mesh is not necessarily a rig that fits it. The Fortnite
@@ -344,6 +381,48 @@ So before trusting a skeleton, check that it is **inside** the mesh: mean distan
 midpoints to the nearest vertex, against the mesh's own size. The same measurement that identifies
 a bind pose (above) identifies a useless skeleton, and a rig whose head and foot share a height is
 not a rig at all. The fix is the same as for no rig: re-rig the geometry.
+
+## An absent map is an answer
+
+Texture matching fills gaps, and for a base colour that is right: every material has one, so the
+widest guess beats no texture at all. **An opacity map is the opposite.** Most materials have none,
+so absence is the normal answer rather than a gap, and a wrong one does not miscolour the mesh, it
+deletes parts of it.
+
+Scott Hall's folder holds exactly one opacity file, `Hall_eyelash_opacity.png`, and all forty of
+its filenames begin with `Hall`. So the pool of "files sharing a word with the material" matched
+all forty on the character's own name — which narrows nothing — and that eyelash cutout went onto
+his boots, both kneepads, both elbow pads, his tights and his vest. Ranking candidates by size,
+which fixed the same map reaching all nine of Prix's materials, cannot help when there is only one
+candidate.
+
+So an alpha map now comes from a file that names the material, or not at all. Sweeping all 109
+source archives bounds that exactly: 12 contain an opacity-like file, and 11 of those name the
+material in the filename (`Bikini_Opacity`, `Hair_Opacity`, `t-800_HP_Head_AlbedoTransparency`).
+The twelfth is Power Girl, whose materials are called `mesh0`, `mesh1`, `mesh2`, and she needs
+`VRM_TEX="mesh2=Supergirl_A_Hair_Alpha.png:alpha"` — which is why `VRM_TEX` learned to pin an
+alpha at the same time, and to REJECT a map kind nothing reads rather than accepting it, printing
+it, and doing nothing.
+
+Give a sweep like that a control. "No opacity map in this archive" and "this archive was never
+opened" look identical in a count of zero, so the sweep reports each archive's image count beside
+its opacity count: 75 archives hold images and no opacity map, which is a real zero, and 23 hold
+no images at all, which is a different fact entirely.
+
+## A second figure in the file sets the height
+
+Peacemaker's USDZ carries two skeletons, and the second one is not a duplicate of the first — it
+is a fragment of a DIFFERENT figure at a different scale. Three small meshes hang off its chest
+bone and sit at z 1.54 to 1.85 while his own body tops out at 1.459: a helmet, floating above his
+head.
+
+Nothing about that is visible in a bone count or a humanoid count, both of which were perfect. It
+shows up in one measurement — the tallest mesh is not part of the character — and the consequence
+is that scaling the file to 1.85 m scales the HELMET to 1.85 m and leaves Peacemaker 1.51 m tall,
+18% short, with every proportion intact so that nothing looks wrong until he stands next to
+someone. Alcina's floating hat was the same failure and cost a 0.5568 rescale of her whole rig.
+
+Check the extremes of the bounding box against the body, not just its size.
 
 ## A hand posed around a prop that is no longer there
 

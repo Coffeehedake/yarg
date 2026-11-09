@@ -1914,6 +1914,77 @@ elif RIG == "judyusd":
         MAP["%s_lower_leg" % s_] = ll
         MAP["%s_foot" % s_] = ft
         MAP["%s_toes" % s_] = to
+elif RIG in ("dcseries", "shaggyusd"):
+    # More numbered bones, and this time they come in a family. The Peacemaker
+    # and Vigilante rips are the SAME rig: identical tree, identical rest
+    # positions to three decimals, and names that are bare numbers offset by a
+    # constant -- Peacemaker's hips are 'n115' and Vigilante's are 'n8', with
+    # every other bone the same distance behind. Shaggy is a second rig of the
+    # same numbered kind, with a fuller skeleton: an upper chest, toes, and
+    # three-bone thumbs, which is the whole 52-slot humanoid.
+    #
+    # So each is a table of OFFSETS from the hips, and the hips are found rather
+    # than named: the parentless bone with three children, which is the only
+    # thing in a numbered rig that can be the junction of a spine and two legs.
+    # Every name the table then produces is checked to exist, so a file this
+    # does not actually fit aborts instead of mapping a leg to a finger.
+    _cands = [b for b in arm.data.bones
+              if b.parent is None and re.match(r"^n\d+$", b.name)
+              and len(b.children) >= 3]
+    if not _cands:
+        raise SystemExit("ABORT: rig '%s' expects a parentless 'nNNN' bone with "
+                         "three children (spine + two legs) and this file has "
+                         "none -- it is not this rig" % RIG)
+    _root = max(_cands, key=lambda b: len(b.children_recursive))
+    _B = int(_root.name[1:])
+    print("  %s: hips is %s, so the rig is based at %d" % (RIG, _root.name, _B))
+    if RIG == "dcseries":
+        # Five body bones -- no upper chest -- and legs that stop at the foot.
+        _BODY = (("hips", 0), ("spine", 1), ("chest", 2),
+                 ("neck", 3), ("head", 4))
+        _LIMB = (("shoulder", 6), ("upper_arm", 7), ("lower_arm", 8),
+                 ("hand", 9), ("upper_leg", 72), ("lower_leg", 73),
+                 ("foot", 74))
+        # The four fingers run in Z across the hand and the one nearest the
+        # thumb is the index; the little finger is also the shortest chain,
+        # which agrees. The thumb is only TWO bones, and the first of them
+        # starts at the palm rather than out at the knuckles, so it is the
+        # metacarpal and the distal joint is simply absent. Leaving it out is
+        # the point -- a finger bone mapped to the wrong joint is worse than a
+        # missing one.
+        _FING = (("index", 16), ("middle", 10), ("ring", 33), ("little", 22))
+        _THUMB, _THUMB_N, _SIDE = 28, 2, 33
+        _LEG_SIDE = 4
+    else:
+        _BODY = (("hips", 0), ("spine", 1), ("chest", 2), ("upper_chest", 3),
+                 ("neck", 4), ("head", 5))
+        _LIMB = (("shoulder", 7), ("upper_arm", 8), ("lower_arm", 9),
+                 ("hand", 10), ("upper_leg", 55), ("lower_leg", 56),
+                 ("foot", 57), ("toes", 58))
+        _FING = (("index", 15), ("middle", 19), ("ring", 23), ("little", 27))
+        _THUMB, _THUMB_N, _SIDE = 11, 3, 24
+        _LEG_SIDE = 5
+    for _k, _o in _BODY:
+        MAP[_k] = "n%d" % (_B + _o)
+    for _s, _d in (("left", 0), ("right", 1)):
+        for _k, _o in _LIMB:
+            _step = _LEG_SIDE if _k.endswith("leg") or _k in ("foot", "toes") \
+                else _SIDE
+            MAP["%s_%s" % (_s, _k)] = "n%d" % (_B + _o + _d * _step)
+        _t = _B + _THUMB + _d * _SIDE
+        for _j, _k in enumerate(("metacarpal", "proximal", "distal")[:_THUMB_N]):
+            MAP["%s_thumb_%s" % (_s, _k)] = "n%d" % (_t + _j)
+        for _f, _o in _FING:
+            _n = _B + _o + _d * _SIDE
+            for _j, _k in enumerate(("proximal", "intermediate", "distal")):
+                MAP["%s_%s_%s" % (_s, _f, _k)] = "n%d" % (_n + _j)
+    _missing = sorted(k for k, v in MAP.items() if v not in bone_names)
+    if _missing:
+        raise SystemExit("ABORT: rig '%s' based at %d wants %d bone(s) this "
+                         "file has not got, so the base is wrong or this is a "
+                         "different rig: %s"
+                         % (RIG, _B, len(_missing),
+                            ", ".join("%s=%s" % (k, MAP[k]) for k in _missing)))
 elif RIG == "simple":
     # A minimal hand-built rig: one bone per limb segment, no neck, no fingers.
     MAP = {"hips": "Hip_Bone", "spine": "Spine_Bone", "head": "Head_Bone"}
@@ -3231,6 +3302,22 @@ def pick(mat_name, kind, wide=True):
             st = MAPTOK.sub("", os.path.splitext(f)[0])
             return len(norm(st).replace(slug, "", 1))
         return choose(sorted(named, key=_slack), kind, loose=True)
+    # An opacity map is different in kind from every other map, and the pools
+    # below are wrong for it. Most materials genuinely have none, so ABSENCE is
+    # the normal answer rather than a gap to fill -- and a wrong one does not
+    # merely miscolour the mesh, it deletes parts of it.
+    #
+    # Scott Hall's folder holds exactly one opacity file,
+    # 'Hall_eyelash_opacity.png', and every one of its forty filenames begins
+    # with 'Hall'. So the shared-word pool below matches all forty on the
+    # character's own name, which narrows nothing, and that eyelash cutout went
+    # on his boots, both kneepads, both elbow pads, his tights and his vest.
+    # Ranking by size, which fixed the same map reaching all nine of Prix's
+    # materials, cannot help when there is only one candidate.
+    #
+    # So: an alpha map comes from a file that names the material, or not at all.
+    if kind == "alpha":
+        return None
     # Files sharing a WORD with the material. 'shoes' does not appear inside
     # 'sonic_shoes' as a slug, but it is plainly the same word.
     # A name that is only a generic word names nothing, and matching on it is
@@ -3273,6 +3360,13 @@ for _o in [x.strip() for x in os.environ.get("VRM_TEX", "").split(",") if x.stri
     _path = by_base.get(_f.strip().lower())
     if _path is None:
         raise SystemExit("ABORT: VRM_TEX names %r, which is not in %s" % (_f, TEXDIR))
+    # Only these are read. The kind used to go unchecked while four of them were
+    # wired, so ':alpha' and a typo like ':ruff' both validated, printed in the
+    # override list, and then did nothing -- an override that silently does
+    # nothing is worse than one that is rejected, because the build looks right.
+    if _k not in ("base", "metal", "rough", "emis", "alpha"):
+        raise SystemExit("ABORT: VRM_TEX kind %r is not one this builder reads "
+                         "(base, metal, rough, emis, alpha)" % _k)
     TEX_OVERRIDE[(_m.strip(), _k)] = _path
 if TEX_OVERRIDE:
     print("texture overrides: %s" % sorted(k[0] + ":" + k[1] for k in TEX_OVERRIDE))
@@ -3732,7 +3826,9 @@ for mat in bpy.data.materials:
     # Prefer a dedicated opacity map (Sayuri ships 'Bikini_Opacity.png'); fall
     # back to the base colour's own alpha, but only when that alpha is really
     # carrying a shape - an all-zero channel would make the mesh invisible.
-    ap = (pick_stem(stem, "alpha") if stem else None) or pick(mat.name, "alpha")
+    ap = (TEX_OVERRIDE.get((mat.name, "alpha"))
+          or (pick_stem(stem, "alpha") if stem else None)
+          or pick(mat.name, "alpha"))
     cut = False
     if ap and "Alpha" in bsdf.inputs:
         img = bpy.data.images.load(ap, check_existing=True)
