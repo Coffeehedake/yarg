@@ -91,6 +91,11 @@ because every entry below has already been rediscovered at least once.
 4. **Finish the chest-rig rollout.** The first pass rebuilt thirteen and installed six.
    What stopped the rest, in the order it is worth picking up:
 
+   - **Compare the bundle SIZE as well.** Geometry and texture names can both match while the
+     rebuild is twice the size: Prix came out at 39 MB against the 18 MB already installed,
+     because she was rebuilt at `texmax` 2048 rather than the house 1024. Nothing in the log
+     says so — the counts are identical and only the bytes differ. Rebuilt at 1024 she is
+     8.2 MB of VRM again.
    - **A rebuild that loses a texture is worse than no jiggle**, so compare before installing.
      Most of what a count says is missing is `...unigltfduplicated2` — UniGLTF copies an image
      per material slot on import, so a Unity texture count and a glTF image count are not the
