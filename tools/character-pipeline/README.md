@@ -85,10 +85,26 @@ because every entry below has already been rediscovered at least once.
    down to fit it. Nothing looks wrong until the character stands next to another one.
 3. **Re-check Lola Bunny against the split-channel metallicRoughness fix.** She is the only
    other model with `@channels=` files.
-4. **Finish the chest-rig rollout.** Blocked on arguments, not on the rigger: these carry chest
-   bones but their original build arguments were never recorded and their sources are not all
-   locatable — Harq Alkahana, Kaiser Aufhänger, Kasane Teto, Adachi Rei, Ariel, Heels, Killer
-   Clown. Jessica Rabbit's row in the table below records her `VRM_TEX` value truncated.
+4. **Finish the chest-rig rollout.** The first pass rebuilt thirteen and installed six.
+   What stopped the rest, in the order it is worth picking up:
+
+   - **A rebuild that loses a texture is worse than no jiggle**, so compare before installing.
+     Most of what a count says is missing is `...unigltfduplicated2` — UniGLTF copies an image
+     per material slot on import, so a Unity texture count and a glTF image count are not the
+     same number and never were. Compare NAMES. Two rebuilds really do lose maps and are held
+     back: **Alcina** (`Material.014`'s normal and roughness) and **Gwen Stacy** (her normal
+     and metalness/specular). Both built from the same sources as the installed versions, so
+     the texture picker is choosing differently than it did — that is the thing to find.
+   - **Judy Hopps** rebuilt 132% heavier than the installed one, so the installed character did
+     not come from `judy-hopps-not-game-ready.zip`. Find out which source it did come from
+     before replacing her.
+   - **Lola Bunny and Peach** produced no model file the picker recognises from their archives.
+     Look inside them by hand.
+   - **Jinx and Miku** rebuild cleanly and gain nothing: both decline the chest rig (Jinx's two
+     sides disagree, Miku has 93 torso vertices). Leave them installed as they are.
+   - These carry chest bones but have no recoverable arguments or no locatable source —
+     Harq Alkahana, Kaiser Aufhänger, Kasane Teto, Adachi Rei, Ariel, Heels, Killer Clown.
+     Jessica Rabbit's row in the table below records her `VRM_TEX` value truncated.
 5. **Anakin** is still unconverted; Mixamo's auto-rigger has refused him five times.
 6. **`T-800_Run.usdz`** is unconverted — 33 bones on a numbered rig rooted at `n14`, and a
    2.0 x 2.0 x 3.7 m bounding box that says it is posed mid-run, so it needs `VRM_STANDUP=1`

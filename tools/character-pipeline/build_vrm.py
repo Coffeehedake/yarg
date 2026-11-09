@@ -3172,7 +3172,18 @@ BREAST = r"(breast|bust|boob|pector|chichi|oppai)"
 # already answered and the two compared. A detector that has only ever run
 # where the answer is unknown has not been tested.
 BREASTRIG = os.environ.get("VRM_BREASTRIG", "")
-if BREASTRIG:
+
+
+def _chest_rig():
+    """Build chest bones, or say why not.
+
+    A FUNCTION so that every refusal can return. This was a plain
+    `if` block with two `raise SystemExit`s in it, and one of them
+    ended Gadget Hackwrench's entire conversion: she is 1.30 m with
+    shoulders 0.146 m apart, which fails a sanity check written for
+    human proportions, and she is a chipmunk. Jiggle is a cosmetic
+    feature and must never cost a character its build."""
+    global bone_names
     _cb = MAP.get("upper_chest") or MAP.get("chest") or MAP.get("spine")
     _nk = MAP.get("neck") or MAP.get("head")
     # The UPPER ARM heads, not the shoulders. A clavicle begins at the
@@ -3184,9 +3195,10 @@ if BREASTRIG:
     _shr = MAP.get("right_upper_arm") or MAP.get("right_shoulder")
     _missing = [n for n in (_cb, _nk, _shl, _shr) if not n or n not in bone_names]
     if _missing:
-        raise SystemExit("ABORT: VRM_BREASTRIG needs a chest, a neck and both "
-                         "shoulders mapped; this rig is missing %d of the four"
-                         % len(_missing))
+        print("  chest rig: %d of the chest, neck and two shoulders are not "
+              "mapped on this rig, so there is nothing to measure from"
+              % len(_missing))
+        return
     _MW = arm.matrix_world
 
     def _bw(n):
@@ -3206,11 +3218,11 @@ if BREASTRIG:
     # small error -- it moves the search band, the side split and the
     # protrusion test together, and all three stay plausible-looking.
     _torso_h = abs(_neck_p.z - _bw(MAP.get("hips") or _cb).z) or 1e-6
-    if _span < _torso_h * 0.35:
-        raise SystemExit("ABORT: VRM_BREASTRIG measured a shoulder span of "
-                         "%.3f m against a torso %.3f m tall, which cannot be "
-                         "right -- '%s' and '%s' are not the shoulder joints "
-                         "on this rig" % (_span, _torso_h, _shl, _shr))
+    if _span < _torso_h * 0.25:
+        print("  chest rig: shoulder span %.3f m against a torso %.3f m tall, "
+              "so '%s' and '%s' do not look like the shoulder joints here -- "
+              "nothing rigged" % (_span, _torso_h, _shl, _shr))
+        return
     # The arms must be out of this entirely. A vertex by the armpit belongs to
     # the shoulder as much as to the chest, and pulling one onto a spring bone
     # is how a sleeve tears the moment the arm comes down.
@@ -3476,6 +3488,9 @@ if BREASTRIG:
         bone_names = {b.name for b in arm.data.bones}
         print("  chest rig: built %s and weighted %d vertices onto them"
               % (", ".join(sorted(_made.values())), _wtd))
+
+if BREASTRIG:
+    _chest_rig()
 
 # Seat on the FEET, not on the lowest vertex. A tail, cape or trailing prop can
 # hang below the soles, and seating on the mesh minimum then lifts the character
