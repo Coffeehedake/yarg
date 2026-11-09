@@ -1298,6 +1298,24 @@ if UNRIGGED:
     if _dup:
         print("  excluded %d co-located helper bones from automatic weighting: %s"
               % (len(_dup), ", ".join(sorted(b.name for b in _dup)[:8])))
+    # use_deform is not a setting for bone heat; it is the armature's own
+    # switch, and clearing it stops the bone deforming ANYTHING -- including
+    # the meshes that were already rigged and perfectly weighted before this
+    # step ran. It was never turned back on.
+    #
+    # Jessica Rabbit is the measured case. Her rig carries 160 bones and this
+    # takes 73 of them out, leaving 87. Her body is weighted to those 73 as
+    # well, so every vertex weighted only to a disabled bone stopped deforming
+    # and stayed at its rest position: her evaluated box went from z
+    # 0.47..11.65 to 0.47..43.61 at this stage, half of her standing and half
+    # of her still in the bind pose. The scale step then measured a figure
+    # nearly four times too tall and squashed her to 0.08 m wide.
+    #
+    # Nothing caught it because every count stayed right: the build reported a
+    # verified height, a full 52/52 humanoid and every mesh skinned, and the
+    # character was ruined. So restore the flags the moment bone heat is done
+    # with them.
+    _deform_was = [b.name for b in arm.data.bones if b.use_deform]
     for b in _off + _dup:
         b.use_deform = False
     if _off:
@@ -1315,6 +1333,17 @@ if UNRIGGED:
                   % (o.name, len(o.data.vertices)))
         except Exception as e:
             print("  could not auto-weight '%s': %s" % (o.name, e))
+    _restored = 0
+    for _n in _deform_was:
+        _b = arm.data.bones.get(_n)
+        if _b is not None and not _b.use_deform:
+            _b.use_deform = True
+            _restored += 1
+    if _restored:
+        bpy.context.view_layer.update()
+        print("  restored use_deform on %d bone(s) that were switched off only "
+              "so bone heat would ignore them -- leaving them off stops them "
+              "deforming the meshes that were ALREADY rigged" % _restored)
         # Bone heat solves a diffusion problem over the surface and gives up on
         # geometry it cannot solve -- a mesh of many separate shells, as a
         # character with loose eyes, mouth and quills is. It reports that as a
