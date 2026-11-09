@@ -2987,7 +2987,8 @@ if _ANCHOR_BONE:
 _SPECS = [(HAIRRIG, _ANCHOR_BONE, "HairSpring",
            os.environ.get("HAIR_SEGS", "4"),
            os.environ.get("HAIR_STRANDS", "4"),
-           os.environ.get("HAIR_ANCHOR", "0.30"))]
+           os.environ.get("HAIR_ANCHOR", "0.30"),
+           os.environ.get("HAIR_LO", "0"), os.environ.get("HAIR_HI", "1"))]
 if _ANCHOR_BONE and MAP.get("head") and _ANCHOR_BONE != MAP.get("head"):
     _SPECS[0] = (HAIRRIG, _ANCHOR_BONE, "ClothSpring") + _SPECS[0][3:]
 for _more in [x for x in os.environ.get("VRM_RIG_MORE", "").split(";") if x.strip()]:
@@ -2997,7 +2998,7 @@ for _more in [x for x in os.environ.get("VRM_RIG_MORE", "").split(";") if x.stri
     _pat, _, _bone = _more.partition("@")
     if not _pat.strip():
         continue
-    _k = [x.strip() for x in _knob.split(",")] + ["", "", ""]
+    _k = [x.strip() for x in _knob.split(",")] + ["", "", "", "", ""]
     _hit = [b.name for b in arm.data.bones
             if b.name == _bone or b.name.endswith(":" + _bone)
             or b.name.lower() == _bone.lower()] if _bone else []
@@ -3007,12 +3008,30 @@ for _more in [x for x in os.environ.get("VRM_RIG_MORE", "").split(";") if x.stri
     _SPECS.append((_pat.strip(), _hit[0] if _hit else "",
                    "HairSpring" if not _hit or _hit[0] == MAP.get("head")
                    else "ClothSpring",
-                   _k[0] or "4", _k[1] or "4", _k[2] or "0.30"))
-    print("  rig group: /%s/ from '%s' (%s segs, %s strands, %s rigid at top)"
+                   _k[0] or "4", _k[1] or "4", _k[2] or "0.30",
+                   _k[3] or "0", _k[4] or "1"))
+    print("  rig group: /%s/ from '%s' (%s segs, %s strands, %s rigid at top, "
+          "height band %s..%s)"
           % (_SPECS[-1][0], _SPECS[-1][1] or MAP.get("head"), _SPECS[-1][3],
-             _SPECS[-1][4], _SPECS[-1][5]))
+             _SPECS[-1][4], _SPECS[-1][5], _SPECS[-1][6], _SPECS[-1][7]))
 
-for _gi, (HAIRRIG, _ANCHOR_BONE, _PREFIX, _S_SEG, _S_STR, _S_ANC) in         enumerate(_SPECS):
+# Where a z sits in the character: 0 at the feet, 1 at the crown, and the
+# inverse. Used by the height band below and by the island listing, so a recipe
+# can be written straight from the build's own output.
+_CZ = [_v.co.z for _o in meshes for _v in _o.data.vertices]
+_CZ0, _CZ1 = (min(_CZ), max(_CZ)) if _CZ else (0.0, 1.0)
+
+
+def _frac(_z):
+    return (_z - _CZ0) / (_CZ1 - _CZ0) if _CZ1 > _CZ0 else 0.0
+
+
+def _frac_z(_f):
+    return _CZ0 + (_CZ1 - _CZ0) * _f
+
+
+for _gi, (HAIRRIG, _ANCHOR_BONE, _PREFIX, _S_SEG, _S_STR, _S_ANC,
+          _S_LO, _S_HI) in enumerate(_SPECS):
     if HAIRRIG and (_ANCHOR_BONE or MAP.get("head") in bone_names):
         HEAD = _ANCHOR_BONE or MAP["head"]
         if _ANCHOR_BONE:
@@ -3062,8 +3081,12 @@ for _gi, (HAIRRIG, _ANCHOR_BONE, _PREFIX, _S_SEG, _S_STR, _S_ANC) in         enu
                 if _w < len(ranked):
                     cnt, obj, comp = ranked[_w]
                     hair.setdefault(obj, set()).update(comp)
-                    print("  hair rig: island %d of %d on mesh '%s', %d verts"
-                          % (_w, len(ranked), obj.name, cnt))
+                    _iz = [obj.data.vertices[_c].co.z for _c in comp]
+                    print("  hair rig: island %d of %d on mesh '%s', %d verts,"
+                          " z %.3f..%.3f (%.2f..%.2f of the character)"
+                          % (_w, len(ranked), obj.name, cnt,
+                             min(_iz), max(_iz),
+                             _frac(min(_iz)), _frac(max(_iz))))
                 else:
                     print("  hair rig: island %d does not exist (only %d)"
                           % (_w, len(ranked)))
@@ -3081,6 +3104,31 @@ for _gi, (HAIRRIG, _ANCHOR_BONE, _PREFIX, _S_SEG, _S_STR, _S_ANC) in         enu
                     vs.update(poly.vertices)
             if vs:
                 hair[o] = vs
+
+        # A SKIRT often has no name, no material and no island of its
+        # own. Miku's is the lower part of the torso island -- one mesh called
+        # 'body', one material, 209 islands, and the skirt is simply where the
+        # torso stops being a torso. None of the three existing selectors can
+        # address that, which is why her dress was still rigid after
+        # everything else had been rigged.
+        #
+        # So a group may be clipped to a band of the CHARACTER's height, given
+        # as two fractions. Fractions rather than coordinates because the build
+        # moves and rescales the figure before this runs, so the numbers in the
+        # source file are not the numbers here -- but "the bottom third of the
+        # torso" is the same thing either way.
+        if (float(_S_LO) > 0.0 or float(_S_HI) < 1.0) and hair:
+            _blo, _bhi = _frac_z(float(_S_LO)), _frac_z(float(_S_HI))
+            _before = sum(len(v) for v in hair.values())
+            for _o in list(hair):
+                hair[_o] = {_i for _i in hair[_o]
+                            if _blo <= _o.data.vertices[_i].co.z <= _bhi}
+                if not hair[_o]:
+                    del hair[_o]
+            print("  hair rig: clipped to z %.3f..%.3f (%s..%s of the "
+                  "character): %d verts of %d"
+                  % (_blo, _bhi, _S_LO, _S_HI,
+                     sum(len(v) for v in hair.values()), _before))
 
         total = sum(len(v) for v in hair.values())
         if not total:
@@ -3432,14 +3480,62 @@ if _orphans and not os.environ.get("VRM_KEEP_ORPHANS"):
     _hum_bones = [(_n, arm.data.bones[_n].head_local) for _n in MAP.values()
                   if _n in bone_names]
     if _hum_bones:
+        # An orphan ABOVE the humanoid root is a different animal, and the
+        # first cut of this got it wrong in the most direct way possible.
+        #
+        # Miku's thighs hang off 'Bip01 Spine', so the build promotes that to
+        # hips -- correctly -- which leaves 'Bip01 Spine's own parent,
+        # 'Bip01 Pelvis', outside the humanoid hierarchy carrying 22.9% of her
+        # body. It is an orphan by the test above, so this adopted it to the
+        # nearest humanoid bone, which was 'Bip01 R Thigh': one of its own
+        # grandchildren. Blender will not build that cycle, the re-parent
+        # silently did nothing, and the log claimed the fix while the measured
+        # 23.7% of undriven weight did not move at all. "Her dress doesn't move
+        # with her" was that pelvis the whole time, and not a missing spring.
+        #
+        # Nothing above the root can be adopted by anything below it, so move
+        # the WEIGHT down to the humanoid root instead. Anything below the root
+        # is still re-parented as before.
+        _hips = MAP.get("hips")
+        _up, _moved = [], []
+        for _n in list(_orphans):
+            _b = arm.data.bones.get(_n)
+            if _b is None or _hips is None or _hips == _n:
+                continue
+            if any(_c.name in _driven for _c in _b.children_recursive):
+                _up.append(_n)
+                _orphans.remove(_n)
+        if _up and _hips in bone_names:
+            _tot = 0
+            for _m in meshes:
+                for _gn in _up:
+                    _g = _m.vertex_groups.get(_gn)
+                    if _g is None:
+                        continue
+                    _idx = [_v.index for _v in _m.data.vertices
+                            for _vg in _v.groups if _vg.group == _g.index
+                            and _vg.weight > 0.0001]
+                    if _idx:
+                        _tg = (_m.vertex_groups.get(_hips)
+                               or _m.vertex_groups.new(name=_hips))
+                        _tg.add(_idx, 1.0, "REPLACE")
+                        _tot += len(_idx)
+                    _m.vertex_groups.remove(_g)
+            print("  orphan bones: %d bone(s) sit ABOVE the humanoid root and "
+                  "cannot be adopted by their own descendants, so their weight "
+                  "moved down to '%s' instead -- %s, %d vertices"
+                  % (len(_up), _hips, ", ".join(_up[:6]), _tot))
         bpy.context.view_layer.objects.active = arm
         bpy.ops.object.mode_set(mode="EDIT")
-        _moved = []
         for _n in _orphans:
             _eb = arm.data.edit_bones.get(_n)
             if _eb is None or (_eb.parent and _eb.parent.name in _orphans):
                 continue        # a child of another orphan rides with it
-            _near = min(_hum_bones, key=lambda t: (t[1] - _eb.head).length)
+            _below = {_c.name for _c in arm.data.bones[_n].children_recursive}
+            _cand = [t for t in _hum_bones if t[0] not in _below and t[0] != _n]
+            if not _cand:
+                continue
+            _near = min(_cand, key=lambda t: (t[1] - _eb.head).length)
             _tb = arm.data.edit_bones.get(_near[0])
             if _tb is None or _tb == _eb:
                 continue
@@ -3448,10 +3544,12 @@ if _orphans and not os.environ.get("VRM_KEEP_ORPHANS"):
             _moved.append((_n, _near[0]))
         bpy.ops.object.mode_set(mode="OBJECT")
         bpy.context.view_layer.update()
-        print("  orphan bones: %d deform bone(s) sat outside the humanoid "
-              "hierarchy, so nothing would ever have moved them -- re-parented "
-              "%d: %s" % (len(_orphans), len(_moved),
-                          ", ".join("%s->%s" % t for t in _moved[:8])))
+        if _orphans:
+            print("  orphan bones: %d deform bone(s) sat outside the humanoid "
+                  "hierarchy, so nothing would ever have moved them -- "
+                  "re-parented %d: %s"
+                  % (len(_orphans), len(_moved),
+                     ", ".join("%s->%s" % t for t in _moved[:8])))
 elif _orphans:
     print("  orphan bones: %d outside the humanoid hierarchy, left alone by "
           "VRM_KEEP_ORPHANS: %s" % (len(_orphans), ", ".join(_orphans[:8])))
