@@ -77,8 +77,11 @@ because every entry below has already been rediscovered at least once.
    than the hair chains, which swing and keep swinging). Detection has three knobs:
    `VRM_BREASTRIG_MIN` (0.06, how far the apex must stand proud of the surface),
    `VRM_BREASTRIG_MIN_OUT` (0.12, how far from the midline a peak must be before it counts as
-   a bust rather than a sternum) and `VRM_BREASTRIG_R` (0.25 of the shoulder span, the radius
-   of the weighted patch). Run `VRM_BREASTRIG=check` to see what a change does to a character
+   a bust rather than a sternum), `VRM_BREASTRIG_R` (0.25 of the shoulder span, the radius of
+   the weighted patch), and the two mesh-detail floors `VRM_BREASTRIG_MIN_VERTS` (120 front
+   vertices a side to measure from) and `VRM_BREASTRIG_MIN_PATCH` (40 in the patch itself).
+   A character under those is refused as a **limitation of the model, not a failure** — the
+   build finishes normally and the log says which floor it was under. Run `VRM_BREASTRIG=check` to see what a change does to a character
    without rebuilding it.
 2. **Sweep the installed set for the floating-prop height bug** — the Peacemaker failure mode,
    where the tallest mesh in the file is not part of the character and the whole figure scales

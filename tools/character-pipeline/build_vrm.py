@@ -3193,6 +3193,7 @@ def _chest_rig():
     # her sternum, 25 and 40 cm from the bones she actually has.
     _shl = MAP.get("left_upper_arm") or MAP.get("left_shoulder")
     _shr = MAP.get("right_upper_arm") or MAP.get("right_shoulder")
+    _from_arms = bool(MAP.get("left_upper_arm") and MAP.get("right_upper_arm"))
     _missing = [n for n in (_cb, _nk, _shl, _shr) if not n or n not in bone_names]
     if _missing:
         print("  chest rig: %d of the chest, neck and two shoulders are not "
@@ -3218,10 +3219,35 @@ def _chest_rig():
     # small error -- it moves the search band, the side split and the
     # protrusion test together, and all three stay plausible-looking.
     _torso_h = abs(_neck_p.z - _bw(MAP.get("hips") or _cb).z) or 1e-6
-    if _span < _torso_h * 0.25:
-        print("  chest rig: shoulder span %.3f m against a torso %.3f m tall, "
-              "so '%s' and '%s' do not look like the shoulder joints here -- "
-              "nothing rigged" % (_span, _torso_h, _shl, _shr))
+    # Judge this by WHICH BONES were found, not by the proportion they give.
+    #
+    # The failure this guards against is real: measured between the two
+    # CLAVICLES -- which both begin at the sternum -- Alcina's "shoulder span"
+    # came out as 0.055 m for a 2.9 m character, and every threshold here is a
+    # fraction of that span. But a proportion cannot tell that apart from an
+    # unusual body. Measured across all 66 installed characters, span/torso
+    # runs from 0.203 (Gadget Hackwrench, a chipmunk, whose arms ARE correctly
+    # mapped) up past 0.6, with no gap anywhere in between to put a line in.
+    # The first version of this check drew it at 0.35 and threw her whole
+    # conversion away.
+    #
+    # The two ranges OVERLAP outright: across the 66, arm span / torso runs
+    # 0.203 to 1.407 and clavicle span / torso runs 0.034 to 0.554, so no
+    # global line separates them. Within ONE character they never overlap --
+    # of the 19 that map both, the clavicle span is smaller every time, by at
+    # least 2.5x and typically 3.2x. So the question worth asking is which
+    # pair the humanoid map actually gave us, which is known rather than
+    # inferred.
+    if not _from_arms:
+        print("  chest rig: not rigged (a limitation, not a failure) -- this "
+              "rig maps no upper arms, so the only width available is between "
+              "the clavicles, which both start at the sternum and would "
+              "mis-scale every measurement here")
+        return
+    if _span < _torso_h * 0.05:
+        print("  chest rig: not rigged (a limitation, not a failure) -- the "
+              "arm joints are %.3f m apart against a torso %.3f m tall, which "
+              "is degenerate" % (_span, _torso_h))
         return
     # The arms must be out of this entirely. A vertex by the armpit belongs to
     # the shoulder as much as to the chest, and pulling one onto a spring bone
@@ -3301,14 +3327,25 @@ def _chest_rig():
     # The peak of the profile is the apex by construction, and it costs nothing
     # to let the geometry say where it is.
     _NBIN = 14
+    # A spring moves VERTICES. Below a certain count there is nothing to move
+    # smoothly: the patch deforms as a handful of flat facets, which reads worse
+    # than a chest that does not move at all. Gwen Stacy is the measured
+    # borderline -- 205 front vertices across her whole chest band and a patch
+    # of 49 between the two sides, about 25 each, where Prix has 366 a side and
+    # Sayuri more. This is a property of the MODEL, so refusing is a limitation
+    # and not a failure, and it is said that way in the log.
+    _DETAIL = int(os.environ.get("VRM_BREASTRIG_MIN_VERTS", "120"))
+    _PATCH = int(os.environ.get("VRM_BREASTRIG_MIN_PATCH", "40"))
     _sides = {}
     for _side, _sgn in (("L", 1.0), ("R", -1.0)):
         _half = [(c, o, i) for c, o, i in _cand
                  if _span * 0.06 < (c.x - _mid_x) * _sgn < _span * 0.48
                  and c.y < _chest_p.y]
-        if len(_half) < 24:
-            print("  chest rig: %s half-chest holds %d front vertices, too few "
-                  "to measure" % (_side, len(_half)))
+        if len(_half) < _DETAIL:
+            print("  chest rig: %s not rigged (a limitation, not a failure) -- "
+                  "%d front vertices across the half-chest, under the %d a "
+                  "spring needs to move smoothly"
+                  % (_side, len(_half), _DETAIL))
             continue
         # Several meshes can occupy this space, stacked: body, underwear,
         # dress. Alcina's gown hangs 6 cm in front of her body here, and the
@@ -3320,7 +3357,7 @@ def _chest_rig():
             _layers.setdefault(_t[1].name, []).append(_t)
         _ranked = []
         for _ln, _lv in _layers.items():
-            if len(_lv) < 24:
+            if len(_lv) < _DETAIL // 2:
                 continue
             _ly = sorted(c.y for c, _, _ in _lv)
             _ranked.append((_ly[len(_ly) // 2], _ln, _lv))
@@ -3417,8 +3454,8 @@ def _chest_rig():
                   "nothing rigged" % (_gap, _outs["L"], _outs["R"]))
             _rig = []
     if len(_rig) < 2:
-        print("  chest rig: %d of 2 sides survive -- nothing rigged"
-              % len(_rig))
+        print("  chest rig: not rigged (a limitation, not a failure) -- %d of "
+              "the 2 sides survive the tests above" % len(_rig))
     elif BREASTRIG == "check":
         print("  chest rig: check only, nothing changed")
     elif _authored:
@@ -3430,6 +3467,22 @@ def _chest_rig():
               "there is nothing to build -- the spring section below is what "
               "it needs" % ", ".join(sorted(_authored)))
     else:
+        # Count the patch BEFORE building anything: a bone whose patch turns
+        # out to be four facets has to be undone, and undoing a weight paint is
+        # harder than not doing it.
+        _thin = []
+        for _side in _rig:
+            _apex = _sides[_side][0]
+            _R = float(os.environ.get("VRM_BREASTRIG_R", "0.25")) * _span
+            _n = sum(1 for _c, _o, _i in _cand if (_c - _apex).length < _R)
+            if _n < _PATCH:
+                _thin.append((_side, _n))
+        if _thin:
+            print("  chest rig: not rigged (a limitation, not a failure) -- the "
+                  "patch would be %s, under the %d vertices a side a spring "
+                  "needs to deform smoothly rather than as flat facets"
+                  % (", ".join("%d on %s" % (n, k) for k, n in _thin), _PATCH))
+            return
         bpy.context.view_layer.objects.active = arm
         bpy.ops.object.mode_set(mode="EDIT")
         _made = {}

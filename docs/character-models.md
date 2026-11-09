@@ -497,6 +497,34 @@ This is the argument for doing a handful before a rollout: the failure was not a
 missing bone, it was a plausible-looking success on a character nobody would have thought to
 check.
 
+### A refusal here is a limitation, not a failure
+
+Everything above refuses because of something about the MODEL, so it is reported that way and
+the build carries on. The one time a refusal was wired as an abort it cost Gadget Hackwrench
+her whole conversion over a feature that only adds jiggle.
+
+**Not enough mesh to move.** A spring moves vertices, and below a certain count the patch
+deforms as a handful of flat facets, which reads worse than a chest that does not move at all.
+Gwen Stacy is the measured borderline: 55 front vertices on each side of her chest, against
+385 a side for Prix and more for Sayuri. The default floors are 120 front vertices a side to
+measure from (`VRM_BREASTRIG_MIN_VERTS`) and 40 in the patch itself
+(`VRM_BREASTRIG_MIN_PATCH`).
+
+**Proportion cannot tell a bad humanoid map from an unusual body.** The check exists because
+Alcina's "shoulder span", measured between two clavicles that both begin at the sternum, came
+out as 0.055 m for a 2.9 m character — and every threshold in the rigger is a fraction of that
+span, so one wrong number moves all of them together and each still looks reasonable. But
+measured across all 66 installed characters the two ranges **overlap outright**: arm span over
+torso height runs 0.203 (Gadget, a chipmunk, whose arms are correctly mapped) to 1.407, while
+clavicle span over torso runs 0.034 to 0.554. There is no line to draw, and the first version
+of the check drew one at 0.35 and threw Gadget away.
+
+Within any ONE character they never overlap — of the 19 that map both, the clavicle span is
+the smaller every time, by at least 2.5x and typically 3.2x. So the rigger asks which pair the
+humanoid map actually handed it, which is known rather than inferred, and only refuses when
+there are no upper arms to measure between. **Prefer the question you can answer exactly over
+the one you have to threshold.**
+
 ## A prop can share a MESH with the kit
 
 An exclude pattern is a blunt instrument: it takes whole meshes, and a model is not obliged to
