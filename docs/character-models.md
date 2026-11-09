@@ -728,6 +728,54 @@ Nothing caught it because the map was complete and self-consistent: every bone i
 and the readback matched. **A mis-mapping is only visible if you ask where the bone IS.** Count
 the chain instead of indexing into it.
 
+## use_deform is the armature's switch, not a setting for bone heat
+
+The unrigged-mesh rescue takes tip, facial and co-located helper bones "out of the running"
+before automatic weighting, by clearing `use_deform`. That is the right intent and the wrong
+switch: `use_deform` stops the bone deforming **anything**, including the meshes that were
+already rigged and perfectly weighted before the rescue ran. It was never turned back on.
+
+Jessica Rabbit measures it. Her rig carries 160 bones and the rescue takes 73 out, leaving 87.
+Her body is weighted to those 73 as well, so every vertex weighted only to a disabled bone
+stopped deforming and stayed in the bind pose:
+
+| stage | her body's evaluated box |
+|---|---|
+| after import | z 0.472..11.649 |
+| after CHILD_OF | z 0.472..11.649 |
+| **after realign** | **z 0.472..43.606** — half standing, half still bound |
+| after scale | x -0.040..0.040, hence "implausibly narrow" |
+
+The scale step then measured a figure nearly four times too tall and squashed her to 0.08 m
+wide. **Every count stayed right the whole time**: a verified height, a full 52/52 humanoid,
+every mesh skinned, no undriven weight — and the character was a twisted mass, while her SOURCE
+rendered perfectly.
+
+Restore the flags the moment bone heat is done with them.
+
+### VRM_TRACE is what found it, in one run
+
+`VRM_TRACE=<mesh substring>` prints that mesh's evaluated world box at every stage. It exists
+because "chasing a part that ends up in the wrong place by reasoning about matrices is how three
+wrong fixes got written", and this was the fourth: before using it, time went on a weight
+transfer, a posed-donor copy and a donor-selection fix, all of which were real improvements to
+code that was not the problem. **Set the trace first.** `VRM_NO_REALIGN` then ruled out the
+stage the trace pointed at, which narrowed it to the rescue sitting in the same gap.
+
+## A T-pose has straight legs
+
+Straightening a leg already existed -- `_straighten_axis` against -Z -- but only inside the
+stand-up step, which is opt-in AND requires the spine to lie more than 25 degrees off vertical.
+A character who stands upright with her legs crossed can never reach it: Jessica sings at a
+microphone with her thighs 28.0 degrees off vertical, and baked a crossed-leg bind that every
+animation in the game would then deform from.
+
+Legs are now measured on the same terms as the arms, in the same block, so one geometry bake
+covers both. `VRM_STRAIGHTEN_LEGS=1` asks for it, because straightening a leg is a DEFORMATION
+and on weights taken from a contorted pose it is the deformation that tears -- the caution the
+stand-up path already records about Anakin, whose knee was folded against his chest when he was
+bound. The measurement prints either way, so a character that needs it says so in its own log.
+
 ## Shape keys: zero them, do not delete them
 
 A shape key's weight is ZERO in engine, so the base mesh is what to MEASURE. Prix proves why
