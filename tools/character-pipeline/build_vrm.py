@@ -3640,8 +3640,22 @@ if _orphans and not os.environ.get("VRM_KEEP_ORPHANS"):
             _tb = arm.data.edit_bones.get(_near[0])
             if _tb is None or _tb == _eb:
                 continue
+            # use_connect FIRST, and restore the rest position afterwards.
+            # Assigning a parent while the bone is still connected makes
+            # Blender snap its head onto the new parent's TAIL, which moves the
+            # bone -- and clearing use_connect afterwards does not put it back.
+            #
+            # This is what left Lola Bunny's teeth hanging beside her face.
+            # Re-parenting at rest IS deformation-neutral, which is the whole
+            # reason the hierarchy repair is safe, but only if the bone does not
+            # move: the armature reads bone.matrix_local, and a snapped head
+            # rewrites exactly that. Her head followed her body correctly and
+            # the 118 bones the fix had "repaired" were displaced instead.
+            _h, _t, _roll = _eb.head.copy(), _eb.tail.copy(), _eb.roll
+            _eb.use_connect = False
             _eb.parent = _tb
             _eb.use_connect = False
+            _eb.head, _eb.tail, _eb.roll = _h, _t, _roll
             _moved.append((_n, _near[0]))
         bpy.ops.object.mode_set(mode="OBJECT")
         bpy.context.view_layer.update()
@@ -4654,6 +4668,20 @@ def authored(bsdf, slot):
     return _hit
 
 
+def _toks_eq(mat_name, path):
+    """Is this file named for THIS material, rather than merely containing it?
+
+    'RedEyes' against 'Eyes.png' shares a word and is not a match; 'PomniEyes'
+    against 'PomniEyes.png' is. Compared as tokens, because stripping the
+    separators is what made Eye/Eyelash indistinguishable elsewhere.
+    """
+    _split = lambda s_: [x.lower() for x in
+                         re.split(r"[^0-9a-zA-Z]+", MAPTOK.sub(" ", s_)) if x]
+    _m = _split(mat_name)
+    _f = _split(os.path.splitext(os.path.basename(path))[0])
+    return _m == _f or _f[:len(_m)] == _m or _m[:len(_f)] == _f
+
+
 def _SET_OF(prefix):
     """The files that belong to one material's texture SET.
 
@@ -4830,6 +4858,30 @@ for mat in bpy.data.materials:
             if p is None:
                 p = pick(mat.name, kind, wide=_default_col)
                 _from = "name" if p else None
+                # A NAME match is a substring match, and a material that
+                # carries a real authored colour has everything it needs
+                # already. Pomni's iris is geometry, not a picture: 'RedEyes'
+                # is (0.800, 0.005, 0.017) and 'BlueEyes' is (0.027, 0.049,
+                # 0.800), and the pinwheel is those two colours in alternating
+                # segments. Both were handed 'Eyes.png' because "Eyes" is a
+                # substring of "RedEyes" -- and once a base texture exists the
+                # exported factor is forced to white, so the red and the blue
+                # were thrown away and her irises shipped blank.
+                #
+                # The guard that keeps her plain Red/Blue/Yellow flat only
+                # covers the loose global pool. This is the same mistake one
+                # step earlier, and the same answer: when the colour is
+                # authored, the texture has to be named for THIS material, not
+                # merely contain its name. 'PomniEyes' sits at 0.814 grey --
+                # no authored colour -- so it still takes the map.
+                if (p is not None and kind == "base" and not _default_col
+                        and _toks_eq is not None
+                        and not _toks_eq(mat.name, p)):
+                    print("    %s carries its own colour %s and '%s' only "
+                          "shares a word with it -- keeping the colour"
+                          % (mat.name, tuple(round(c, 3) for c in _bc),
+                             os.path.basename(p)))
+                    p, _from = None, None
         if p is None and kind == "base" and slot in bsdf.inputs:
             # Nothing named this material and nothing shares a word with its
             # mesh. Whether it WANTS a texture is readable from the material
