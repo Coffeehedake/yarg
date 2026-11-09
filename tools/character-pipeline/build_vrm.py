@@ -579,22 +579,71 @@ def bake_pose_to_rest(why):
 #
 # Zeroing first is strictly more faithful than collapsing at the author's values,
 # because zero is what the engine uses.
+# ZEROING a key is not the same as DELETING it, and this used to do the second
+# while only needing the first. Everything above argues that the base mesh is
+# what to MEASURE; none of it argues that the keys should not SHIP. A key at
+# weight zero contributes nothing to the bounds, the renders or the game, and
+# it is still there for anything that wants to drive it.
+#
+# Pomni is why it matters. Her irises are supposed to resize -- that is the
+# character -- and her source carries 'Big' and 'Small' on Eye.L, 'Closed' on
+# her lashes, and three doodle keys for her face. Every one was deleted at this
+# line, and she exported with ZERO morph targets, so the eyes that are meant to
+# animate could never move. Nothing downstream reported a loss, because by then
+# there was nothing left to lose.
+#
+# Prix's corrupt key is a real hazard and it is not an argument for deleting
+# all of them: it is an argument for spotting THAT one. It holds a body four
+# times oversized, so measure each key's displacement against the mesh it
+# belongs to and drop only the ones that are plainly broken.
+#
+# OPT-IN, because they are not free. Prix carries 37 keys on a 61k-vertex mesh
+# and keeping them takes her from 8.6 MB to 28.3 MB -- 3.3x -- for morphs that
+# are no part of her character and that nothing drives. Pomni's cost 2.6 -> 4.0
+# MB and ARE her character. So VRM_KEEP_MORPHS=1 asks for them, per character,
+# and the default stays as it was.
+_MORPH_MAX = float(os.environ.get("VRM_MORPH_MAX_DISP", "0.5"))
 for o in meshes:
     sk = o.data.shape_keys
     if not sk or not sk.key_blocks:
         continue
-    live = [(kb.name, round(kb.value, 3)) for kb in sk.key_blocks if abs(kb.value) > 1e-6]
+    live = [(kb.name, round(kb.value, 3)) for kb in sk.key_blocks
+            if abs(kb.value) > 1e-6]
     nkeys = len(sk.key_blocks)
     basis = [p.co.copy() for p in sk.key_blocks[0].data]
     bpy.context.view_layer.objects.active = o
-    o.shape_key_clear()
+    if not os.environ.get("VRM_KEEP_MORPHS"):
+        o.shape_key_clear()
+        for i, c in enumerate(basis):
+            o.data.vertices[i].co = c
+        o.data.update()
+        print("  dropped %d shape keys on '%s', kept the base mesh%s"
+              % (nkeys, o.name,
+                 " (IGNORED non-zero: %s)" % live if live else ""))
+        continue
+    _bb = [Vector(c) for c in o.bound_box]
+    _diag = max((a - b).length for a in _bb for b in _bb) or 1.0
+    _bad = []
+    for _kb in list(sk.key_blocks)[1:]:
+        _d = 0.0
+        for _i, _pt in enumerate(_kb.data):
+            if _i < len(basis):
+                _d = max(_d, (_pt.co - basis[_i]).length)
+        if _d > _diag * _MORPH_MAX:
+            _bad.append((_kb.name, round(_d / _diag, 2)))
+            o.shape_key_remove(_kb)
+    for _kb in sk.key_blocks:
+        _kb.value = 0.0
+    o.show_only_shape_key = False
+    o.active_shape_key_index = 0
     for i, c in enumerate(basis):
         o.data.vertices[i].co = c
     o.data.update()
-    print("  dropped %d shape keys on '%s', kept the base mesh%s"
-          % (nkeys, o.name,
-             " (IGNORED non-zero: %s - the engine would have ignored them too)" % live
-             if live else ""))
+    print("  shape keys on '%s': kept %d at weight 0 (the engine's own value)%s%s"
+          % (o.name, len(sk.key_blocks) if sk.key_blocks else 0,
+             ", dropped %s as corrupt -- displaced more than %.0f%% of the mesh"
+             % (_bad, _MORPH_MAX * 100) if _bad else "",
+             " (author had non-zero: %s)" % live if live else ""))
 
 def bounds():
     lo = Vector((1e18,) * 3); hi = Vector((-1e18,) * 3)
@@ -895,7 +944,12 @@ for o, c in CHILD_OF:
             _D = _A.inverted() @ _want
             if o.data.users > 1:
                 o.data = o.data.copy()
-            o.data.transform(_D)
+            # shape_keys=True or the keys stay where the vertices no longer
+            # are. Mesh.transform defaults to leaving them behind, and a mesh
+            # with keys is EVALUATED from the keys -- so the divergence is
+            # invisible in any render and shows up only as mesh DATA and
+            # evaluated bounds disagreeing.
+            o.data.transform(_D, shape_keys=True)
             if _D.determinant() < 0:
                 o.data.flip_normals()
             o.data.update()
@@ -1265,7 +1319,13 @@ for _o in ([] if os.environ.get("VRM_NO_REALIGN") else meshes):
         continue
     if _o.data.users > 1:
         _o.data = _o.data.copy()
-    _o.data.transform(_D)
+    # Same again. This is the one that caught Pomni: her lashes carry a
+    # 'Closed' key, this step put them into the armature's space without it,
+    # and her mesh DATA then measured 1.3949 m against a 1.70 m target -- the
+    # height guard fired on lashes whose vertices had moved and whose keys had
+    # not. Before the keys were kept there was nothing to desync, so this line
+    # was correct for exactly as long as the keys were being thrown away.
+    _o.data.transform(_D, shape_keys=True)
     if _D.determinant() < 0:
         _o.data.flip_normals()
     _o.data.update()
