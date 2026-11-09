@@ -1667,11 +1667,30 @@ elif RIG == "xeno":
         MAP["%s_foot" % s] = "%s%s_Leg_AnkleSHJnt" % (P, p)
         MAP["%s_toes" % s] = "%s%s_Toe00_Base_SHJnt" % (P, p)
 elif RIG == "rigify_def":
-    # Rigify deform bones. This rig has only two spine bones, so chest and
-    # upperChest are left unmapped — both are optional in VRM.
+    # Rigify deform bones. Chest and upperChest are left unmapped -- both are
+    # optional in VRM.
+    #
+    # The neck and head are NOT at fixed indices. Rigify names a spine chain
+    # DEF-spine, DEF-spine.001, ... and the head is whatever the chain ends on,
+    # which depends on how many spine bones the rigger drew. This was hardcoded
+    # to .004 and .005, read off the first rig that needed it, and it is wrong
+    # on any chain that does not happen to stop at .005: Tenna and Gadget
+    # Hackwrench both run to DEF-spine.006, so both had their HEAD mapped to
+    # their neck, their neck mapped to the bone below it, and the actual skull
+    # bone -- 41 cm of it on a 1.30 m Gadget -- left out of the humanoid
+    # entirely. Head-look then pivots at the throat.
+    #
+    # Nothing caught it because the map was complete and self-consistent: every
+    # bone it named existed, the readback matched, and a mis-mapping is only
+    # visible if you ask where the bone IS. So count the chain instead.
+    _sp = sorted(int(_n.split(".")[1]) for _n in bone_names
+                 if _n.startswith("DEF-spine.") and _n.split(".")[-1].isdigit())
+    _top = _sp[-1] if _sp else 5
     MAP = {"hips": "DEF-spine", "spine": "DEF-spine.001",
-           "neck": ("DEF-neck" if "DEF-neck" in bone_names else "DEF-spine.004"),
-           "head": ("DEF-head" if "DEF-head" in bone_names else "DEF-spine.005")}
+           "neck": ("DEF-neck" if "DEF-neck" in bone_names
+                    else "DEF-spine.%03d" % max(_top - 1, 2)),
+           "head": ("DEF-head" if "DEF-head" in bone_names
+                    else "DEF-spine.%03d" % _top)}
     for s, S in (("left", "L"), ("right", "R")):
         MAP["%s_shoulder" % s] = "DEF-shoulder.%s" % S
         MAP["%s_upper_arm" % s] = "DEF-upper_arm.%s" % S
@@ -3200,6 +3219,75 @@ if _votes:
     else:
         print("  sides: all %d limb pairs are on the side their names claim"
               % len(_votes))
+
+# Weight on a bone the EXPORTER will not write is weight on nothing, and it
+# fails in exactly the same way as the orphan bones below -- except that the
+# bone is a perfectly good parent in Blender right up to the moment it is
+# dropped.
+#
+# The VRM exporter writes only bones with use_deform set. A Rigify rig carries
+# three bones for every joint -- ORG- (the original), MCH- (mechanism) and DEF-
+# (the one that deforms) -- and only the DEF- bones have that flag. Gadget
+# Hackwrench measured this: her eyes are bone-parented to MCH-eye.L and
+# MCH-eye.R, the bone-parent conversion above dutifully bound them to those
+# bones, the export then dropped both, and the glTF exporter gave the orphaned
+# weights to a bone of its own invention -- 'neutral_bone' at the root, which
+# never moves. Her eyes stayed where they were bound while her head turned.
+# 172 joints came out of a 677-bone armature, and nothing in the build said a
+# word about the 505 that went.
+#
+# So: for every vertex group naming a bone that will not survive, move the
+# weight to the nearest ANCESTOR that will. An eye bound to the head is right;
+# an eye bound to nothing is not.
+# Walking up the parents is the FIRST choice and frequently finds nothing.
+# Rigify's control bones are a hierarchy of their own: MCH-eye.L's parents run
+# master_eye.L, ORG-face, ORG-spine.006, head, MCH-ROT-head, neck, torso, root
+# -- thirteen bones to the root and not one of them deforms. The DEF- bones that
+# do are a parallel tree. So when the walk runs out, fall back to the nearest
+# humanoid bone by position, which is what the stray-geometry rescue does, and
+# for an eye bone is the head.
+#
+# The first version of this pass gave up silently when the walk failed, and so
+# reported nothing on the very character it was written for. A rescue that can
+# decline must say when it declines.
+_nd, _nd_no = [], []
+_ndh = [(_n, arm.data.bones[_n].head_local) for _n in set(MAP.values())
+        if _n in bone_names and arm.data.bones[_n].use_deform]
+for _m in meshes:
+    for _g in list(_m.vertex_groups):
+        _b = arm.data.bones.get(_g.name)
+        if _b is None or _b.use_deform:
+            continue
+        _idx = [_v.index for _v in _m.data.vertices
+                for _vg in _v.groups if _vg.group == _g.index
+                and _vg.weight > 0.0001]
+        if not _idx:
+            _m.vertex_groups.remove(_g)
+            continue
+        _anc = _b.parent
+        while _anc is not None and not _anc.use_deform:
+            _anc = _anc.parent
+        _how = "ancestor"
+        if _anc is None:
+            if not _ndh:
+                _nd_no.append((_m.name, _b.name, len(_idx)))
+                continue
+            _anc = arm.data.bones[min(_ndh, key=lambda t: (t[1] - _b.head_local).length)[0]]
+            _how = "nearest"
+        _tg = _m.vertex_groups.get(_anc.name) or _m.vertex_groups.new(name=_anc.name)
+        _tg.add(_idx, 1.0, "REPLACE")
+        _m.vertex_groups.remove(_g)
+        _nd.append((_m.name, _b.name, _anc.name, len(_idx), _how))
+if _nd:
+    print("  non-deform weights: %d vertex group(s) named a bone the exporter "
+          "will not write, so the weight would have landed on an invented bone "
+          "that never moves -- rebound: %s"
+          % (len(_nd), ", ".join("%s %s->%s (%d verts, %s)" % t
+                                 for t in _nd[:6])))
+if _nd_no:
+    print("  non-deform weights: %d group(s) could NOT be rescued, and that "
+          "geometry will not move: %s"
+          % (len(_nd_no), ", ".join("%s %s (%d verts)" % t for t in _nd_no[:6])))
 
 # A bone can deform geometry and still never move.
 #
