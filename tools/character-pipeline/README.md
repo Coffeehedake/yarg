@@ -92,11 +92,46 @@ had simply never been looked at.
 | Judy Hopps | belt detached, arms and legs crossed | the crossing is the mirrored rig above; the belt is the detached-part case |
 | Gordon Freeman | every texture misplaced except his head | one material taking another's map, at the scale of a whole character |
 | Miku | dress does not move with her | loose cloth with no chains |
+| Alastor | no eyes; something wrong with the hair | eye meshes, so either the orphan-bone case or the cutout |
+| Elite Terrorist | right hand's fingers crunched | one hand posed, the other not -- the asymmetry the finger-relax check looks for |
+| Batman | every texture misplaced | the same whole-character mapping failure as Gordon Freeman |
+| Gadget Hackwrench | eyeballs and teeth do not move; some hair static | measured: her eyes are 100% weighted to a bone nothing drives |
 | Joker | a pistol orbiting him; parts of the suit unrigged | a prop that was never excluded, plus the detached-part case |
 | Peach | eyes missing; dress springs so reactive her legs clip through it | the eye atlas again, and the other end of the cloth problem: hers IS rigged and is too lively. Cloth needs its own parameters, gentler than hair and separate from chest |
 | Link | eye textures misplaced; still holding the master sword and shield | needs an exclude and a texture pin |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and finger bones that are mapped but not weighted |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
+
+### One cause under six of the reports: a bone nothing drives
+
+VRM moves the 52 humanoid bones and the spring chains, and nothing else. Every other bone
+follows only if it is a **descendant** of one of those. A deform bone parented outside that
+hierarchy therefore never moves at all, and the vertices on it hold their bind position while
+the character walks away from them.
+
+Nothing counts it. The mesh is present, the skin is present, every vertex carries full weight,
+the humanoid map is complete, the renders look right because at rest a dead bone and a live one
+are identical. Measured:
+
+| character | what hangs off a bone nothing drives |
+|---|---|
+| Lola Bunny | **31% of her body mesh** — `fml_un_C_TopHead`, `fml_un_C_BotHead`, eyelid, tooth and brow joints. Her head floats above her neck |
+| Gadget Hackwrench | `Eye_L` and `Eye_L.001` at **100%**, plus 3.8% of her body (the teeth) |
+| Judy Hopps | her belt |
+| Joker | panels of his suit |
+| Ariel, Heels | the lower hair that stays in space |
+
+Two sub-cases, and they need different answers. A real bone outside the hierarchy is
+**re-parented to the nearest humanoid bone**, keeping its world position. Weight on the glTF
+exporter's `neutral_bone` means something else entirely: that bone is invented at export time
+for geometry that had **no vertex groups at all**, so Gadget's eyes were never bound to
+anything — the unrigged-mesh rescue stands down as soon as any mesh in the file is bound, and
+hers were.
+
+`VRM_KEEP_ORPHANS=1` leaves them where they are.
+
+**The check is three lines and should have existed from the first character**: take every bone
+that deforms geometry, walk up its parents, and assert it reaches a humanoid or spring bone.
 
 ### Two of these were predicted before they were reported
 

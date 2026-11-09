@@ -3201,6 +3201,69 @@ if _votes:
         print("  sides: all %d limb pairs are on the side their names claim"
               % len(_votes))
 
+# A bone can deform geometry and still never move.
+#
+# VRM drives the 52 humanoid bones and the spring chains, and nothing else. Any
+# other bone follows only if it is a DESCENDANT of one of those -- so a deform
+# bone parented outside that hierarchy is dead weight in the literal sense: the
+# vertices on it hold their bind position while the rest of the character moves
+# away from them.
+#
+# It is invisible to every count. The mesh is there, the skin is there, every
+# vertex carries full weight, the humanoid map is complete. Measured on the
+# characters this was first seen on: 31% of Lola Bunny's body mesh hangs off
+# fml_un_C_TopHead and fml_un_C_BotHead, which is why her head floats above her
+# neck, and Gadget Hackwrench's eyes are 100% on bones outside the chain. Judy's
+# belt, Joker's suit panels and Ariel's and Heels' lower hair are the same fault.
+#
+# Re-parent each orphan to the nearest humanoid bone, keeping its world
+# position, so the geometry rides the body instead of being left behind.
+# VRM_KEEP_ORPHANS=1 leaves them alone.
+_driven = set()
+for _n in MAP.values():
+    if _n in bone_names:
+        _driven.add(_n)
+        _b = arm.data.bones.get(_n)
+        if _b:
+            for _c in _b.children_recursive:
+                _driven.add(_c.name)
+_deform_now = set()
+for _m in meshes:
+    _gnm = dict((_g.index, _g.name) for _g in _m.vertex_groups)
+    for _v in _m.data.vertices:
+        for _g in _v.groups:
+            if _g.weight > 0.01:
+                _deform_now.add(_gnm.get(_g.group))
+_orphans = sorted(n for n in _deform_now
+                  if n and n in bone_names and n not in _driven)
+if _orphans and not os.environ.get("VRM_KEEP_ORPHANS"):
+    _hum_bones = [(_n, arm.data.bones[_n].head_local) for _n in MAP.values()
+                  if _n in bone_names]
+    if _hum_bones:
+        bpy.context.view_layer.objects.active = arm
+        bpy.ops.object.mode_set(mode="EDIT")
+        _moved = []
+        for _n in _orphans:
+            _eb = arm.data.edit_bones.get(_n)
+            if _eb is None or (_eb.parent and _eb.parent.name in _orphans):
+                continue        # a child of another orphan rides with it
+            _near = min(_hum_bones, key=lambda t: (t[1] - _eb.head).length)
+            _tb = arm.data.edit_bones.get(_near[0])
+            if _tb is None or _tb == _eb:
+                continue
+            _eb.parent = _tb
+            _eb.use_connect = False
+            _moved.append((_n, _near[0]))
+        bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.context.view_layer.update()
+        print("  orphan bones: %d deform bone(s) sat outside the humanoid "
+              "hierarchy, so nothing would ever have moved them -- re-parented "
+              "%d: %s" % (len(_orphans), len(_moved),
+                          ", ".join("%s->%s" % t for t in _moved[:8])))
+elif _orphans:
+    print("  orphan bones: %d outside the humanoid hierarchy, left alone by "
+          "VRM_KEEP_ORPHANS: %s" % (len(_orphans), ", ".join(_orphans[:8])))
+
 # ---------------------------------------------------------------- chest rig
 # What a rig calls its chest bones, used both to FIND authored ones here
 # and to spring them further down. Defined once, up here, because the
