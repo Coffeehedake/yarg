@@ -92,10 +92,21 @@ because every entry below has already been rediscovered at least once.
    rough=packed:C038_Base_ORM, normal=packed`) and the picker is never asked. The
    `C038_Base_ORM_1@channels=R/G/B.png` files beside her model are extracted channels nothing
    reads.
-4. **Finish the chest-rig rollout.** The first pass rebuilt thirteen and installed seven —
-   Alcina, Prix, Chibi Rem, Sayuri, Alice Ivy, Tenna and Gadget. The installed set now has 10
-   characters with sprung chest bones where it had 3, 10 more carrying bones nothing moves, and
-   46 with none.
+4. **Finish the chest-rig rollout.** Fifteen rebuilt, eight installed — Alcina, Prix,
+   Chibi Rem, Sayuri, Alice Ivy, Tenna, Gadget and Lola. The installed set now has **11**
+   characters with sprung chest bones where it had 3, 9 carrying bones nothing moves, and 46
+   with none.
+
+   Two of those 9 will never move and should stop being counted as work: **Batman** and
+   **Peach** carry chest bones that deform no geometry — Batman's from the shared MultiVersus
+   female base, Peach's from whatever her rip inherited — and the deform test skips both
+   deliberately. That leaves **seven** genuinely pending, split by whether a source exists:
+
+   - **Source on hand, arguments not written down**: Ariel (`basefem/`), Heels
+     (`topless-sexy-girl-with-heels.zip`), Killer Clown (`clown/`) and Jessica Rabbit
+     (`m13/`, whose row below records her `VRM_TEX` truncated). Each needs its rig family and
+     height worked out once, and then recording in the table.
+   - **No source located**: Harq Alkahana, Kaiser Aufhänger, Kasane Teto.
    What stopped the rest, in the order it is worth picking up:
 
    - **Compare the bundle SIZE as well.** Geometry and texture names can both match while the
