@@ -3454,8 +3454,16 @@ def _chest_rig():
                   "nothing rigged" % (_gap, _outs["L"], _outs["R"]))
             _rig = []
     if len(_rig) < 2:
+        # Say what the character HAS, not only what it did not get. Ariel,
+        # Killer Clown and Jessica Rabbit each read as "not rigged" here and
+        # then gained two chest chains two lines later, on bones of their own
+        # -- the log told half the story and the alarming half.
         print("  chest rig: not rigged (a limitation, not a failure) -- %d of "
-              "the 2 sides survive the tests above" % len(_rig))
+              "the 2 sides survive the tests above%s"
+              % (len(_rig),
+                 ("; this rig has its own chest bones (%s) and the spring "
+                  "section below takes them" % ", ".join(sorted(_authored)))
+                 if _authored else ""))
     elif BREASTRIG == "check":
         print("  chest rig: check only, nothing changed")
     elif _authored:

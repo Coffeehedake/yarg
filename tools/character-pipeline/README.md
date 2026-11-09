@@ -102,10 +102,21 @@ because every entry below has already been rediscovered at least once.
    female base, Peach's from whatever her rip inherited — and the deform test skips both
    deliberately. That leaves **seven** genuinely pending, split by whether a source exists:
 
-   - **Source on hand, arguments not written down**: Ariel (`basefem/`), Heels
-     (`topless-sexy-girl-with-heels.zip`), Killer Clown (`clown/`) and Jessica Rabbit
-     (`m13/`, whose row below records her `VRM_TEX` truncated). Each needs its rig family and
-     height worked out once, and then recording in the table.
+   - ~~Source on hand, arguments not written down.~~ **All four recovered and in the table
+     below** — read out of their own installed bundles, where the bone names give the rig
+     family and the mesh bounds give the height, checked first against four characters whose
+     heights are documented. Ariel and Killer Clown rebuild clean and are installed. Two are
+     not:
+     - **Heels loses her transparency.** Her installed character carries ten textures that
+       UniGLTF merged from a diffuse and an opacity map, which it only does for a material that
+       is not opaque. The rebuild assigns nine alpha maps and still exports **every one of its
+       21 materials as `OPAQUE`**, so her hair, eyelashes and tear line would render as solid
+       cards. Her base textures arrive PACKED in the `.blend`, so the alpha the installed
+       version uses never came from the picker — and two of the alpha maps the picker does
+       choose are wrong anyway (`front_hair_Transparency` gets its own *bump* map, and
+       `Std_Eye_L` gets the eyelash opacity). Transparency, not jiggle, is what to fix first.
+     - **Jessica Rabbit rebuilds 6% heavier** than the installed character, so an exclude was
+       used and never recorded.
    - **No source located**: Harq Alkahana, Kaiser Aufhänger, Kasane Teto.
    What stopped the rest, in the order it is worth picking up:
 
@@ -431,8 +442,11 @@ that rebuilds from her own archive, and she is also the one that covers the text
 | Lola Bunny | multiversus | 1.75 | exclude `^Icosphere` |
 | Mickey Mouse | mixamo | 1.10 | archive is called `talking.zip` |
 | Elite Terrorist | mixamo | 1.83 | |
-| Jessica Rabbit | rigify_plain | 1.80 | `VRM_TEX="rskin=Skin_makup_0003_..."`, hairrig `^hair` |
+| Jessica Rabbit | rigify_plain | 1.80 | hairrig `^hair`, `VRM_TEX="rskin=Skin_makup_0003_Body_multires_sculpt.001_m.jpg"` (the row used to record this truncated). A straight rebuild comes out 6% heavier than the installed character — 320,562 triangles against 340,638 — so something was excluded that nobody wrote down |
 | Alice Ivy | cc_base | 1.70 | exclude `^COLLIDER` |
+| Ariel | daz | 1.70 | hairrig `Hair`. Recovered from her own `.yargchar`: `lPectoral` and `abdomenUpper` are DAZ names, and the mesh bounds give the height |
+| Killer Clown | mixamo | 1.80 | hairrig `hair`. Her bones are Mixamo's with the prefix stripped (`Hips`, `LeftHandIndex1`, `HeadTop_End`), which the family auto-detects |
+| Heels | cc_base | 1.70 | hairrig `Hair`; the archive holds `source/untitled.zip` with the `.blend` inside. **Do not reinstall yet** — see the runlist: a rebuild loses her transparency |
 | The Rock | mixamo | 1.96 | |
 | Mario | mariojnt | 1.55 | |
 | Link (OoT) | linkoot | 1.65 | `VRM_TEX="Hair=Link_Link_BaseColor.png"` |
