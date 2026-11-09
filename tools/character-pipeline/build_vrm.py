@@ -4894,9 +4894,50 @@ for mat in bpy.data.materials:
     # Prefer a dedicated opacity map (Sayuri ships 'Bikini_Opacity.png'); fall
     # back to the base colour's own alpha, but only when that alpha is really
     # carrying a shape - an all-zero channel would make the mesh invisible.
+    # The SET rule applies here more than anywhere, and this was the one slot
+    # that skipped it. Heels' material 'Std_Eye_L' was handed
+    # 'Std_Eyelash_Diffuse-Std_Eyelash_Opacity.png' by the loose name match,
+    # because "Eye" is a prefix of "Eyelash" -- and an eyelash-shaped cutout
+    # applied to an eyeball deletes the eye. "Missing eye textures" is the eye
+    # being cut away by somebody else's silhouette.
+    #
+    # A borrowed METALNESS makes a tunic look chrome and you can see what
+    # happened. A borrowed OPACITY removes the surface, so there is nothing
+    # left to look at and it reads as a texture that never loaded.
     ap = (TEX_OVERRIDE.get((mat.name, "alpha"))
           or (pick_stem(stem, "alpha") if stem else None)
           or pick(mat.name, "alpha"))
+    # ...and then CHECK it belongs to this material. The set rule elsewhere
+    # keys off set_prefix, which is only computed when the base texture came
+    # from a FILE -- Heels' are packed in the .blend, so the guard was never
+    # engaged and the loose name match stood.
+    #
+    # Validate against the base IMAGE's own stem instead, which works for a
+    # packed image and a file alike. 'Std_Eye_L_Diffuse' strips to 'std_eye_l';
+    # 'Std_Eyelash_Diffuse-Std_Eyelash_Opacity' does not start with it, so it
+    # is refused. The two names differ by three letters and "Eye" is a prefix
+    # of "Eyelash", which is all it took.
+    if ap and base_tex is not None and base_tex.image:
+        _bn = (os.path.basename(base_tex.image.filepath or "")
+               or base_tex.image.name or "")
+        # TOKENS, not a normalised string. norm() strips the separators, and
+        # that is precisely the boundary that tells these two apart:
+        # 'Std_Eye_L' normalises to 'stdeyel', which really is a prefix of
+        # 'stdeyelash'. Comparing the stripped strings accepted the eyelash
+        # map for the eye a second time, for a new reason.
+        def _toks(_name):
+            _t = re.split(r"[^0-9a-zA-Z]+", MAPTOK.sub(" ", _name))
+            return [x.lower() for x in _t if x]
+
+        _bt = _toks(os.path.splitext(_bn)[0])
+        _at = _toks(os.path.splitext(os.path.basename(ap))[0])
+        _bstem, _astem = "_".join(_bt), "_".join(_at)
+        if (len(_bt) >= 2 and _at[:len(_bt)] != _bt
+                and _bt[:len(_at)] != _at):
+            print("    opacity %s belongs to '%s', not to '%s' -- refused, "
+                  "because a borrowed cutout deletes the surface"
+                  % (os.path.basename(ap), _astem, _bstem))
+            ap = None
     cut = False
     if ap and "Alpha" in bsdf.inputs:
         img = bpy.data.images.load(ap, check_existing=True)
