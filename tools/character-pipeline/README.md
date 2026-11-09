@@ -182,6 +182,24 @@ None of this is visible to any count. The mesh is present, the skin is present, 
 carries full weight, the humanoid map is complete, and at rest a dead bone and a live one draw
 identically.
 
+### What is now blocking the rest of the list
+
+The remaining reports are not blocked on understanding them. They are blocked on being able to
+**rebuild the character at all**: of the 66 installed, only 23 have a build command recoverable
+from a log in this workspace. Alastor, Batman, Gordon Freeman, Link, Shadow, Elite Terrorist,
+Pomni, Peach, Skibidi Toilet, The Rock, Yui and Joker are all in the other 43, and each needs the
+argument recovery that Ariel went through — rig family, height and exclusions read back out of
+her own `.yargchar`.
+
+Joker is worth naming: he measures **undriven weight** on the sweep above, so he is in the family
+this round fixed, and he cannot be rebuilt to collect the fix.
+
+Measured while they were in front of me, and worth knowing before anyone rebuilds them: **all
+twelve are fully opaque**, every material. Several of those reports are eye faults — Alastor has
+no eyes, Pomni's are mismapped, Peach's are missing, Shadow's are stuck on the blink frame — and
+eyelashes, eye occlusion and tearlines are exactly the cards that need a cutout. Expect the
+cutout inference below to change several of them on the first rebuild.
+
 ### Two of these were predicted before they were reported
 
 Both came out of sweeps run over the installed set rather than out of looking at characters,
