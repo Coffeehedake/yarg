@@ -116,6 +116,45 @@ if len(_ARMS) > 1:
         print("  WARNING: %d mesh(es) were skinned to a discarded armature and "
               "share NO bone names with the chosen one, so re-binding them "
               "would be a guess: %s" % (len(_lost), ", ".join(_lost[:6])))
+# A glTF exporter that has to uniquify names appends _NNN to every bone, and a
+# rig that was perfectly well named stops matching its own family. Jessica
+# Rabbit's glTF is a Rigify skeleton -- spine, spine.001, face, nose -- with
+# 159 of its 160 bones carrying a suffix, so rigify_plain matches not one of
+# them and she cannot be built at all.
+#
+# Strip it, but only when it is really a suffix and not part of the name:
+# every bone must carry one, and stripping must not collide two bones into a
+# single name. Refuse otherwise and leave the rig alone, because renaming a
+# bone the weights refer to is not recoverable. Vertex groups are renamed with
+# the bones, since they are what the modifier reads.
+if not os.environ.get("VRM_KEEP_SUFFIX"):
+    _sfx = re.compile(r"_\d+$")
+    _all = [b.name for b in arm.data.bones]
+    _hit = [n for n in _all if _sfx.search(n)]
+    if _all and len(_hit) >= max(4, int(len(_all) * 0.9)):
+        _new = dict((n, _sfx.sub("", n)) for n in _all)
+        _vals = list(_new.values())
+        if len(set(_vals)) == len(_vals) and all(_vals):
+            _groups = {}
+            for _o in bpy.data.objects:
+                if _o.type == "MESH":
+                    for _g in _o.vertex_groups:
+                        _groups.setdefault(_g.name, []).append(_g)
+            for _b in arm.data.bones:
+                _t = _new[_b.name]
+                if _t != _b.name:
+                    for _g in _groups.get(_b.name, []):
+                        _g.name = _t
+                    _b.name = _t
+            print("stripped a uniquifying suffix from %d of %d bones (and "
+                  "their vertex groups): the rig is named normally underneath "
+                  "-- e.g. %s" % (len(_hit), len(_all),
+                                  ", ".join(sorted(set(_vals))[:4])))
+        else:
+            print("  bones carry a _NNN suffix but stripping it would collide "
+                  "%d names into %d -- left alone"
+                  % (len(_vals), len(set(_vals))))
+
 meshes = [o for o in bpy.data.objects if o.type == "MESH"]
 
 # Sketchfab scenes often ship set dressing (floors, backdrops, particle planes)
