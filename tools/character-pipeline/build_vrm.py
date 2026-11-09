@@ -59,6 +59,40 @@ if len(_ARMS) > 1:
     arm = max(_weight, key=lambda a: (_weight[a], len(a.data.bones)))
     print("chose armature '%s' (%d bones) of %d: it deforms %d vertices"
           % (arm.name, len(arm.data.bones), len(_ARMS), _weight[arm]))
+    # Choosing one armature SILENTLY UNBINDS every mesh skinned to the others.
+    # Lola Bunny's glTF carries four skins -- body, both sets of teeth, and her
+    # hair -- each properly weighted. The body won on vertex count and the
+    # other three meshes came out with skin=None: 2,452 vertices that nothing
+    # in the file could ever move. "Her hair and teeth don't animate with her
+    # body" was this line, not her weights, which were correct all along.
+    #
+    # The skins are nearly always the same rig split up, so the vertex groups
+    # already name bones the chosen armature has. Re-point the modifier and
+    # the binding comes back; report what a mesh loses when they do not.
+    _rebound, _lost = [], []
+    for _o in [o for o in bpy.data.objects if o.type == "MESH"]:
+        _mods = [m for m in _o.modifiers if m.type == "ARMATURE"]
+        if not _mods or any(m.object is arm for m in _mods):
+            continue
+        _names = set(b.name for b in arm.data.bones)
+        _have = [g.name for g in _o.vertex_groups if g.name in _names]
+        _miss = [g.name for g in _o.vertex_groups if g.name not in _names]
+        for _m in _mods:
+            _m.object = arm
+        _o.parent = arm
+        if _have:
+            _rebound.append((_o.name, len(_have), len(_miss)))
+        else:
+            _lost.append(_o.name)
+    if _rebound:
+        print("  re-bound %d mesh(es) that were skinned to a DISCARDED "
+              "armature, which would have shipped unskinned: %s"
+              % (len(_rebound), ", ".join(
+                  "%s (%d groups kept, %d absent)" % t for t in _rebound[:6])))
+    if _lost:
+        print("  WARNING: %d mesh(es) were skinned to a discarded armature and "
+              "share NO bone names with the chosen one, so re-binding them "
+              "would be a guess: %s" % (len(_lost), ", ".join(_lost[:6])))
 meshes = [o for o in bpy.data.objects if o.type == "MESH"]
 
 # Sketchfab scenes often ship set dressing (floors, backdrops, particle planes)
