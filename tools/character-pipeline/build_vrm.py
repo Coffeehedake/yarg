@@ -2966,212 +2966,316 @@ if _ANCHOR_BONE:
         raise SystemExit("ABORT: HAIR_BONE names %r, which this rig has not got"
                          % _ANCHOR_BONE)
     _ANCHOR_BONE = _hit[0]
-if HAIRRIG and (_ANCHOR_BONE or MAP.get("head") in bone_names):
-    HEAD = _ANCHOR_BONE or MAP["head"]
-    if _ANCHOR_BONE:
-        print("  hair rig: hanging the new chains from '%s'" % HEAD)
-    # Defaults suit loose hair. A FITTED garment needs most of itself pinned:
-    # rigging Gwen's hood with these made it peel off her head and expose it,
-    # because a worn-up hood has no loose cloth except its trailing edge.
-    N_SEG = int(os.environ.get("HAIR_SEGS", "4"))        # bones per strand
-    N_STRAND = int(os.environ.get("HAIR_STRANDS", "4"))  # strands to split into
-    ANCHOR = float(os.environ.get("HAIR_ANCHOR", "0.30"))  # top fraction left rigid
+# ONE pattern and ONE anchor bone was the whole interface, and it cannot rig a
+# character who needs two groups. Jessica Rabbit has hair off her head AND a
+# dress off her chest; Miku has twintails and a skirt. Rigging either one meant
+# leaving the other rigid, which is exactly what the playtest reported for both
+# of them -- not a bug in how they were built, a limit on what could be asked
+# for.
+#
+# So the positional argument stays the hair group, byte for byte, and
+# VRM_RIG_MORE adds further groups:
+#
+#   VRM_RIG_MORE="pattern@bone#segs,strands,anchor;pattern2@bone2"
+#
+# ';' separates groups, '@' names the bone the group hangs from, and '#' sets
+# that group's own segments, strands and rigid-top fraction. The bone and the
+# knobs are both optional. A group anchored anywhere other than the head gets
+# its chains named ClothSpring rather than HairSpring, which is what puts it on
+# the cloth spring parameters below: a cape and a ponytail want different
+# numbers, and the chain's name is what the spring section judges by.
+_SPECS = [(HAIRRIG, _ANCHOR_BONE, "HairSpring",
+           os.environ.get("HAIR_SEGS", "4"),
+           os.environ.get("HAIR_STRANDS", "4"),
+           os.environ.get("HAIR_ANCHOR", "0.30"))]
+if _ANCHOR_BONE and MAP.get("head") and _ANCHOR_BONE != MAP.get("head"):
+    _SPECS[0] = (HAIRRIG, _ANCHOR_BONE, "ClothSpring") + _SPECS[0][3:]
+for _more in [x for x in os.environ.get("VRM_RIG_MORE", "").split(";") if x.strip()]:
+    _knob = ""
+    if "#" in _more:
+        _more, _, _knob = _more.partition("#")
+    _pat, _, _bone = _more.partition("@")
+    if not _pat.strip():
+        continue
+    _k = [x.strip() for x in _knob.split(",")] + ["", "", ""]
+    _hit = [b.name for b in arm.data.bones
+            if b.name == _bone or b.name.endswith(":" + _bone)
+            or b.name.lower() == _bone.lower()] if _bone else []
+    if _bone and not _hit:
+        raise SystemExit("ABORT: VRM_RIG_MORE names bone %r, which this rig has "
+                         "not got" % _bone)
+    _SPECS.append((_pat.strip(), _hit[0] if _hit else "",
+                   "HairSpring" if not _hit or _hit[0] == MAP.get("head")
+                   else "ClothSpring",
+                   _k[0] or "4", _k[1] or "4", _k[2] or "0.30"))
+    print("  rig group: /%s/ from '%s' (%s segs, %s strands, %s rigid at top)"
+          % (_SPECS[-1][0], _SPECS[-1][1] or MAP.get("head"), _SPECS[-1][3],
+             _SPECS[-1][4], _SPECS[-1][5]))
 
-    # Match a MESH name or a MATERIAL name: some models keep the hair as its own
-    # object ('RL_G6_Hair', 'jester hat'), others as a material inside one body
-    # mesh. Taking only one of the two missed half the set.
-    hair = {}
-    if HAIRRIG.lower().startswith("island:"):
-        # Manual escape hatch for a part that has no name of its own: Gwen's
-        # hood is inside one mesh called 'default' with one material covering
-        # the whole costume, so neither a mesh nor a material name can select
-        # it. It is a separate connected island, though, so address it by rank:
-        # island:0 is the biggest, island:1 the next, and so on.
-        # Several islands at once: a pair of twintails is two islands, and
-        # rigging only the larger one leaves the other hanging rigid.
-        want = [int(x) for x in HAIRRIG.split(":", 1)[1].split("+") if x.strip()]
-        from collections import deque
-        ranked = []
-        for o in meshes:
-            me = o.data
-            adj = [[] for _ in range(len(me.vertices))]
-            for e in me.edges:
-                va, vb = e.vertices
-                adj[va].append(vb)
-                adj[vb].append(va)
-            seen = [False] * len(me.vertices)
-            for st in range(len(me.vertices)):
-                if seen[st]:
-                    continue
-                q = deque([st]); seen[st] = True; comp = []
-                while q:
-                    v = q.popleft(); comp.append(v)
-                    for w in adj[v]:
-                        if not seen[w]:
-                            seen[w] = True; q.append(w)
-                ranked.append((len(comp), o, comp))
-        ranked.sort(key=lambda t: -t[0])
-        for _w in want:
-            if _w < len(ranked):
-                cnt, obj, comp = ranked[_w]
-                hair.setdefault(obj, set()).update(comp)
-                print("  hair rig: island %d of %d on mesh '%s', %d verts"
-                      % (_w, len(ranked), obj.name, cnt))
-            else:
-                print("  hair rig: island %d does not exist (only %d)"
-                      % (_w, len(ranked)))
-    for o in (meshes if not hair else []):
-        if re.search(HAIRRIG, o.name, re.I):
-            hair[o] = {v.index for v in o.data.vertices}
-            continue
-        slots = [i for i, ms in enumerate(o.material_slots)
-                 if ms.material and re.search(HAIRRIG, ms.material.name, re.I)]
-        if not slots:
-            continue
-        vs = set()
-        for poly in o.data.polygons:
-            if poly.material_index in slots:
-                vs.update(poly.vertices)
-        if vs:
-            hair[o] = vs
+for _gi, (HAIRRIG, _ANCHOR_BONE, _PREFIX, _S_SEG, _S_STR, _S_ANC) in         enumerate(_SPECS):
+    if HAIRRIG and (_ANCHOR_BONE or MAP.get("head") in bone_names):
+        HEAD = _ANCHOR_BONE or MAP["head"]
+        if _ANCHOR_BONE:
+            print("  hair rig: hanging the new chains from '%s'" % HEAD)
+        # Defaults suit loose hair. A FITTED garment needs most of itself pinned:
+        # rigging Gwen's hood with these made it peel off her head and expose it,
+        # because a worn-up hood has no loose cloth except its trailing edge.
+        N_SEG = int(_S_SEG)             # bones per strand
+        N_STRAND = int(_S_STR)          # strands to split into
+        ANCHOR = float(_S_ANC)          # top fraction left rigid
 
-    total = sum(len(v) for v in hair.values())
-    if not total:
-        print("  hair rig: no material matches /%s/ - nothing to rig" % HAIRRIG)
-    else:
-        allz = [o.data.vertices[i].co.z for o, vs in hair.items() for i in vs]
-        z_max, z_min = max(allz), min(allz)
-        span = z_max - z_min
-        z_anchor = z_max - span * ANCHOR
-        pts = [(o.data.vertices[i].co.copy(), o, i)
-               for o, vs in hair.items() for i in vs
-               if o.data.vertices[i].co.z < z_anchor]
-        print("  hair rig: %d hair verts spanning %.3f m; %d loose below z=%.3f"
-              % (total, span, len(pts), z_anchor))
+        # Match a MESH name or a MATERIAL name: some models keep the hair as its own
+        # object ('RL_G6_Hair', 'jester hat'), others as a material inside one body
+        # mesh. Taking only one of the two missed half the set.
+        hair = {}
+        if HAIRRIG.lower().startswith("island:"):
+            # Manual escape hatch for a part that has no name of its own: Gwen's
+            # hood is inside one mesh called 'default' with one material covering
+            # the whole costume, so neither a mesh nor a material name can select
+            # it. It is a separate connected island, though, so address it by rank:
+            # island:0 is the biggest, island:1 the next, and so on.
+            # Several islands at once: a pair of twintails is two islands, and
+            # rigging only the larger one leaves the other hanging rigid.
+            want = [int(x) for x in HAIRRIG.split(":", 1)[1].split("+") if x.strip()]
+            from collections import deque
+            ranked = []
+            for o in meshes:
+                me = o.data
+                adj = [[] for _ in range(len(me.vertices))]
+                for e in me.edges:
+                    va, vb = e.vertices
+                    adj[va].append(vb)
+                    adj[vb].append(va)
+                seen = [False] * len(me.vertices)
+                for st in range(len(me.vertices)):
+                    if seen[st]:
+                        continue
+                    q = deque([st]); seen[st] = True; comp = []
+                    while q:
+                        v = q.popleft(); comp.append(v)
+                        for w in adj[v]:
+                            if not seen[w]:
+                                seen[w] = True; q.append(w)
+                    ranked.append((len(comp), o, comp))
+            ranked.sort(key=lambda t: -t[0])
+            for _w in want:
+                if _w < len(ranked):
+                    cnt, obj, comp = ranked[_w]
+                    hair.setdefault(obj, set()).update(comp)
+                    print("  hair rig: island %d of %d on mesh '%s', %d verts"
+                          % (_w, len(ranked), obj.name, cnt))
+                else:
+                    print("  hair rig: island %d does not exist (only %d)"
+                          % (_w, len(ranked)))
+        for o in (meshes if not hair else []):
+            if re.search(HAIRRIG, o.name, re.I):
+                hair[o] = {v.index for v in o.data.vertices}
+                continue
+            slots = [i for i, ms in enumerate(o.material_slots)
+                     if ms.material and re.search(HAIRRIG, ms.material.name, re.I)]
+            if not slots:
+                continue
+            vs = set()
+            for poly in o.data.polygons:
+                if poly.material_index in slots:
+                    vs.update(poly.vertices)
+            if vs:
+                hair[o] = vs
 
-        if len(pts) < 50 or span < 0.05:
-            print("  hair rig: too little loose hair to be worth rigging")
+        total = sum(len(v) for v in hair.values())
+        if not total:
+            print("  hair rig: no material matches /%s/ - nothing to rig" % HAIRRIG)
         else:
-            # Split the loose hair into strands: k-means on the XY of the tips,
-            # which is where separate strands are furthest apart.
-            lo_cut = z_min + (z_anchor - z_min) * 0.35
-            seeds = [p for p in pts if p[0].z < lo_cut] or pts
-            cen = []
-            for k in range(N_STRAND):
-                c = seeds[int(len(seeds) * (k + 0.5) / N_STRAND)][0]
-                cen.append(Vector((c.x, c.y)))
-            buckets = [[] for _ in range(N_STRAND)]
-            for _ in range(24):
+            # WHICH END IS ATTACHED is not something z can be assumed to
+            # answer. Hair hangs below the head, so for hair the top of the
+            # group is the attached end and everything below it swings -- which
+            # is what this was written against and why it went unquestioned.
+            # Mando's cape is anchored at Spine1 and his build scene has z
+            # running the other way, so the rigger took the HEM as the attached
+            # end: it pinned the hem rigid on his thighs and ran the chain
+            # upwards, putting the swinging tip at his collar. A cape bolted to
+            # the legs and flapping at the neck is 'folded in on itself and
+            # fairly static' exactly as reported.
+            #
+            # The anchor bone is the physical attachment and it is already
+            # known, so measure against it instead of trusting an axis: the end
+            # of the group nearer the anchor is the attached end. ZF flips the
+            # sense of every comparison below when it is the low end, and the
+            # bones themselves are still built at the real z.
+            allz = [o.data.vertices[i].co.z for o, vs in hair.items() for i in vs]
+            ZF = 1.0
+            _ab = arm.data.bones.get(HEAD)
+            if _ab is not None and allz:
+                # Compare against the MIDDLE of the bone and in three
+                # dimensions. The first cut of this used the bone's head and
+                # the z axis alone, and flipped Gadget Hackwrench's hair: the
+                # head bone's head is down at the neck, 0.80, while her hair
+                # runs 0.50 to 1.25, so the bottom of her hair measured nearer
+                # to it than the top. The bone occupies 0.80 to 1.21 and its
+                # middle, 1.01, is inside the skull where the hair is actually
+                # rooted. A bone is a segment; where it STARTS is not where it
+                # is.
+                _am = (_ab.head_local + _ab.tail_local) * 0.5
+                _pv = [(ZZ, o.data.vertices[i].co)
+                       for o, vs in hair.items() for i in vs
+                       for ZZ in (o.data.vertices[i].co.z,)]
+                _pv.sort(key=lambda t: t[0])
+                _n10 = max(1, len(_pv) // 10)
+
+                def _mid(_sel):
+                    _a = Vector((0.0, 0.0, 0.0))
+                    for _, _c in _sel:
+                        _a = _a + _c
+                    return _a / len(_sel)
+
+                _d_lo = (_mid(_pv[:_n10]) - _am).length
+                _d_hi = (_mid(_pv[-_n10:]) - _am).length
+                if _d_lo < _d_hi:
+                    ZF = -1.0
+                    print("  hair rig: this group is attached at its BOTTOM "
+                          "(%.3f m from '%s', against %.3f m at the top), so "
+                          "the chains hang upward from it"
+                          % (_d_lo, HEAD, _d_hi))
+            allz = [ZF * _z for _z in allz]
+            z_max, z_min = max(allz), min(allz)
+            span = z_max - z_min
+            z_anchor = z_max - span * ANCHOR
+            pts = [(o.data.vertices[i].co.copy(), o, i)
+                   for o, vs in hair.items() for i in vs
+                   if ZF * o.data.vertices[i].co.z < z_anchor]
+            print("  hair rig: %d hair verts spanning %.3f m; %d loose below z=%.3f"
+                  % (total, span, len(pts), z_anchor))
+
+            if len(pts) < 50 or span < 0.05:
+                print("  hair rig: too little loose hair to be worth rigging")
+            else:
+                # Split the loose hair into strands: k-means on the XY of the tips,
+                # which is where separate strands are furthest apart.
+                lo_cut = z_min + (z_anchor - z_min) * 0.35
+                seeds = [p for p in pts if ZF * p[0].z < lo_cut] or pts
+                cen = []
+                for k in range(N_STRAND):
+                    c = seeds[int(len(seeds) * (k + 0.5) / N_STRAND)][0]
+                    cen.append(Vector((c.x, c.y)))
                 buckets = [[] for _ in range(N_STRAND)]
-                for co, o, i in seeds:
+                for _ in range(24):
+                    buckets = [[] for _ in range(N_STRAND)]
+                    for co, o, i in seeds:
+                        xy = Vector((co.x, co.y))
+                        k = min(range(N_STRAND), key=lambda j: (xy - cen[j]).length)
+                        buckets[k].append(xy)
+                    moved = 0.0
+                    for k, b in enumerate(buckets):
+                        if b:
+                            nc = sum(b, Vector((0.0, 0.0))) / len(b)
+                            moved = max(moved, (nc - cen[k]).length)
+                            cen[k] = nc
+                    if moved < 1e-5:
+                        break
+                keep = [k for k in range(N_STRAND) if buckets[k]]
+                print("  hair rig: %d strands at %s"
+                      % (len(keep), [tuple(round(v, 3) for v in cen[k]) for k in keep]))
+
+                assign = {}
+                for co, o, i in pts:
                     xy = Vector((co.x, co.y))
-                    k = min(range(N_STRAND), key=lambda j: (xy - cen[j]).length)
-                    buckets[k].append(xy)
-                moved = 0.0
-                for k, b in enumerate(buckets):
-                    if b:
-                        nc = sum(b, Vector((0.0, 0.0))) / len(b)
-                        moved = max(moved, (nc - cen[k]).length)
-                        cen[k] = nc
-                if moved < 1e-5:
-                    break
-            keep = [k for k in range(N_STRAND) if buckets[k]]
-            print("  hair rig: %d strands at %s"
-                  % (len(keep), [tuple(round(v, 3) for v in cen[k]) for k in keep]))
+                    assign[(o.name, i)] = min(keep, key=lambda j: (xy - cen[j]).length)
 
-            assign = {}
-            for co, o, i in pts:
-                xy = Vector((co.x, co.y))
-                assign[(o.name, i)] = min(keep, key=lambda j: (xy - cen[j]).length)
-
-            bpy.context.view_layer.objects.active = arm
-            bpy.ops.object.mode_set(mode="EDIT")
-            ebs = arm.data.edit_bones
-            made = []
-            for k in keep:
-                own = [p for p in pts if assign[(p[1].name, p[2])] == k]
-                zs = [c.z for c, _, _ in own]
-                top, bot = max(zs), min(zs)
-                if top - bot < 0.02 or len(own) < 20:
-                    continue
-                step = (top - bot) / N_SEG
-
-                def centre_between(z_hi, z_lo, members):
-                    sel = [c for c, _, _ in members if z_lo <= c.z <= z_hi]
-                    if not sel:
-                        return None
-                    s = Vector((0.0, 0.0))
-                    for c in sel:
-                        s += Vector((c.x, c.y))
-                    return s / len(sel)
-
-                prev = ebs.get(HEAD)
-                chain = []
-                for seg in range(N_SEG):
-                    z0 = top - step * seg
-                    z1 = top - step * (seg + 1)
-                    a_xy = centre_between(z0, z1, own) or cen[k]
-                    b_xy = centre_between(z1, z1 - step, own) or a_xy
-                    nb = ebs.new("HairSpring_%d_%d" % (k, seg))
-                    nb.head = Vector((a_xy.x, a_xy.y, z0))
-                    nb.tail = Vector((b_xy.x, b_xy.y, z1))
-                    nb.parent = prev
-                    nb.use_connect = False
-                    prev = nb
-                    chain.append(nb.name)
-                made.append((k, chain))
-            bpy.ops.object.mode_set(mode="OBJECT")
-            bpy.context.view_layer.update()
-            print("  hair rig: built %d chains of %d bones" % (len(made), N_SEG))
-
-            chain_of = dict(made)
-            all_chain = {n for _, c in made for n in c}
-            weighted = 0
-            for o, vs in hair.items():
-                groups = {}
-                for k, c in made:
-                    for n in c:
-                        groups[n] = o.vertex_groups.get(n) or o.vertex_groups.new(name=n)
-                hg = o.vertex_groups.get(HEAD) or o.vertex_groups.new(name=HEAD)
-                # Clear whatever held this hair before. Models that keep the hair
-                # on a single rigid bone ('RL_G6_Hair', 'hair') leave that weight
-                # at 1.0; the armature normalises by total weight, so the old
-                # bone would simply out-vote the new chain and the hair would not
-                # move at all.
-                loose = [i for i in vs if (o.name, i) in assign]
-                if loose:
-                    for vg in o.vertex_groups:
-                        if vg.name not in all_chain and vg.name != HEAD:
-                            vg.remove(loose)
-                for i in vs:
-                    key = (o.name, i)
-                    if key not in assign:
+                bpy.context.view_layer.objects.active = arm
+                bpy.ops.object.mode_set(mode="EDIT")
+                ebs = arm.data.edit_bones
+                made = []
+                for k in keep:
+                    own = [p for p in pts if assign[(p[1].name, p[2])] == k]
+                    zs = [ZF * c.z for c, _, _ in own]
+                    top, bot = max(zs), min(zs)
+                    if top - bot < 0.02 or len(own) < 20:
                         continue
-                    c = chain_of.get(assign[key])
-                    if not c:
-                        continue
-                    z_top = arm.data.bones[c[0]].head_local.z
-                    z_bot = arm.data.bones[c[-1]].tail_local.z
-                    if z_top - z_bot < 1e-6:
-                        continue
-                    u = max(0.0, min(1.0, (z_top - o.data.vertices[i].co.z) / (z_top - z_bot)))
-                    t = u * N_SEG
-                    seg = min(N_SEG - 1, int(t))
-                    frac = t - seg
-                    # Hold on to the head across the first bone's length so the
-                    # hair blends out of the scalp instead of detaching from it.
-                    w_head = max(0.0, 1.0 - t)
-                    w_chain = 1.0 - w_head
-                    for n in c:
-                        groups[n].remove([i])
-                    hg.add([i], w_head, "REPLACE")
-                    if w_chain > 0.0:
-                        groups[c[seg]].add([i], w_chain * (1.0 - frac), "REPLACE")
-                        if seg + 1 < N_SEG:
-                            groups[c[seg + 1]].add([i], w_chain * frac, "REPLACE")
-                    weighted += 1
-            bone_names = {b.name for b in arm.data.bones}
-            print("  hair rig: weighted %d hair vertices onto the new chains" % weighted)
+                    step = (top - bot) / N_SEG
+
+                    def centre_between(z_hi, z_lo, members):
+                        sel = [c for c, _, _ in members
+                               if z_lo <= ZF * c.z <= z_hi]
+                        if not sel:
+                            return None
+                        s = Vector((0.0, 0.0))
+                        for c in sel:
+                            s += Vector((c.x, c.y))
+                        return s / len(sel)
+
+                    prev = ebs.get(HEAD)
+                    chain = []
+                    for seg in range(N_SEG):
+                        z0 = top - step * seg
+                        z1 = top - step * (seg + 1)
+                        a_xy = centre_between(z0, z1, own) or cen[k]
+                        b_xy = centre_between(z1, z1 - step, own) or a_xy
+                        nb = ebs.new("%s_%d_%d_%d"
+                                     % (_PREFIX, _gi, k, seg))
+                        nb.head = Vector((a_xy.x, a_xy.y, ZF * z0))
+                        nb.tail = Vector((b_xy.x, b_xy.y, ZF * z1))
+                        nb.parent = prev
+                        nb.use_connect = False
+                        prev = nb
+                        chain.append(nb.name)
+                    made.append((k, chain))
+                bpy.ops.object.mode_set(mode="OBJECT")
+                bpy.context.view_layer.update()
+                print("  hair rig: built %d chains of %d bones" % (len(made), N_SEG))
+
+                chain_of = dict(made)
+                all_chain = {n for _, c in made for n in c}
+                weighted = 0
+                for o, vs in hair.items():
+                    groups = {}
+                    for k, c in made:
+                        for n in c:
+                            groups[n] = o.vertex_groups.get(n) or o.vertex_groups.new(name=n)
+                    hg = o.vertex_groups.get(HEAD) or o.vertex_groups.new(name=HEAD)
+                    # Clear whatever held this hair before. Models that keep the hair
+                    # on a single rigid bone ('RL_G6_Hair', 'hair') leave that weight
+                    # at 1.0; the armature normalises by total weight, so the old
+                    # bone would simply out-vote the new chain and the hair would not
+                    # move at all.
+                    loose = [i for i in vs if (o.name, i) in assign]
+                    if loose:
+                        for vg in o.vertex_groups:
+                            if vg.name not in all_chain and vg.name != HEAD:
+                                vg.remove(loose)
+                    for i in vs:
+                        key = (o.name, i)
+                        if key not in assign:
+                            continue
+                        c = chain_of.get(assign[key])
+                        if not c:
+                            continue
+                        z_top = arm.data.bones[c[0]].head_local.z
+                        z_bot = arm.data.bones[c[-1]].tail_local.z
+                        if abs(z_top - z_bot) < 1e-6:
+                            continue
+                        # Sign-free on purpose: with the chain running the
+                        # other way both halves of the ratio change sign
+                        # together, so u still runs 0 at the anchor to 1 at the
+                        # tip.
+                        u = max(0.0, min(1.0, (z_top - o.data.vertices[i].co.z)
+                                         / (z_top - z_bot)))
+                        t = u * N_SEG
+                        seg = min(N_SEG - 1, int(t))
+                        frac = t - seg
+                        # Hold on to the head across the first bone's length so the
+                        # hair blends out of the scalp instead of detaching from it.
+                        w_head = max(0.0, 1.0 - t)
+                        w_chain = 1.0 - w_head
+                        for n in c:
+                            groups[n].remove([i])
+                        hg.add([i], w_head, "REPLACE")
+                        if w_chain > 0.0:
+                            groups[c[seg]].add([i], w_chain * (1.0 - frac), "REPLACE")
+                            if seg + 1 < N_SEG:
+                                groups[c[seg + 1]].add([i], w_chain * frac, "REPLACE")
+                        weighted += 1
+                bone_names = {b.name for b in arm.data.bones}
+                print("  hair rig: weighted %d hair vertices onto the new chains" % weighted)
 
 # A left/right swap breaks nothing that any count can see. The bone count is
 # right, the humanoid count is right, the character stands up straight, and it
