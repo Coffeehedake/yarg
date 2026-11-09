@@ -3111,8 +3111,39 @@ if len(_arms) == 2:
         _arms = [(sd, (_lx if sd == "left" else -_lx), ua, la, hd)
                  for sd, _s, ua, la, hd in _arms]
 
-if (not os.environ.get("VRM_NO_TPOSE")) and any(
-        _arm_error(_ua, _hd, _sx)[0] >= 15.0 for _, _sx, _ua, _la, _hd in _arms):
+# Legs, on the same terms as the arms.
+#
+# Straightening a leg already exists -- _straighten_axis against -Z -- but only
+# inside the stand-up path, which is opt-in AND requires the spine to lie more
+# than 25 degrees off vertical. Jessica Rabbit stands perfectly upright with
+# her legs CROSSED at the microphone, so that gate can never reach her, and she
+# baked a crossed-leg bind that every animation in the game would then deform
+# from.
+#
+# Measured the same way the arms are, and acted on only when a leg is really
+# bent: VRM_STRAIGHTEN_LEGS=1 asks for it, because straightening a leg is a
+# DEFORMATION and on weights taken from a contorted pose it is the deformation
+# that tears -- the reason the stand-up path says the same thing about Anakin.
+_DOWNV = Vector((0.0, 0.0, -1.0))
+_legs = []
+for _s in ("left", "right"):
+    _ul, _ll = MAP.get("%s_upper_leg" % _s), MAP.get("%s_lower_leg" % _s)
+    _ft = MAP.get("%s_foot" % _s)
+    if _ul in bone_names and _ll in bone_names:
+        _legs.append((_s, _ul, _ll, _ft if _ft in bone_names else None))
+_leg_off = 0.0
+for _s, _ul, _ll, _ft in _legs:
+    _leg_off = max(_leg_off, _axis_error(_ul, _ll, _DOWNV)[0])
+if _legs:
+    print("  legs: worst thigh is %.1f deg off vertical%s"
+          % (_leg_off,
+             "" if os.environ.get("VRM_STRAIGHTEN_LEGS")
+             else " (VRM_STRAIGHTEN_LEGS=1 straightens them)"))
+
+if (not os.environ.get("VRM_NO_TPOSE")) and (
+        any(_arm_error(_ua, _hd, _sx)[0] >= 15.0
+            for _, _sx, _ua, _la, _hd in _arms)
+        or (os.environ.get("VRM_STRAIGHTEN_LEGS") and _leg_off >= 15.0)):
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.mode_set(mode="POSE")
     for _side, _sx, _ua, _la, _hd in _arms:
@@ -3133,6 +3164,12 @@ if (not os.environ.get("VRM_NO_TPOSE")) and any(
             print("  T-pose: %s arm now %.1f deg off X ('%s') - no forearm bone "
                   "mapped, so the elbow keeps whatever bend it had"
                   % (_side, _e1, _ua))
+    if os.environ.get("VRM_STRAIGHTEN_LEGS") and _leg_off >= 15.0:
+        for _s, _ul, _ll, _ft in _legs:
+            _f1 = _straighten_axis(_ul, _ul, _ll, _DOWNV)
+            _f2 = (_straighten_axis(_ll, _ll, _ft, _DOWNV) if _ft else 0.0)
+            print("  T-pose: %s leg thigh now %.1f deg off vertical, shin %.1f "
+                  "('%s' / '%s')" % (_s, _f1, _f2, _ul, _ll))
     bpy.context.view_layer.update()
 
     # Move the geometry with the bones BEFORE making this pose the rest pose, or
