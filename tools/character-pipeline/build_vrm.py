@@ -77,6 +77,29 @@ if len(_ARMS) > 1:
         _names = set(b.name for b in arm.data.bones)
         _have = [g.name for g in _o.vertex_groups if g.name in _names]
         _miss = [g.name for g in _o.vertex_groups if g.name not in _names]
+        # A glTF that carries the same rig TWICE uniquifies the second copy's
+        # bone names with a numeric suffix. Batman's cape hangs off
+        # 'fml_un_C_pelvis_331' and his body off 'fml_un_C_pelvis_818': the
+        # same bone, and a literal comparison calls them strangers. Strip a
+        # trailing _NNN from both sides and match on what is left, then rename
+        # the groups so the modifier can read them.
+        if not _have and _miss:
+            _strip = lambda _n: re.sub(r"_\d+$", "", _n)
+            _by = {}
+            for _b in arm.data.bones:
+                _by.setdefault(_strip(_b.name), _b.name)
+            _ren = []
+            for _g in list(_o.vertex_groups):
+                _t = _by.get(_strip(_g.name))
+                if _t and _t != _g.name:
+                    _g.name = _t
+                    _ren.append(_t)
+            if _ren:
+                _have, _miss = _ren, []
+                print("  matched %d vertex group(s) on '%s' to the chosen "
+                      "armature by stripping the uniquifying suffix (same rig "
+                      "exported twice): %s"
+                      % (len(_ren), _o.name, ", ".join(_ren[:4])))
         for _m in _mods:
             _m.object = arm
         _o.parent = arm
