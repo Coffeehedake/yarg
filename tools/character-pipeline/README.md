@@ -88,7 +88,7 @@ had simply never been looked at.
 | Alcina | chest drifts like a balloon | **chest spring parameters do not scale.** 0.85 stiffness and 0.60 drag were set looking at Prix at 1.70 m; Alcina is 2.9 m and VRM spring stiffness is scale-dependent |
 | Yui | looks out of proportion | not yet measured |
 | Link | eye textures misplaced; still holding the master sword and shield | needs an exclude and a texture pin |
-| Shadow | eyes use the blink/closed frame of the atlas; fingers do not move |
+| Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and finger bones that are mapped but not weighted |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
 
 ### alphaMode: a setting on a disabled extension
