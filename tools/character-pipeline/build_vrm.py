@@ -2117,9 +2117,18 @@ elif RIG == "judyusd":
     # "ear".
     MAP = {"hips": "n14", "spine": "n15", "chest": "n26",
            "neck": "n27", "head": "n28"}
+    # LEFT and RIGHT were the wrong way round here, and that is what "Judy's
+    # arms and legs are criss-crossed" was. Her ankle sits at z=+15.55 and her
+    # toes at z=-16.81, so she faces -Z, which puts her left at +X -- and n21,
+    # at x=-20.44, was mapped as her left leg.
+    #
+    # Nothing caught it because nothing looked: this map predates the sides
+    # check, and neither of her build logs has a 'sides:' line at all. Asked
+    # afterwards, that check answers "4 of 4 limb pairs are mirrored", which is
+    # an entirely separate mechanism agreeing with the geometry.
     for s_, sh, ua, la, hd, ul, ll, ft, to in (
-            ("left", "n76", "n77", "n78", "n79", "n21", "n22", "n23", "n24"),
-            ("right", "n47", "n48", "n49", "n50", "n16", "n17", "n18", "n19")):
+            ("right", "n76", "n77", "n78", "n79", "n21", "n22", "n23", "n24"),
+            ("left", "n47", "n48", "n49", "n50", "n16", "n17", "n18", "n19")):
         MAP["%s_shoulder" % s_] = sh
         MAP["%s_upper_arm" % s_] = ua
         MAP["%s_lower_arm" % s_] = la
