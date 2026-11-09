@@ -96,13 +96,17 @@ because every entry below has already been rediscovered at least once.
      because she was rebuilt at `texmax` 2048 rather than the house 1024. Nothing in the log
      says so — the counts are identical and only the bytes differ. Rebuilt at 1024 she is
      8.2 MB of VRM again.
-   - **A rebuild that loses a texture is worse than no jiggle**, so compare before installing.
-     Most of what a count says is missing is `...unigltfduplicated2` — UniGLTF copies an image
-     per material slot on import, so a Unity texture count and a glTF image count are not the
-     same number and never were. Compare NAMES. Two rebuilds really do lose maps and are held
-     back: **Alcina** (`Material.014`'s normal and roughness) and **Gwen Stacy** (her normal
-     and metalness/specular). Both built from the same sources as the installed versions, so
-     the texture picker is choosing differently than it did — that is the thing to find.
+   - **A rebuild that loses a texture is worse than no jiggle**, so compare before installing
+     — but compare the right thing. A Unity texture count and a glTF image count are not the
+     same number: the UniVRM import copies an image per material slot
+     (`__UniGLTF__Duplicated__2`) and renames by slot (`<image>Normal`, `<image>Standard`).
+     Compare names, with all of that stripped, and repeatedly — Unity appends `Normal` to a
+     file already called `Bikini_Normal`.
+   - **Gwen Stacy's loss was real and is fixed.** Her files are `GwenStacyDifuselMap`,
+     `NormalMap`, `MetallnessMap`; the map-token regex spelled out a trailing `map` only after
+     `normal`, so her base stem kept `difuselmap` whole, the texture SET derived from it
+     contained one file — itself — and the rule "take only from this set" quietly meant "take
+     nothing". A set of one carries no information and now falls back to the ordinary pick.
    - **Judy Hopps** rebuilt 132% heavier than the installed one, so the installed character did
      not come from `judy-hopps-not-game-ready.zip`. Find out which source it did come from
      before replacing her.

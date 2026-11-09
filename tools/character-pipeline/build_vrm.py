@@ -3888,10 +3888,15 @@ STEMS = {os.path.splitext(f)[0]: f for f in files}
 
 # Every map-type word a texture filename may end with. Stripping one off a
 # filename leaves the stem its whole SET shares.
+# The trailing 'map' is optional on EVERY token, not just on 'normal'.
+# Gwen Stacy's files are GwenStacyDifuselMap / NormalMap / MetallnessMap, and
+# with 'map' spelled out only after 'normal' her base stem kept 'difuselmap'
+# whole -- see the set-of-one note below for what that then cost her.
 MAPTOK = re.compile(
     r"[_\- ]*(base[_\- ]?colou?r|albedo(?:transparency)?|diffuse|difuse|difusel|"
-    r"normal(?:map)?|nrm|metal(?:lic|ness)?|rough(?:ness)?|specular|spec|"
-    r"emissive|emission|height|bump|opacity|alpha|ao|occlusion)$", re.I)
+    r"normal|nrm|metal(?:lic|ness)?|rough(?:ness)?|specular|spec|"
+    r"emissive|emission|height|bump|opacity|alpha|ao|occlusion|oclussion)"
+    r"[_\- ]?(?:map)?$", re.I)
 
 
 def _raw_stem(mat):
@@ -4096,6 +4101,24 @@ def authored(bsdf, slot):
     return _hit
 
 
+def _SET_OF(prefix):
+    """The files that belong to one material's texture SET.
+
+    A set exists to stop a map being borrowed from the wrong one -- Link's
+    tunic took the equipment metalness and came out chromed. But the prefix is
+    derived from the base colour's filename with its map token stripped, and
+    when that strip fails the prefix is the whole stem, so the set contains the
+    base file and nothing else. The rule "take only from this set" then means
+    "take nothing", silently.
+
+    That is what happened to Gwen Stacy: 'GwenStacyDifuselMap' kept its token,
+    the set was one file, and her normal and metalness maps were sitting in the
+    same folder being ignored. A set of one carries no information, so say so
+    and let the ordinary pick run."""
+    return [f for f in files
+            if norm(os.path.splitext(f)[0]).startswith(prefix)]
+
+
 def mat_stem(mat):
     """The stem this material's OWN texture reference shares with its map set.
 
@@ -4238,7 +4261,7 @@ for mat in bpy.data.materials:
                 base_tex = keep
             wired.append((kind, "packed:" + (keep.image.name or "?")))
             continue
-        if set_prefix and kind != "base":
+        if set_prefix and len(_SET_OF(set_prefix)) > 1 and kind != "base":
             # The set is the answer, including when the answer is "this set has
             # no such map". Borrowing one from another set is not a near miss:
             # Link's tunic took the equipment metalness and came out chromed.
@@ -4274,9 +4297,8 @@ for mat in bpy.data.materials:
             bsdf.inputs["Emission Strength"].default_value = 1.0
     if already_good(bsdf, "Normal") is not None:
         p = None
-    elif set_prefix:
-        _inset = [f for f in files
-                  if norm(os.path.splitext(f)[0]).startswith(set_prefix)]
+    elif set_prefix and len(_SET_OF(set_prefix)) > 1:
+        _inset = _SET_OF(set_prefix)
         p = choose(_inset, "normal") or choose(_inset, "height")
     else:
         p = (authored(bsdf, "Normal")

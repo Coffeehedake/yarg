@@ -525,6 +525,36 @@ humanoid map actually handed it, which is known rather than inferred, and only r
 there are no upper arms to measure between. **Prefer the question you can answer exactly over
 the one you have to threshold.**
 
+## A set of one is not a set
+
+Maps ship in sets, and the builder keeps a material inside its own set so a metalness map
+cannot be borrowed from the wrong one — Link's tunic took the equipment metalness once and came
+out chromed. The set is derived from the base colour's filename with its map token stripped.
+
+**When that strip fails the set contains one file, and "take only from this set" silently means
+"take nothing".** Gwen Stacy's files are `GwenStacyDifuselMap.jpg`, `GwenStacyNormalMap.jpg`
+and `GwenStacyMetallnessMap.jpg`. The token regex spelled out an optional trailing `map` after
+`normal` and nowhere else, so `difuselmap` survived whole, the prefix became her entire base
+stem, and her normal and metalness maps sat in the same folder being ignored. She shipped with
+a base colour and nothing else.
+
+Two fixes, and the second is the one that generalises: every map token may now be followed by
+`map`, and **a set with one member is treated as no set at all**.
+
+### The check that was wrong about Alcina
+
+Alcina looked like the same bug — `Material.014`'s normal and roughness missing from her
+rebuild. They were not missing. The comparison script called `os.path.splitext` on an image
+called `Material.014_Normal_OpenGL`, which cuts at the LAST dot and leaves `Material`, so every
+one of her numbered maps normalised to the same token and the script reported a file that
+contains both as having neither.
+
+She was held back for a day on the strength of it, and the fix to the real bug would have been
+credited with fixing hers too. **A comparison is a measurement and gets the same scepticism as
+any other**: when it disagrees with the build log, find out which one is lying before acting on
+either. The build log had said `rough=Material.014_Roughness.png,
+normal=Material.014_Normal_OpenGL.png` all along.
+
 ## A prop can share a MESH with the kit
 
 An exclude pattern is a blunt instrument: it takes whole meshes, and a model is not obliged to
