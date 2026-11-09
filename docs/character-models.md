@@ -635,6 +635,68 @@ says nothing about the real cause. Four shapes of this turned up in a single bat
 Re-parenting at rest is **deformation-neutral** — the armature reads `bone.matrix_local`, which
 re-parenting does not move — so repairing the hierarchy costs nothing and can be automated.
 
+## Promoting the hips orphans whatever was above them
+
+The second row of the table above — "legs hang off the spine, so that bone is really the hips" —
+is right, and it has a consequence that went unwritten for a year. Hips is the **root** of the
+humanoid, so promoting a bone to hips puts everything above it outside the hierarchy. Those bones
+are still exported and still carry their weights; nothing ever moves them again.
+
+Miku measures it: her thighs hang off `Bip01 Spine`, that bone is promoted, and `Bip01 Pelvis` —
+its own parent — is left holding 985 vertices, **23.7% of her body**, her skirt among them. In
+game her dress stood still while she moved, and it read as missing spring bones.
+
+Such a bone **cannot be adopted**. Every humanoid bone is one of its descendants, so re-parenting
+it builds a cycle; Blender refuses, silently, and a fix that re-parents it will log success and
+change nothing. Move the **weight** down to the humanoid root instead.
+
+## Only bones that deform are exported
+
+The VRM export writes bones with `use_deform` set and drops the rest. That is correct and it is
+not the whole story, because **weights are not checked against it**: a vertex group naming a
+dropped bone is simply orphaned, and the glTF exporter hands the orphaned weight to a bone of its
+own invention, `neutral_bone`, parented at the root.
+
+A Rigify rig carries three bones per joint — `ORG-` (original), `MCH-` (mechanism) and `DEF-` (the
+one that deforms) — and only the DEF- bones have the flag. Gadget Hackwrench's eyes are
+bone-parented to `MCH-eye.L` and `MCH-eye.R`, which is a perfectly ordinary way to attach a rigid
+prop and works in Blender up to the moment of export. 172 joints came out of her 647-bone
+armature, and nothing in the build mentioned the 475 that went.
+
+Walking up to the nearest ancestor that *will* be written is the first answer and it frequently
+finds nothing: `MCH-eye.L`'s thirteen ancestors up to `root` are every one of them non-deform,
+because the control bones are a tree of their own running parallel to the DEF- bones. The fallback
+is the nearest humanoid bone, which for an eye is the head.
+
+## A bone is a segment, and its head is not where it is
+
+The hair rigger has to know which end of a group is attached. Hair hangs below the head, so for
+hair the top of the group is the attached end — true for every character until a cape turned up,
+and Mando's cape is anchored at his chest in a scene whose z runs the other way. Rigged on that
+assumption it pinned the hem to his thighs and left the swinging tip at his collar.
+
+The anchor bone is the physical attachment and is already known, so measure against it. The first
+attempt compared against the bone's **head** along z alone and flipped Gadget's hair: her head
+bone's head is down at the neck, 0.80, and her hair runs 0.50 to 1.25, so the bottom of her hair
+measured nearer to it than the top. The bone occupies 0.80 to 1.21 and its middle, 1.01, is inside
+the skull where the hair is rooted.
+
+**Compare against the middle of the bone, in three dimensions.** Where a bone starts is not where
+it is.
+
+## A fixed bone index is a guess about someone else's rig
+
+`rigify_def` mapped the head to `DEF-spine.005` and the neck to `DEF-spine.004`, indices read off
+the first rig that needed them. Rigify names a spine chain `DEF-spine`, `DEF-spine.001`, ... and
+where it ends depends on how many bones the rigger drew. Tenna and Gadget both run to
+`DEF-spine.006`, so both had their head mapped to their neck, their neck mapped to the bone below
+it, and the actual skull bone — 41 cm of it on a 1.30 m Gadget — left out of the humanoid
+altogether. Head-look pivoted at the throat.
+
+Nothing caught it because the map was complete and self-consistent: every bone it named existed
+and the readback matched. **A mis-mapping is only visible if you ask where the bone IS.** Count
+the chain instead of indexing into it.
+
 ## Spring bones need bones
 
 Hair, a skirt or a cape stays rigid however well the character animates, because Unity's humanoid

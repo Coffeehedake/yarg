@@ -27,7 +27,30 @@ blender --background --python build_vrm.py -- <model> <texdir> <height_m> <rig> 
 - `spring` — regex for spring-bone chains; **omit it** and hair/skirt/tail/cape chains are found
   automatically, which is almost always what you want
 - `hairrig` — regex over MESH *or* MATERIAL names to build hair chains for a model that has none;
-  `island:N` addresses the Nth-largest connected island for a part with no name of its own
+  `island:N` addresses the Nth-largest connected island for a part with no name of its own, and
+  the build prints where each island sits so a recipe can be written from its own output
+
+**More than one group.** The positional `hairrig` is the hair, and `VRM_RIG_MORE` adds further
+groups — a dress as well as hair, a cape as well as a tail:
+
+```
+VRM_RIG_MORE="pattern@bone#segs,strands,anchor,lo,hi;pattern2@bone2"
+```
+
+`;` separates groups, `@` names the bone the group hangs from, `#` sets that group's own numbers,
+and everything after the pattern is optional. `lo`/`hi` clip the group to a band of the
+**character's height** (0 at the feet, 1 at the crown) for cloth that has no name, no material
+and no island of its own. Fractions rather than coordinates because the build moves and rescales
+the figure before the rigger runs.
+
+A group anchored anywhere other than the head gets its chains named `ClothSpring` instead of
+`HairSpring`, which is what puts it on the gentler cloth spring parameters below — a cape and a
+ponytail want different numbers, and the chain's name is what the spring section judges by.
+
+**Which end is attached is measured, not assumed.** Chains are built outward from the anchor
+bone, by comparing the two ends of the group against the MIDDLE of that bone in three
+dimensions. Do not assume the top: Mando's cape anchors at his chest and his build scene has z
+running the other way.
 
 Environment switches: `VRM_TEX="Mat=file.png[:kind]"` forces a texture onto a named material when
 the archive's names carry no information (Alcina's fourteen `Material.NNN`); `VRM_RIGID="island:N=Bone"`
@@ -83,19 +106,19 @@ had simply never been looked at.
 | Power Girl, Judy Hopps | legs cross over each other when posed | **left and right are swapped.** Measured across all 66: 258 of 264 limb pairs agree on which side is which, and these two supply all six disagreements |
 | Prix, Pomni | eyes render as solid white; hair reads as a cap | every material in every character exports `alphaMode: OPAQUE` — see below |
 | Ariel, Heels | lower hair hangs in space while the body moves | the hair rigger leaves part of the hair behind. Chains are correctly parented and every vertex is weighted, so it is neither of the obvious two |
-| Mando | cape folded in on itself, static | the documented cloak case: he needs the hair rigger with `HAIR_BONE=Spine1` and was never built with it |
-| Jessica Rabbit | dress static while the body moves; sequin texture on her skin | cloth unrigged, and her `rskin` material took the dress's sequin map |
+| Mando | cape folded in on itself, static | the documented cloak case, and the recipe alone was not enough: built with `HAIR_BONE=Spine1` the rigger took the HEM as the attached end, pinned it to his thighs and left the swinging tip at his collar |
+| Jessica Rabbit | dress static while the body moves; sequin texture on her skin | the rigger took one group per build, so her hair and her dress could not both be rigged. `rskin` had already been given its own map |
 | Alcina | chest drifts like a balloon | **chest spring parameters do not scale.** 0.85 stiffness and 0.60 drag were set looking at Prix at 1.70 m; Alcina is 2.9 m and VRM spring stiffness is scale-dependent |
 | Yui | looks out of proportion | not yet measured |
 | Kasane Teto | does not animate at all, stands in her T-pose | **her bundle has no AnimatorController and no AnimationClip.** 1 of 66; every other character has both. She has an Animator and an Avatar, 20 skinned renderers and a complete humanoid map, so nothing else distinguishes her |
 | Lola Bunny | head floats detached above the neck | a part following a bone that does not follow the body — the same shape as Judy's belt and the static hair |
 | Judy Hopps | belt detached, arms and legs crossed | the crossing is the mirrored rig above; the belt is the detached-part case |
 | Gordon Freeman | every texture misplaced except his head | one material taking another's map, at the scale of a whole character |
-| Miku | dress does not move with her | loose cloth with no chains |
+| Miku | dress does not move with her | **measured: 23.7% of her body, 985 vertices including the skirt, hangs on `Bip01 Pelvis`, which nothing drives.** Not loose cloth at all -- her skirt is short and segmented and only ever needed to follow the hips |
 | Alastor | no eyes; something wrong with the hair | eye meshes, so either the orphan-bone case or the cutout |
 | Elite Terrorist | right hand's fingers crunched | one hand posed, the other not -- the asymmetry the finger-relax check looks for |
 | Batman | every texture misplaced | the same whole-character mapping failure as Gordon Freeman |
-| Gadget Hackwrench | eyeballs and teeth do not move; some hair static | measured: her eyes are 100% weighted to a bone nothing drives |
+| Gadget Hackwrench | eyeballs and teeth do not move; some hair static | measured: her eyes are bone-parented to `MCH-eye.L/R`, which the export drops because they do not deform, so the weight landed on an invented bone at the root |
 | Joker | a pistol orbiting him; parts of the suit unrigged | a prop that was never excluded, plus the detached-part case |
 | Peach | eyes missing; dress springs so reactive her legs clip through it | the eye atlas again, and the other end of the cloth problem: hers IS rigged and is too lively. Cloth needs its own parameters, gentler than hair and separate from chest |
 | Link | eye textures misplaced; still holding the master sword and shield | needs an exclude and a texture pin |
@@ -132,6 +155,32 @@ hers were.
 
 **The check is three lines and should have existed from the first character**: take every bone
 that deforms geometry, walk up its parents, and assert it reaches a humanoid or spring bone.
+
+### Weight on a bone nothing drives, in four flavours
+
+Eight of the twenty-four reports above are one fault wearing four hats, and a sweep over
+every `.vrm` built here found **six more characters nobody has reported yet**: Gwen Stacy,
+both Clone Troopers, Yoda, Anakin and Junio Sonic.
+
+The test is three lines and should have existed from the first character: take every bone that
+deforms geometry, walk up its parents, and assert it reaches a humanoid or spring bone.
+`scratchpad/drivers.py` does exactly that against the exported file and prints the percentage.
+
+| flavour | what it looks like | what fixes it |
+|---|---|---|
+| **Orphan bone** — a deform bone parented outside the humanoid hierarchy | Lola Bunny: 31% of her body, including her whole head | re-parent to the nearest humanoid bone, keeping world position |
+| **No weight at all** — the glTF exporter invents `neutral_bone` at the root for unweighted geometry | Gadget's teeth; four cape vertices on Mando | bind to the nearest humanoid bone |
+| **Non-deform bone** — the VRM export writes only bones with `use_deform`, and Rigify's ORG- and MCH- control bones have it off | Gadget's eyes, bone-parented to `MCH-eye.L`; 152 face groups on Jessica | move the weight to the nearest ancestor that will be written, or failing that the nearest humanoid bone |
+| **Above the humanoid root** — hips is the root, so a bone *above* it is never driven either | Miku's `Bip01 Pelvis`, 985 vertices | move the weight **down** to the root. It cannot be re-parented: every candidate is its own descendant |
+
+The fourth one is the one to be careful of. The first version of the orphan fix adopted Miku's
+pelvis to `Bip01 R Thigh`, one of its own grandchildren; Blender will not build that cycle, so
+the re-parent silently did nothing while the log announced the fix. **The measurement did not
+move, and that is the only reason it was caught.**
+
+None of this is visible to any count. The mesh is present, the skin is present, every vertex
+carries full weight, the humanoid map is complete, and at rest a dead bone and a live one draw
+identically.
 
 ### Two of these were predicted before they were reported
 
@@ -476,7 +525,7 @@ costs about 25 seconds, so a human watching it just sees the dialog bounce.
 
 | Model | pose | result |
 |---|---|---|
-| Mandalorian | upright, arms clear of the torso | **rigged** |
+| Mandalorian | upright, arms clear of the torso | **rigged**; cape needs `HAIR_BONE=Spine1 HAIR_ANCHOR=0.15` with hairrig `^CAPE$` |
 | Anakin | mid-lunge, one arm up, legs crossed | rejected, 4 attempts |
 | Judy Hopps | upright but arms straight down against her sides | rejected, 2 attempts |
 
@@ -543,7 +592,7 @@ that rebuilds from her own archive, and she is also the one that covers the text
 | Lola Bunny | multiversus | 1.75 | exclude `^Icosphere` |
 | Mickey Mouse | mixamo | 1.10 | archive is called `talking.zip` |
 | Elite Terrorist | mixamo | 1.83 | |
-| Jessica Rabbit | rigify_plain | 1.80 | hairrig `^hair`, `VRM_TEX="rskin=Skin_makup_0003_Body_multires_sculpt.001_m.jpg"` (the row used to record this truncated). A straight rebuild comes out 6% heavier than the installed character — 320,562 triangles against 340,638 — so something was excluded that nobody wrote down |
+| Jessica Rabbit | rigify_plain | 1.80 | exclude `^(BezierCurve\|Cylinder\|Cube)`, hairrig `^hair`, `VRM_RIG_MORE='^glitter-transprnt$@spine#4,4,0.2'` for the skirt, `VRM_TEX="rskin=Skin_makup_0003_Body_multires_sculpt.001_m.jpg"`. **The exclude was not lost** — this row said "something was excluded that nobody wrote down" while the rig-family table above recorded it all along. With it the rebuild matches the installed character exactly: 320,562 triangles, 10 meshes |
 | Alice Ivy | cc_base | 1.70 | exclude `^COLLIDER` |
 | Ariel | daz | 1.70 | hairrig `Hair`. Recovered from her own `.yargchar`: `lPectoral` and `abdomenUpper` are DAZ names, and the mesh bounds give the height |
 | Killer Clown | mixamo | 1.80 | hairrig `hair`. Her bones are Mixamo's with the prefix stripped (`Hips`, `LeftHandIndex1`, `HeadTop_End`), which the family auto-detects |
