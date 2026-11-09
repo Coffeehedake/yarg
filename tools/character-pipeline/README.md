@@ -182,23 +182,43 @@ None of this is visible to any count. The mesh is present, the skin is present, 
 carries full weight, the humanoid map is complete, and at rest a dead bone and a live one draw
 identically.
 
-### What is now blocking the rest of the list
+### The rest of the list is not blocked, and the claim that it was is the same mistake twice
 
-The remaining reports are not blocked on understanding them. They are blocked on being able to
-**rebuild the character at all**: of the 66 installed, only 23 have a build command recoverable
-from a log in this workspace. Alastor, Batman, Gordon Freeman, Link, Shadow, Elite Terrorist,
-Pomni, Peach, Skibidi Toilet, The Rock, Yui and Joker are all in the other 43, and each needs the
-argument recovery that Ariel went through — rig family, height and exclusions read back out of
-her own `.yargchar`.
+This section first said the remaining twelve characters could not be rebuilt, because only 23 of
+the 66 had a build command recoverable from a **log** in this workspace. That was true about logs
+and false about the characters: **the rig-family table below already records a recipe for every
+one of them.** Family, height and exclusions, written down at the time.
 
-Joker is worth naming: he measures **undriven weight** on the sweep above, so he is in the family
-this round fixed, and he cannot be rebuilt to collect the fix.
+It is the Jessica Rabbit error again, in the same document, three hours later — reaching for
+the place the answer was last found instead of the place it is kept, and then writing down the
+absence as a property of the world. Two tables in one file, and the one that was searched is the
+one that did not have it.
 
-Measured while they were in front of me, and worth knowing before anyone rebuilds them: **all
-twelve are fully opaque**, every material. Several of those reports are eye faults — Alastor has
-no eyes, Pomni's are mismapped, Peach's are missing, Shadow's are stuck on the blink frame — and
-eyelashes, eye occlusion and tearlines are exactly the cards that need a cutout. Expect the
-cutout inference below to change several of them on the first rebuild.
+What the recovery pass is actually worth is **cross-checking** the table rather than replacing
+it. Reading height and rig family back out of each installed `.yargchar` agrees with the written
+recipe on all twelve, to the centimetre:
+
+| character | recovered | table | character | recovered | table |
+|---|---|---|---|---|---|
+| Joker | 1.85, maxbiped | 1.85 maxbiped | Peach | 1.70, smash | 1.70 smash |
+| Alastor | 1.95 | 1.95 mixamo | The Rock | 1.96 | 1.96 mixamo |
+| Gordon Freeman | 1.80, valvebiped | 1.80 valvebiped | Yui Suzukaze | 1.60 | 1.60 mixamo |
+| Batman | 1.88, multiversus | 1.88 multiversus | Skibidi Toilet | 1.60, valvebiped | 1.60 valvebiped |
+| Link | 1.65 | 1.65 linkoot | Elite Terrorist | 1.83 | 1.83 mixamo |
+| Shadow | 1.05 | 1.05 sonicforces | Pomni | 1.70 | 1.70 pomni |
+
+Where the recovery says "unknown" — Alastor, Elite Terrorist, The Rock — the bones are Mixamo's
+with the prefix stripped (`Hips`, `LeftArm`, `LeftHandIndex1`), which the family auto-detects and
+the table already names. Source archives for all twelve are present, extracted, and named in the
+table.
+
+Joker is worth keeping in view: he measures **undriven weight** on the sweep above, so he is in
+the family this round fixed, and nothing was ever stopping him being rebuilt to collect it.
+
+Measured while they were in front of me: **all twelve are fully opaque**, every material. Several
+of the reports are eye faults — Alastor has no eyes, Pomni's are mismapped, Peach's are missing,
+Shadow's are stuck on the blink frame — and eyelashes, eye occlusion and tearlines are exactly
+the cards a cutout is for. Expect the inference below to change several on the first rebuild.
 
 ### Two of these were predicted before they were reported
 
