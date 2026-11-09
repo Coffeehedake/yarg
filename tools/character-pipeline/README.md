@@ -92,10 +92,15 @@ because every entry below has already been rediscovered at least once.
    rough=packed:C038_Base_ORM, normal=packed`) and the picker is never asked. The
    `C038_Base_ORM_1@channels=R/G/B.png` files beside her model are extracted channels nothing
    reads.
-4. **Finish the chest-rig rollout.** Fifteen rebuilt, eight installed — Alcina, Prix,
-   Chibi Rem, Sayuri, Alice Ivy, Tenna, Gadget and Lola. The installed set now has **11**
-   characters with sprung chest bones where it had 3, 9 carrying bones nothing moves, and 46
-   with none.
+4. **Finish the chest-rig rollout.** Nineteen rebuilt, ten installed — Alcina, Prix, Chibi
+   Rem, Sayuri, Alice Ivy, Tenna, Gadget, Lola, Ariel and Killer Clown. The installed set now
+   has **13** characters with sprung chest bones where it had 3, 7 carrying bones nothing
+   moves, and 46 with none.
+
+   All seven of those are accounted for, and only two are open work: **Batman** and **Peach**
+   carry chest bones that deform nothing and are skipped deliberately; **Heels** and **Jessica
+   Rabbit** have working chest chains in a build held back for the reasons below; **Harq
+   Alkahana**, **Kaiser Aufhänger** and **Kasane Teto** have no source located.
 
    Two of those 9 will never move and should stop being counted as work: **Batman** and
    **Peach** carry chest bones that deform no geometry — Batman's from the shared MultiVersus
