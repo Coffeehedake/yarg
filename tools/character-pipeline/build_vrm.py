@@ -4926,8 +4926,16 @@ for mat in bpy.data.materials:
     # SHAPE: mostly-two-valued, and neither almost entirely transparent (which
     # would erase the mesh) nor almost entirely opaque (which would do nothing
     # and risks nibbling edges for no gain).
-    if (not cut and base_tex is not None and base_from in ("authored", "stem",
-                                                             "name")
+    # OPT-IN, because inferring a cutout is a guess about what an alpha channel
+    # MEANS and the cost of guessing wrong is geometry that disappears. It is
+    # right for Killer Clown -- hair cards, no opacity map, 60.7% clear -- and
+    # it was wrong for Pomni, whose eye materials carry an alpha that is not a
+    # cutout at all: inferred one and her eyes went see-through in game,
+    # showing the inside of her head. The renders and every count said she was
+    # fine. VRM_CUTOUT_INFER=1 asks for it.
+    if (os.environ.get("VRM_CUTOUT_INFER")
+            and not cut and base_tex is not None
+            and base_from in ("authored", "stem", "name")
             and "Alpha" in bsdf.inputs and base_tex.image
             and base_tex.image.channels == 4):
         try:
