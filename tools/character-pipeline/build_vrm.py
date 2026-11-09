@@ -4677,6 +4677,7 @@ for mat in bpy.data.materials:
     stem = mat_stem(mat)
     wired = []
     base_tex = None
+    base_from = None
     # Maps ship in SETS. Once the base colour is chosen, every other map for
     # this material should come from the same set, because a metalness map from
     # the wrong set is not a near miss -- it is a mirror. Link's tunic, hair and
@@ -4720,9 +4721,14 @@ for mat in bpy.data.materials:
             p = choose([f for f in files
                         if norm(os.path.splitext(f)[0]).startswith(set_prefix)], kind)
         else:
-            p = (authored(bsdf, slot)
-                 or (pick_stem(stem, kind) if stem else None)
-                 or pick(mat.name, kind, wide=_default_col))
+            p = authored(bsdf, slot)
+            _from = "authored" if p else None
+            if p is None and stem:
+                p = pick_stem(stem, kind)
+                _from = "stem" if p else None
+            if p is None:
+                p = pick(mat.name, kind, wide=_default_col)
+                _from = "name" if p else None
         if p is None and kind == "base" and slot in bsdf.inputs:
             # Nothing named this material and nothing shares a word with its
             # mesh. Whether it WANTS a texture is readable from the material
@@ -4733,6 +4739,7 @@ for mat in bpy.data.materials:
             col = bsdf.inputs[slot].default_value
             if _default_col:
                 p = choose(BY_SIZE, kind, loose=True)
+                _from = "loose" if p else None
         if not p or slot not in bsdf.inputs:
             continue
         img = bpy.data.images.load(p, check_existing=True)
@@ -4742,6 +4749,7 @@ for mat in bpy.data.materials:
         nt.links.new(t.outputs["Color"], bsdf.inputs[slot])
         if kind == "base":
             base_tex = t
+            base_from = _from
             _st = norm(MAPTOK.sub("", os.path.splitext(os.path.basename(p))[0]))
             set_prefix = _st if len(_st) >= 4 else None
         wired.append((kind, p))
@@ -4805,12 +4813,50 @@ for mat in bpy.data.materials:
         nt.links.new(t.outputs["Color"], bsdf.inputs["Alpha"])
         wired.append(("alpha", ap))
         cut = True
-    # Only a DEDICATED opacity map is trusted. Inferring a cutout from the base
-    # map's own alpha channel was tried and withdrawn: Prix's hair mesh is
-    # 'CN_F_HAIR_111' while the only hair texture in her folder is
-    # 'CN_F_HAIR_110_hair.png' - a different hair model's atlas. Its alpha cut
-    # away the wrong regions and left her bald. A wrong cutout destroys geometry;
-    # a missed one merely leaves it solid, so the cautious way round is right.
+    # A dedicated opacity map is the first choice, and plenty of characters
+    # have none. Killer Clown's hair is hair CARDS -- her 'hair_base_color.png'
+    # is 60.7% fully transparent, 38.9% fully opaque and 0.3% in between, a
+    # textbook cutout mask -- and with no opacity map beside it the cards
+    # shipped solid. "Her hair doesn't seem to have a texture" is a black slab
+    # where the gaps between the cards should be.
+    #
+    # Inferring this from the base map's own alpha was tried once and withdrawn,
+    # and the reason is worth being exact about, because it was NOT that alpha
+    # inference is wrong. Prix's hair mesh is 'CN_F_HAIR_111' and the only hair
+    # texture in her folder is 'CN_F_HAIR_110_hair.png': a DIFFERENT hair
+    # model's atlas, reached by the loose global-pool fallback. Its alpha cut
+    # away the wrong regions and left her bald. The fault was the provenance of
+    # the texture, not the channel inside it.
+    #
+    # So infer, but only from a map this material can actually claim -- one that
+    # was authored in the file, or matched its mesh stem, or matched its own
+    # name -- never from the loose pool. And only when the alpha carries a
+    # SHAPE: mostly-two-valued, and neither almost entirely transparent (which
+    # would erase the mesh) nor almost entirely opaque (which would do nothing
+    # and risks nibbling edges for no gain).
+    if (not cut and base_tex is not None and base_from in ("authored", "stem",
+                                                             "name")
+            and "Alpha" in bsdf.inputs and base_tex.image
+            and base_tex.image.channels == 4):
+        try:
+            _probe = base_tex.image.copy()
+            _probe.scale(96, 96)
+            _buf = [0.0] * (96 * 96 * 4)
+            _probe.pixels.foreach_get(_buf)
+            _a = _buf[3::4]
+            _n = float(len(_a))
+            _clear = sum(1 for _v in _a if _v < 0.02) / _n
+            _solid = sum(1 for _v in _a if _v > 0.98) / _n
+            bpy.data.images.remove(_probe)
+            if 0.05 <= _clear <= 0.90 and (_clear + _solid) >= 0.80:
+                nt.links.new(base_tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+                cut = True
+                print("    cutout from the base map's own alpha (%.1f%% clear, "
+                      "%.1f%% solid, matched by %s)"
+                      % (100.0 * _clear, 100.0 * _solid, base_from))
+        except Exception as _e:
+            print("    (could not read the base map's alpha: %s)" % _e)
+
     # Metalness with no MAP is the same trap as emission with no map, one slot
     # over: a leftover Metallic of 1.0 turns the surface into a mirror that
     # reflects the world instead of showing its own colour. Link's face shipped
