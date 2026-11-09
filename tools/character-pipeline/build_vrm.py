@@ -607,13 +607,20 @@ _MORPH_MAX = float(os.environ.get("VRM_MORPH_MAX_DISP", "0.5"))
 # key, it is the only expression YARG drives, and dropping it is what left all
 # 66 characters unable to blink. Defined here because the pass below has to
 # know which keys to spare; the binding itself happens after the humanoid map.
-_BLINK_KEY = re.compile(r"^(blink|wink)", re.I)
+# Not anchored at the start: Character Creator names them 'Eye_Blink_L' and
+# 'Eye_Blink_R', so a start-anchored pattern finds nothing on an entire rig
+# family. Still anchored at a WORD boundary, so 'Mouth_Close' -- which sits
+# directly beside them on Heels' CC_Base_Body -- is not mistaken for an eye.
+_BLINK_KEY = re.compile(r"(^|[_. -])(blink|wink)", re.I)
 _BLINK_EXACT = re.compile(r"^(closed?|eye_?closed?)$", re.I)
 _BLINK_MESH = re.compile(r"(lash|lid|eye|brow)", re.I)
 
 
 def _is_blink(_mesh_name, _key_name):
-    return bool(_BLINK_KEY.match(_key_name)
+    # search, not match: the pattern allows a leading separator because the
+    # name is 'Eye_Blink_L', and match() anchors at position 0, so it found
+    # nothing on an entire rig family while looking like it was working.
+    return bool(_BLINK_KEY.search(_key_name)
                 or (_BLINK_EXACT.match(_key_name)
                     and _BLINK_MESH.search(_mesh_name)))
 for o in meshes:
@@ -5144,9 +5151,18 @@ if _blink_binds:
     _done = []
     for _o, _kn in _blink_binds:
         _targets = ["blink"]
-        for _attr, _pat in (("blink_left", r"(^|[._ ])(l|left)([._ ]|$)"),
-                            ("blink_right", r"(^|[._ ])(r|right)([._ ]|$)")):
-            if _attr in _side and re.search(_pat, _o.name, re.I):
+        # The side is on the KEY first and the MESH second. Pomni has one lash
+        # mesh per eye; Character Creator puts Eye_Blink_L and Eye_Blink_R on
+        # one CC_Base_Body, so reading the mesh name would have called both of
+        # Heels' eyes the same side.
+        for _attr, _pat in (("blink_left", r"(^|[._ -])(l|left)([._ -]|$)"),
+                            ("blink_right", r"(^|[._ -])(r|right)([._ -]|$)")):
+            if _attr not in _side:
+                continue
+            if re.search(_pat, _kn, re.I) or (
+                    not re.search(r"(^|[._ -])(l|r|left|right)([._ -]|$)",
+                                  _kn, re.I)
+                    and re.search(_pat, _o.name, re.I)):
                 _targets.append(_attr)
         for _t in _targets:
             _b = _side[_t].morph_target_binds.add()
