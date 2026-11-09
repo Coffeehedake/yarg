@@ -3264,6 +3264,50 @@ elif _orphans:
     print("  orphan bones: %d outside the humanoid hierarchy, left alone by "
           "VRM_KEEP_ORPHANS: %s" % (len(_orphans), ", ".join(_orphans[:8])))
 
+# Vertices with NO weight at all are a different fault from the orphan bones
+# above, and they look identical in the game.
+#
+# The glTF exporter gives unweighted geometry a bone of its own invention --
+# 'neutral_bone' -- which is parented at the root and never moves, so the
+# geometry sits in space exactly as an orphan does. Gadget Hackwrench's eyes and
+# teeth are 100% on it: they were never bound to anything.
+#
+# The existing unrigged-mesh rescue cannot catch this, by design. It exists for
+# a model with NO rig at all and stands down the moment any mesh in the file is
+# bound, because fitting a skeleton to one stray mesh once shrank Alcina's whole
+# rig by 0.5568. That is still right. This is the narrower case: the rig is
+# fine and a few meshes were left out of it, so bind those to the nearest
+# humanoid bone and leave the skeleton alone.
+_strays = []
+_hb = [(_n, arm.data.bones[_n].head_local) for _n in set(MAP.values())
+       if _n in bone_names]
+if _hb:
+    for _m in meshes:
+        _have = set()
+        for _v in _m.data.vertices:
+            for _g in _v.groups:
+                if _g.weight > 0.0001:
+                    _have.add(_v.index)
+                    break
+        _loose = [_v.index for _v in _m.data.vertices if _v.index not in _have]
+        if not _loose:
+            continue
+        _byb = {}
+        _mw = _m.matrix_world
+        for _i in _loose:
+            _co = _mw @ _m.data.vertices[_i].co
+            _near = min(_hb, key=lambda t: ((arm.matrix_world @ t[1]) - _co).length)
+            _byb.setdefault(_near[0], []).append(_i)
+        for _bn, _vs in _byb.items():
+            _vg = _m.vertex_groups.get(_bn) or _m.vertex_groups.new(name=_bn)
+            _vg.add(_vs, 1.0, "REPLACE")
+        _strays.append((_m.name, len(_loose), sorted(_byb, key=lambda k: -len(_byb[k]))[0]))
+if _strays:
+    print("  stray geometry: %d mesh(es) carried vertices with no weight at "
+          "all, which the exporter would have hung on a bone of its own that "
+          "never moves -- bound to the nearest humanoid bone: %s"
+          % (len(_strays), ", ".join("%s %d verts -> %s" % t for t in _strays[:6])))
+
 # ---------------------------------------------------------------- chest rig
 # What a rig calls its chest bones, used both to FIND authored ones here
 # and to spring them further down. Defined once, up here, because the
@@ -4679,9 +4723,19 @@ if SPRING:
                         yield sub
                 return
 
+        # Hair swings and keeps swinging; a skirt does not. Peach's dress is
+        # rigged and reported as so reactive that her legs pass through it,
+        # which is the same defaults doing the wrong job: cloth hangs, drags
+        # against itself and settles, so it wants more restoring force and far
+        # more damping than hair. Judged by the chain's own name, which is what
+        # selected it in the first place.
+        _CLOTH = r"(skirt|dress|cloth|cape|coat|robe|apron|tabard|sash|scarf)"
+        _cp = os.environ.get("VRM_CLOTH_PARAMS", "0.85,0.8,0.0").split(",")
+        _c_stiff, _c_drag, _c_grav = [float(x) for x in _cp]
         for chain in [c for root in roots for c in walk(root)]:
             if len(chain) < 2:
                 continue
+            _is_cloth = bool(re.search(_CLOTH, chain[0], re.I))
             spring = sb.springs.add()
             try:
                 spring.vrm_name = chain[0]
@@ -4690,14 +4744,18 @@ if SPRING:
             for n in chain:
                 j = spring.joints.add()
                 j.node.bone_name = n
-                for prop, val in (("hit_radius", 0.02), ("stiffness", 0.6),
-                                  ("drag_force", 0.45), ("gravity_power", 0.0)):
+                for prop, val in (("hit_radius", 0.02),
+                                  ("stiffness", _c_stiff if _is_cloth else 0.6),
+                                  ("drag_force", _c_drag if _is_cloth else 0.45),
+                                  ("gravity_power",
+                                   _c_grav if _is_cloth else 0.0)):
                     try:
                         setattr(j, prop, val)
                     except Exception:
                         pass
             made += 1
-            print("  spring chain '%s': %d joints" % (chain[0], len(chain)))
+            print("  spring chain '%s': %d joints (%s)"
+                  % (chain[0], len(chain), "cloth" if _is_cloth else "hair"))
         print("spring bone chains added: %d%s" % (
             made, "" if made else "  (no hair/skirt/tail bones in this rig - its "
             "hair and clothes are skinned to the body, so there is nothing to spring)"))

@@ -660,7 +660,19 @@ because neighbouring vertices end up on different chains.
 The Blender **VRM importer** re-poses a skin on import and can draw a perfectly good character
 with arms stretched metres wide. Before believing a bad render of a `.vrm`, check the two things
 that cannot lie: render the `VRM_SAVE_BLEND` scene, and read the POSITION accessor min/max out of
-the `.glb` chunk. The Rock measured 5.13 m wide on re-import while both of those said 1.96 m.
+the `.glb` chunk.
+
+**That check cleared The Rock, and The Rock is broken.** He measured 5.13 m wide on re-import
+while the mesh bounds said 1.96 m, and this section recorded the importer as the liar. In game
+his limbs stretch into metre-long spikes. The mesh bounds were right and were never the
+question: his **skeleton** is sized for a figure about 3.5 m tall — head bone at 2.77 m, hand
+bone 1.94 m out from the centre — and the skin is being dragged onto it. Spider-Man and Chibi
+Rem measure 1.00 and 1.02 on head-bone against mesh height; he is 1.41.
+
+So the importer may well also re-pose a skin, but it was not what the 5.13 m was showing, and
+the check that dismissed it only ever measured the MESH. **A check that clears a defect is a
+claim, and it is only as good as the thing it measured.** Measure the skeleton against the mesh
+as well, which is two more lines and would have caught him the first time.
 
 A model can also arrive broken. Render the SOURCE as a control (`render_vrm.py` reads .fbx/.glb/
 .blend/.usd as well as .vrm) before changing anything: Peach's forearms are flat blades in the rip
