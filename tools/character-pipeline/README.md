@@ -88,7 +88,10 @@ because every entry below has already been rediscovered at least once.
    down to fit it. Nothing looks wrong until the character stands next to another one.
 3. **Re-check Lola Bunny against the split-channel metallicRoughness fix.** She is the only
    other model with `@channels=` files.
-4. **Finish the chest-rig rollout.** The first pass rebuilt thirteen and installed six.
+4. **Finish the chest-rig rollout.** The first pass rebuilt thirteen and installed seven —
+   Alcina, Prix, Chibi Rem, Sayuri, Alice Ivy, Tenna and Gadget. The installed set now has 10
+   characters with sprung chest bones where it had 3, 10 more carrying bones nothing moves, and
+   46 with none.
    What stopped the rest, in the order it is worth picking up:
 
    - **Compare the bundle SIZE as well.** Geometry and texture names can both match while the
@@ -102,6 +105,9 @@ because every entry below has already been rediscovered at least once.
      (`__UniGLTF__Duplicated__2`) and renames by slot (`<image>Normal`, `<image>Standard`).
      Compare names, with all of that stripped, and repeatedly — Unity appends `Normal` to a
      file already called `Bikini_Normal`.
+   - **Alcina is installed**; the rebuild that looked like it had lost two maps had lost
+     nothing, and the comparison script was at fault. **Gwen Stacy is not**: her textures are
+     fixed, but she is under the mesh-detail floor, so a rebuild gains her nothing.
    - **Gwen Stacy's loss was real and is fixed.** Her files are `GwenStacyDifuselMap`,
      `NormalMap`, `MetallnessMap`; the map-token regex spelled out a trailing `map` only after
      `normal`, so her base stem kept `difuselmap` whole, the texture SET derived from it
