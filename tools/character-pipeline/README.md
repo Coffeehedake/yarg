@@ -67,6 +67,40 @@ Two ways to lose an hour here, both measured:
 Install to `%USERPROFILE%\AppData\LocalLow\FatalException\YARG-FE\release\custom\characters\`.
 **YARG reads these at startup**, so it must be restarted to see a change.
 
+## Runlist
+
+What is left, in the order it is worth doing. Kept here rather than in a conversation,
+because every entry below has already been rediscovered at least once.
+
+1. **Tune the chest rig** once it has been seen in game. The feel is
+   `VRM_BREAST_PARAMS="stiffness,drag,gravity"` (default `0.85,0.6,0.0` — stiffer and draggier
+   than the hair chains, which swing and keep swinging). Detection has three knobs:
+   `VRM_BREASTRIG_MIN` (0.06, how far the apex must stand proud of the surface),
+   `VRM_BREASTRIG_MIN_OUT` (0.12, how far from the midline a peak must be before it counts as
+   a bust rather than a sternum) and `VRM_BREASTRIG_R` (0.25 of the shoulder span, the radius
+   of the weighted patch). Run `VRM_BREASTRIG=check` to see what a change does to a character
+   without rebuilding it.
+2. **Sweep the installed set for the floating-prop height bug** — the Peacemaker failure mode,
+   where the tallest mesh in the file is not part of the character and the whole figure scales
+   down to fit it. Nothing looks wrong until the character stands next to another one.
+3. **Re-check Lola Bunny against the split-channel metallicRoughness fix.** She is the only
+   other model with `@channels=` files.
+4. **Finish the chest-rig rollout.** Blocked on arguments, not on the rigger: these carry chest
+   bones but their original build arguments were never recorded and their sources are not all
+   locatable — Harq Alkahana, Kaiser Aufhänger, Kasane Teto, Adachi Rei, Ariel, Heels, Killer
+   Clown. Jessica Rabbit's row in the table below records her `VRM_TEX` value truncated.
+5. **Anakin** is still unconverted; Mixamo's auto-rigger has refused him five times.
+6. **`T-800_Run.usdz`** is unconverted — 33 bones on a numbered rig rooted at `n14`, and a
+   2.0 x 2.0 x 3.7 m bounding box that says it is posed mid-run, so it needs `VRM_STANDUP=1`
+   like Anakin. The older `terminator-t-800-endo-skeleton-damaged` archive is abandoned.
+7. **`junio-sonic-legacy`** looks unconverted: the installed Sonic carries Mixamo's
+   `HeadTop_End`, so it is the HD one.
+8. **Power Girl** is deliberately not rebuilt until her issues are confirmed in game.
+
+**Record the arguments when you build.** Entry 4 exists only because they were not: every
+build prints `ARGV:` and `ENV:` before it can fail, and that line belongs in the table below
+rather than in a log that goes away with the session.
+
 ## Rig families
 
 `mixamo` (auto-detects a prefix) · `cc_base` · `rigify_def` · `rigify_plain` · `ue4` · `rp`
