@@ -289,6 +289,31 @@ exists, `oh` and `ou` are driven from the opener at reduced weight, which reads 
 rather than as rounded lips. The report says which of the two you got. That is honest talking,
 not accurate phonetics.
 
+### When the Unity batch export "fails"
+
+`unity exit 1` with a log that stops around `Begin MonoManager ReloadAssembly` usually does not
+mean the project is broken. It means **another Unity instance already holds it**. Unity refuses
+the project and exits immediately.
+
+Two ways that happened in one session:
+
+- A **zombie Unity** survived a killed export and kept `Temp\UnityLockfile`. `pgrep -f Unity.exe`
+  from Git Bash did NOT see it; `Get-Process | Where ProcessName -match '^Unity'` did, with 97
+  seconds of CPU.
+- Deleting that lockfile and `Assets\__TempExport` triggered a **full shader and library
+  rebuild** -- 22 `UnityShaderCompiler` processes, several minutes -- and every export launched
+  during it exited 1 on arrival.
+
+The fix both times was to wait, not to kill: once the running instance finished, the identical
+command succeeded first try. Check for a live Unity before concluding anything, and prefer
+waiting over killing, because killing restarts the rebuild that is causing the problem.
+
+**Do not judge an install by its timestamp.** `Copy-Item` preserves `LastWriteTime`, so an
+installed `.yargchar` carries the time it was BUILT, not the time it was copied. Gadget's read
+`11-09 21:57` after being installed on 11-10, and her hash matched the fresh build exactly.
+Compare size or hash instead. And an export reporting `exit 1` has sometimes still produced and
+installed its file -- Yoda did. Verify the artefact, not the exit code.
+
 ### Colliders
 
 Every character shipped with **zero spring-bone colliders**, so every sprung chain passed
