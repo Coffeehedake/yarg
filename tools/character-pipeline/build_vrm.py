@@ -712,6 +712,45 @@ _BLINK_EXACT = re.compile(r"^(closed?|eye_?closed?)$", re.I)
 _BLINK_MESH = re.compile(r"(lash|lid|eye|brow)", re.I)
 
 
+# Visemes, for lipsync. Measured across the 28 characters built so far: NOT
+# ONE had a single viseme bound, so lipsync could not work on any of them --
+# not because the models lack the shapes but because this pass deleted them.
+# Heels' source carries 420 shape keys including the whole Character Creator
+# viseme set; what shipped was two, both blink.
+#
+# Keep the handful that are actually bound rather than all 420. That is the
+# difference between a few hundred KB and Prix's 8.6 -> 28.3 MB.
+#
+# The mapping is phoneme-group to phoneme-group, so it is approximate by
+# nature. Character Creator has no separate IH, so 'ih' and 'ee' both take
+# V_Wide; that is a real limitation of the source set, not a guess that can be
+# improved by picking a different key.
+#
+# VRM_NO_VISEMES=1 opts out, for a character whose size matters more than its
+# mouth.
+_VISEME_SPECS = (
+    ("aa", (r"^V_Open$", r"^A$", r"^viseme_aa$", r"^mouth_?a$", r"^vrc\.v_aa$",
+            r"^jawOpen$")),
+    ("ee", (r"^V_Wide$", r"^E$", r"^viseme_E$", r"^mouth_?e$", r"^vrc\.v_e$")),
+    ("ih", (r"^V_Wide$", r"^I$", r"^viseme_I$", r"^mouth_?i$", r"^vrc\.v_ih$")),
+    ("oh", (r"^V_Tight_O$", r"^O$", r"^viseme_O$", r"^mouth_?o$", r"^vrc\.v_oh$")),
+    ("ou", (r"^V_Tight$", r"^U$", r"^viseme_U$", r"^mouth_?u$", r"^vrc\.v_ou$")),
+)
+_VISEME_RE = [(_a, [re.compile(_p, re.I) for _p in _ps]) for _a, _ps in _VISEME_SPECS]
+
+
+def _viseme_targets(_key_name):
+    """Which VRM preset expressions does this shape key feed, if any?
+
+    Anchored patterns only. A loose 'mouth' match would catch the 70-odd
+    Mouth_Smile / Mouth_Pucker shapes sitting beside the visemes on a CC body
+    and bind an expression to a smirk.
+    """
+    if os.environ.get("VRM_NO_VISEMES"):
+        return []
+    return [_a for _a, _ps in _VISEME_RE if any(_p.match(_key_name) for _p in _ps)]
+
+
 def _is_blink(_mesh_name, _key_name):
     # search, not match: the pattern allows a leading separator because the
     # name is 'Eye_Blink_L', and match() anchors at position 0, so it found
@@ -730,7 +769,7 @@ for o in meshes:
     bpy.context.view_layer.objects.active = o
     if not os.environ.get("VRM_KEEP_MORPHS"):
         _spare = [kb.name for kb in list(sk.key_blocks)[1:]
-                  if _is_blink(o.name, kb.name)]
+                  if _is_blink(o.name, kb.name) or _viseme_targets(kb.name)]
         for _kb in list(sk.key_blocks)[1:]:
             if _kb.name not in _spare:
                 o.shape_key_remove(_kb)
@@ -746,7 +785,8 @@ for o in meshes:
         o.data.update()
         print("  dropped %d shape keys on '%s', kept the base mesh%s%s"
               % (nkeys - len(_spare), o.name,
-                 " and %s for the blink expression" % _spare if _spare else "",
+                 " and %s for the blink/viseme expressions" % _spare
+                 if _spare else "",
                  " (IGNORED non-zero: %s)" % live if live else ""))
         continue
     _bb = [Vector(c) for c in o.bound_box]
@@ -5656,6 +5696,39 @@ if _blink_binds:
 else:
     print("  blink: no eye-closing shape key in this model, so the blink "
           "expression stays empty")
+
+# Bind the visemes the pass above spared, so the mouth can actually move.
+#
+# Without this every character shipped with all five viseme expressions
+# DECLARED and none BOUND, which reads as a working lipsync setup right up
+# until nothing moves. Measured across 28 built characters: 0 of 28 had a
+# single viseme bound.
+_vis_binds = {}
+for _o in meshes:
+    _sk = _o.data.shape_keys
+    if not _sk:
+        continue
+    for _kb in list(_sk.key_blocks)[1:]:
+        for _t in _viseme_targets(_kb.name):
+            _vis_binds.setdefault(_t, []).append((_o.name, _kb.name))
+if _vis_binds:
+    _pre = ext.vrm1.expressions.preset
+    _said = []
+    for _t, _pairs in _vis_binds.items():
+        _e = getattr(_pre, _t, None)
+        if _e is None:
+            continue
+        for _mesh_name, _key_name in _pairs:
+            _b = _e.morph_target_binds.add()
+            _b.node.mesh_object_name = _mesh_name
+            _b.index = _key_name
+            _b.weight = 1.0
+        _said.append("%s<-%s" % (_t, _pairs[0][1]))
+    print("  visemes: bound %d of 5 mouth expressions (%s)"
+          % (len(_said), ", ".join(sorted(_said))))
+else:
+    print("  visemes: this model has no mouth shape keys, so it cannot "
+          "lipsync -- nothing in the pipeline can add them")
 
 # ---------------------------------------------------------------- spring bones
 # Unity's humanoid system has no muscle for a tail, hair or cloth, so those stay

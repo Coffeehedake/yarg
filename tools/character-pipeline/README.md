@@ -187,6 +187,37 @@ in namespace `YARG.Venue`, NOT `YARG.Venue.Lights`, and the class `VenueCamera`
 sits in a namespace whose last segment is also `VenueCamera`, so it has to be
 fully qualified.
 
+### Lipsync and visemes
+
+Measured across all 28 built characters: **none had a single viseme bound**, so lipsync could
+not work on any of them. The shape-key pass drops everything except blink by default -- right
+for size (Prix: 8.6 MB -> 28.3 MB with all of hers) -- and visemes were never on the spared
+list, so the shapes were being deleted before they could be bound.
+
+It now spares and binds only the keys it actually uses. Character Creator sources carry the
+full set:
+
+| character | before | after | cost |
+|---|---|---|---|
+| Heels | 2 keys, blink only | 5/5 visemes + blink | 10.70 -> 12.21 MB |
+| Alice Ivy | 2 keys, blink only | 5/5 visemes + blink | triangles unchanged |
+
+`VRM_NO_VISEMES=1` opts out per character.
+
+Two things to know before trusting it:
+
+- **The mapping is phoneme-group to phoneme-group.** Character Creator has no separate IH, so
+  `ih` and `ee` both take `V_Wide`. That is the source set's limit, not a guess a different key
+  would improve.
+- **Name matching is anchored on purpose.** A loose `mouth` match catches the seventy-odd
+  `Mouth_Smile` / `Mouth_Pucker` / `Mouth_Blow` shapes that sit directly beside the visemes on a
+  CC body, and would bind a vowel to a smirk.
+
+**A character with no morph targets cannot lipsync and nothing here can change that.** Batman
+and Jessica Rabbit both export zero. Every VRM declares all 18 preset expressions regardless, so
+a file always *looks* lipsync-capable -- the distinction is declared versus bound. Check the
+morph-target count before suspecting the venue, the `VRMCharacter` component or the chart.
+
 ### Colliders
 
 Every character shipped with **zero spring-bone colliders**, so every sprung chain passed

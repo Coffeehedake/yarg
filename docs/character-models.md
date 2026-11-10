@@ -1306,6 +1306,46 @@ the exported file still had two. `VRM_CLEAR_SPRINGS=1` wipes what the file came 
 anything is added. Opt-in on purpose: the VRoid characters arrive with their own authored chains,
 which are correct and must not be thrown away.
 
+## Lipsync needed shapes the pipeline was deleting
+
+Measured across all 28 built characters: **not one had a single viseme bound**. Lipsync could
+not work on any of them. Only three could even blink.
+
+The models were not the problem. Heels' source carries **420 shape keys**, including the whole
+Character Creator viseme set -- `V_Open`, `V_Wide`, `V_Tight`, `V_Tight_O`, `V_Explosive`,
+`V_Dental_Lip`, `V_Affricate` -- and what shipped was two keys, both blink. The shape-key pass
+drops everything except blink by default, for a good reason (Prix goes 8.6 MB to 28.3 MB with
+all of hers kept), and visemes were simply never on the spared list.
+
+So spare and bind the handful that are actually used, not all 420. On Heels that is four keys:
+10.70 MB to 12.21 MB, +14%, triangles unchanged, and all five mouth expressions bound.
+
+The mapping is phoneme-group to phoneme-group and approximate by nature. Character Creator has
+no separate IH, so `ih` and `ee` both take `V_Wide` -- a limitation of the source set, not a
+guess that a different key would improve.
+
+Match viseme names **anchored**. A loose `mouth` match would catch the seventy-odd
+`Mouth_Smile` / `Mouth_Pucker` / `Mouth_Blow` shapes sitting directly beside the visemes on a CC
+body, and bind a vowel to a smirk.
+
+## A character with no shape keys cannot lipsync, and nothing can fix that
+
+Batman has **zero morph targets**. So does Jessica Rabbit, and most of the roster. The 18 preset
+expressions are present in every exported file because VRM declares them, which reads as a
+working lipsync setup right up until nothing moves -- the distinction that matters is
+*declared* versus *bound*:
+
+| character | mesh morph targets | bound |
+|---|---|---|
+| Batman | 0 | none |
+| Jessica Rabbit | 0 | none |
+| Pomni | 2 | blink only |
+| Heels (after this change) | 44 | aa, ee, ih, oh, ou, blink |
+
+When a character will not lipsync, check for morph targets before looking at the venue, the
+`VRMCharacter` component or the chart. If the count is zero the answer is the source model, and
+the only route is a different model or a face rig built by hand.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
