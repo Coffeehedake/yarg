@@ -123,6 +123,45 @@ Four more in-game reports, four separate causes. All four are written up in
 | Lola Bunny | ponytail detached and floating beside her head | the hair spring chain was anchored on `fml_un_C_hair_att`, which is **0.260 long carrying 51.9% of the hair** against 0.100 and 48.1% for the rest of the chain. A VRM chain rotates joint 0 to move joint 1, so the sim swung the bulk of her hair on a lever 2.5× the hair's own length, with zero colliders to catch it |
 | Jessica Rabbit | turned to the side, rubber legs, dress clipping | facing was read off the feet, and her feet are crossed in heels pointing **within 2° of her own shoulder line**. The build turned her 89° to face the feet forward and shipped her in profile; the per-arm straightening then put the arms along X anyway, so nothing downstream noticed |
 
+### The character test stage
+
+A `.yargchar` is only shown if the VENUE supplies a slot for it.
+`BackgroundManager.LoadCharacter` bails on its first line unless the venue root
+has a `VenueCharacter` of type `Vocals`, then instantiates the custom character
+into the **parent** of that placeholder and destroys the placeholder; lipsync
+additionally needs a `CharacterManager` under the root. Measured against a
+known-good control, the community venues on Nexus have neither:
+
+| venue | `CharacterManager` | vocalist slot |
+|---|---|---|
+| Character Test Stage (ours) | yes | `VocalistAnchor` + `VocalistPlaceholder` |
+| Moe's Tavern | no, only `Light Manager` | none |
+| GH2 Arena | no, only `Light Manager` | none |
+
+So a character can be installed, correct, and still never appear.
+`YargVenueExporter.cs` builds a deliberately plain stage — floor, two cameras,
+one light, the managers, the vocalist slot — so that anything that looks wrong
+on it belongs to the character rather than the venue:
+
+```
+Unity.exe -batchmode -nographics -quit -projectPath <fork>   -executeMethod YargVenueExporter.ExportTestStage -outDir <dir>
+```
+
+The podium browser in **Content Browser -> Character Select** already renders a
+`.yargchar` and runs the spring simulation, so it covers colliders, hair,
+textures and proportions. This stage is for what it cannot show: a character
+PERFORMING -- lipsync, blink, the animation controller.
+
+Venue facts worth not rediscovering, from <https://wiki.yarg.in/wiki/Venue_Creation>
+and the source: the root must be named `Venue`; `BundleBackgroundManager`'s
+camera field is a lowercase `mainCamera` carrying a "DO NOT CHANGE the name of
+this!" comment; `CharacterManager` and `CameraManager` each need a
+back-reference to the venue root; venue cameras must have their `AudioListener`
+removed and be culled to the `Venue` layer. `LightManager` and `VenueLight` are
+in namespace `YARG.Venue`, NOT `YARG.Venue.Lights`, and the class `VenueCamera`
+sits in a namespace whose last segment is also `VenueCamera`, so it has to be
+fully qualified.
+
 ### Colliders
 
 Every character shipped with **zero spring-bone colliders**, so every sprung chain passed
