@@ -33,6 +33,8 @@ using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using YARG.Helpers;
 using YARG.Venue;
 using YARG.Venue.Characters;
@@ -99,6 +101,15 @@ public static class YargVenueExporter
 
         go.transform.LookAt(lookAt);
 
+        // The wiki asks for post-processing on, and the volume mask limited to
+        // the Venue layer, or venue effects bleed onto the note highway.
+        var urp = cam.GetUniversalAdditionalCameraData();
+        if (urp != null)
+        {
+            urp.renderPostProcessing = true;
+            urp.volumeLayerMask = 1 << layer;
+        }
+
         var vc = go.AddComponent<YARG.Venue.VenueCamera.VenueCamera>();
         vc.CameraLocation = loc;
         vc.Camera = cam;
@@ -144,6 +155,27 @@ public static class YargVenueExporter
             SetPrivate(charMgr, "_venue", venue);
             SetPrivate(camMgr, "_venue", venue);
 
+            // CameraManager._profile is a [SerializeField] VolumeProfile the
+            // VENUE has to supply. Leaving it null threw on the first build:
+            //
+            //   NullReferenceException
+            //     CameraManager.InitializePostProcessing() PostProcessing.cs:76
+            //     CameraManager.OnChartLoaded()            CameraManager.cs:229
+            //
+            // CameraManager.cs:229 reaches _profile.TryGet<Bloom>() with no
+            // null check, even though line 131 right above it computes
+            // `_volumeSet = _profile != null`. The throw aborts the rest of
+            // OnChartLoaded, so camera cuts never initialise either.
+            const string PROFILE = "Assets/Authoring/Venue/Unique/VenueProfile.asset";
+            var profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(PROFILE);
+            if (profile == null)
+            {
+                Debug.LogError($"[YARGVENUE] could not load {PROFILE}");
+                EditorApplication.Exit(1);
+                return;
+            }
+            SetPrivate(camMgr, "_profile", profile);
+
             // A floor, so the character is not floating in a void and so the
             // light has something to fall on.
             var floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -152,7 +184,9 @@ public static class YargVenueExporter
             floor.transform.localScale = new Vector3(8f, 0.2f, 8f);
             floor.transform.localPosition = new Vector3(0f, -0.1f, 0f);
 
-            var lightGo = Child(venue, "KeyLight", new Vector3(2f, 4f, -3f));
+            // On the +Z side, with the cameras, so the face is lit rather than
+            // rim-lit from behind.
+            var lightGo = Child(venue, "KeyLight", new Vector3(2f, 4f, 3f));
             var light = lightGo.AddComponent<Light>();
             light.type = LightType.Directional;
             light.intensity = 1.2f;
@@ -168,10 +202,18 @@ public static class YargVenueExporter
             var vcChar = vocalist.AddComponent<VenueCharacter>();
             vcChar.Type = VenueCharacter.CharacterType.Vocals;
 
-            var stageCam = MakeCamera(venue, "StageCamera", new Vector3(0f, 1.6f, -3.2f),
+            // Cameras sit on +Z looking back toward the origin.
+            //
+            // The first build put them on -Z and the vocalist showed his BACK.
+            // LoadCharacter does Instantiate(character, existingParent), which
+            // keeps the prefab's own world transform rather than adopting the
+            // anchor's -- so rotating VocalistAnchor is not reliably able to
+            // turn him round. Moving the cameras to the side he already faces
+            // is, and it works whatever the character's own rotation is.
+            var stageCam = MakeCamera(venue, "StageCamera", new Vector3(0f, 1.6f, 3.2f),
                                       new Vector3(0f, 1.1f, 0f), camMgr,
                                       YARG.Venue.VenueCamera.CameraManager.CameraLocation.Stage, layer);
-            MakeCamera(venue, "VocalsCamera", new Vector3(0.6f, 1.5f, -1.4f),
+            MakeCamera(venue, "VocalsCamera", new Vector3(-0.6f, 1.5f, 1.4f),
                        new Vector3(0f, 1.45f, 0f), camMgr,
                        YARG.Venue.VenueCamera.CameraManager.CameraLocation.Vocals, layer);
 

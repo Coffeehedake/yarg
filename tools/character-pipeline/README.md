@@ -152,6 +152,31 @@ The podium browser in **Content Browser -> Character Select** already renders a
 textures and proportions. This stage is for what it cannot show: a character
 PERFORMING -- lipsync, blink, the animation controller.
 
+Two faults found by running it, both mine, both worth knowing before building
+any venue:
+
+- **The vocalist showed his back.** Cameras on -Z, character facing +Z.
+  `LoadCharacter` does `Instantiate(character, existingParent)`, which keeps the
+  prefab's own world transform rather than adopting the anchor's, so rotating
+  `VocalistAnchor` cannot be relied on to turn him round. The cameras moved to
+  the side he already faces instead, which works whatever his rotation is.
+
+- **A NullReferenceException on chart load.** `CameraManager._profile` is a
+  `[SerializeField] VolumeProfile` the VENUE must supply, and a null one throws
+  in `InitializePostProcessing` (`PostProcessing.cs:76`, reached from
+  `CameraManager.cs:229`). That matters more than it looks: the throw aborts the
+  rest of `OnChartLoaded`, so `InitializeVolume` and the camera-cut setup below
+  it never run, and the venue silently loses its camera behaviour. Assign
+  `Assets/Authoring/Venue/Unique/VenueProfile.asset`. Note `CameraManager.cs:131`
+  computes `_volumeSet = _profile != null` immediately above, so null IS
+  anticipated -- line 229 just doesn't check. Arguably an upstream bug.
+
+A character playing only its idle animation is NOT one of these. `ProcessVocals`
+is driven entirely by `_vocalEvents` and `_vocalMaps`, built from the song's
+vocals chart (`if (vocalsId.Notes.Count > 0)`), so a song without a charted
+vocals part leaves the singer idle by design -- and lipsync and blink have
+nothing to exercise either.
+
 Venue facts worth not rediscovering, from <https://wiki.yarg.in/wiki/Venue_Creation>
 and the source: the root must be named `Venue`; `BundleBackgroundManager`'s
 camera field is a lowercase `mainCamera` carrying a "DO NOT CHANGE the name of
