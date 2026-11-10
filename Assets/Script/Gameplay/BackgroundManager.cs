@@ -884,19 +884,35 @@ namespace YARG.Gameplay
                 return false;
             }
 
+            // SAY WHICH ONE WON. The addressable hint is tried BEFORE the user's
+            // custom character, so a song whose hint resolves to a stock vocalist
+            // silently ignores the .yargchar the user installed -- and from
+            // outside the game that is indistinguishable from the custom
+            // character loading and then failing to animate. Working that out by
+            // elimination cost an evening; one log line settles it.
             var character = await GetAddressableCharacter(hint);
+            var source = "addressable hint '" + hint + "'";
 
             // Hint failed, try user's custom character
             if (character == null)
             {
                 character = await GetCustomVocalsCharacter();
+                source = "the user's custom character";
             }
 
             // Couldn't get a custom character, try gender
             if (character == null)
             {
                 character = await GetAddressableCharacter(gender);
+                source = "addressable gender fallback '" + gender + "'";
             }
+
+            // One pre-built string: YargLogger's format overloads take optional
+            // caller-info arguments, so a two-argument call is ambiguous between
+            // LogFormatInfo<T1> and LogFormatInfo<T1, T2>.
+            YargLogger.LogInfo("Vocalist came from " + source + ": " +
+                (character == null ? "NOTHING -- no vocalist will appear"
+                                   : character.name));
 
             var usingCustomChar = LoadCharacter(venueRoot, character);
             return usingCustomChar;
@@ -1024,6 +1040,28 @@ namespace YARG.Gameplay
             catch (NullReferenceException)
             {
                 // We're missing bones we need, so never mind
+                YargLogger.LogError("Custom character is missing one or more required hand bones!");
+                return;
+            }
+
+            // Animator.GetBoneTransform RETURNS NULL for an unmapped bone, it does
+            // not throw, so the catch above never fired and the null surfaced below
+            // at `rightThumbDistal.position` instead -- outside the try.
+            //
+            // That mattered far more than a stray console error. The throw escapes
+            // LoadCharacter before the SetLayer(newCharacter, "Venue") on the line
+            // after this call, so the character stays on the wrong layer, the venue
+            // camera culls to Venue only, and a correctly loaded character is simply
+            // INVISIBLE. In game it read as "the character doesn't show up at all,
+            // just a floating mic" -- the mic being placed separately.
+            //
+            // Measured on Alastor, whose rig has no rightLittleDistal or
+            // rightLittleProximal. Six of the seven characters checked map all six
+            // bones; he is the one that does not, and he was the one that vanished.
+            if (rightHand == null || rightThumbDistal == null || rightLittleDistal == null
+                || rightLittleProximal == null || rightIndexIntermediate == null
+                || rightIndexProximal == null)
+            {
                 YargLogger.LogError("Custom character is missing one or more required hand bones!");
                 return;
             }
