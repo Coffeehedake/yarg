@@ -218,6 +218,43 @@ and Jessica Rabbit both export zero. Every VRM declares all 18 preset expression
 a file always *looks* lipsync-capable -- the distinction is declared versus bound. Check the
 morph-target count before suspecting the venue, the `VRMCharacter` component or the chart.
 
+### viseme_fit.py -- proposing a mapping for a model that does not follow a convention
+
+```
+blender --background --python viseme_fit.py -- <source>
+```
+
+Prints a table of every shape key that moves geometry -- how many vertices, how high up the
+face, how far the jaw drops (`open`) and how far the mouth widens (`wide`) -- and then a
+`VRM_VISEME=` string to check and edit.
+
+It uses names AND measurement, because neither is sufficient alone:
+
+- **Names win where they exist.** Measured on Pomni, the biggest jaw-opener is `Expression2`,
+  some startled face, which beats her shape literally called `A`. The widest opening is not the
+  phoneme.
+- **Measurement fills the gaps**, and is the only thing that works on a model named for an
+  artist rather than a phoneme set.
+
+**It was wrong three times before it was right, and each failure is worth knowing:**
+
+| what it proposed | why | the fix |
+|---|---|---|
+| `aa = Lashes.R/Closed` | a closing eyelid travels downward exactly as a jaw does | exclude eye meshes; measure, then exclude, never select on eye-ness |
+| nothing at all, on Pomni | her face read as 27% of model height -- her `.blend` carries rig widgets that stretch the bounding box | normalise within the **shape keys' own** height range, never the model's |
+| nothing at all, on Heels | a bounding-box-relative threshold rejected all 420 of her keys; her source sits at a different scale | rank relatively, never threshold absolutely |
+| `aa = Eye_Wide_R` on Heels | name matching ran only inside the measured mouth band, and CC puts eyes and mouth on one `CC_Base_Body` | match names over **every** key -- a name does not need the band to be right |
+
+`--validate` is the point: it reproduces Heels and Alice Ivy exactly (`aa=V_Open`, `ee`/`ih`=`V_Wide`,
+`oh=V_Tight_O`, `ou=V_Tight`) and gets Pomni's one name-derivable preset right. **A change that
+breaks those three is wrong however reasonable it looks** -- that is this project's
+`validate-a-heuristic-on-solved-cases` lesson, and it caught every one of the four failures above.
+
+What it cannot do: invent lip rounding a model has no geometry for. Where no rounding shape
+exists, `oh` and `ou` are driven from the opener at reduced weight, which reads as "open less"
+rather than as rounded lips. The report says which of the two you got. That is honest talking,
+not accurate phonetics.
+
 ### Colliders
 
 Every character shipped with **zero spring-bone colliders**, so every sprung chain passed

@@ -739,16 +739,55 @@ _VISEME_SPECS = (
 _VISEME_RE = [(_a, [re.compile(_p, re.I) for _p in _ps]) for _a, _ps in _VISEME_SPECS]
 
 
-def _viseme_targets(_key_name):
+# VRM_VISEME="aa=Face/A,ee=Face/ClosedTeeth@0.8,..." maps presets BY HAND.
+#
+# A model can have a perfectly good mouth and still not match any naming
+# convention. Pomni's face carries 'A', 'ClosedTeeth', 'ClosedTeethVariation'
+# and 'OpenNoTeeth' -- real mouth shapes, named for an artist rather than for a
+# phoneme set, and only 'A' is guessable.
+#
+# The weight suffix is what makes this more than a rename. A VRM morph target
+# bind carries its own weight, so ONE open-mouth shape can serve several
+# visemes at different openings. It does not invent lip rounding that the model
+# has no geometry for: 'ou' driven from a wide-open mouth reads as "open less",
+# not as rounded lips. It reads as talking, which is the point, and it is
+# honest to say it is not accurate phonetics.
+_VISEME_OVERRIDE = {}
+for _spec in [x for x in os.environ.get("VRM_VISEME", "").split(",") if x.strip()]:
+    _pre_name, _, _rest = _spec.partition("=")
+    _ref, _, _w = _rest.partition("@")
+    _mn, _, _kn = _ref.partition("/")
+    _pre_name, _mn, _kn = _pre_name.strip(), _mn.strip(), _kn.strip()
+    if _pre_name not in ("aa", "ih", "ou", "ee", "oh"):
+        raise SystemExit("ABORT: VRM_VISEME names preset %r, which is not one "
+                         "of aa/ih/ou/ee/oh" % _pre_name)
+    _o = bpy.data.objects.get(_mn)
+    if _o is None or not _o.data.shape_keys or _kn not in _o.data.shape_keys.key_blocks:
+        raise SystemExit("ABORT: VRM_VISEME names %s/%s, which this file has "
+                         "not got" % (_mn, _kn))
+    _VISEME_OVERRIDE.setdefault((_mn, _kn), []).append(
+        (_pre_name, float(_w) if _w.strip() else 1.0))
+
+
+def _viseme_targets(_mesh_name, _key_name):
     """Which VRM preset expressions does this shape key feed, if any?
+
+    Returns (preset, weight) pairs. An explicit VRM_VISEME mapping wins; the
+    patterns are the fallback.
 
     Anchored patterns only. A loose 'mouth' match would catch the 70-odd
     Mouth_Smile / Mouth_Pucker shapes sitting beside the visemes on a CC body
     and bind an expression to a smirk.
     """
-    if os.environ.get("VRM_NO_VISEMES"):
+    _hit = _VISEME_OVERRIDE.get((_mesh_name, _key_name))
+    if _hit:
+        return list(_hit)
+    if os.environ.get("VRM_NO_VISEMES") or _VISEME_OVERRIDE:
+        # Once a character has been mapped by hand, guessing alongside it only
+        # adds binds nobody asked for.
         return []
-    return [_a for _a, _ps in _VISEME_RE if any(_p.match(_key_name) for _p in _ps)]
+    return [(_a, 1.0) for _a, _ps in _VISEME_RE
+            if any(_p.match(_key_name) for _p in _ps)]
 
 
 def _is_blink(_mesh_name, _key_name):
@@ -769,7 +808,8 @@ for o in meshes:
     bpy.context.view_layer.objects.active = o
     if not os.environ.get("VRM_KEEP_MORPHS"):
         _spare = [kb.name for kb in list(sk.key_blocks)[1:]
-                  if _is_blink(o.name, kb.name) or _viseme_targets(kb.name)]
+                  if _is_blink(o.name, kb.name)
+                  or _viseme_targets(o.name, kb.name)]
         for _kb in list(sk.key_blocks)[1:]:
             if _kb.name not in _spare:
                 o.shape_key_remove(_kb)
@@ -5709,8 +5749,8 @@ for _o in meshes:
     if not _sk:
         continue
     for _kb in list(_sk.key_blocks)[1:]:
-        for _t in _viseme_targets(_kb.name):
-            _vis_binds.setdefault(_t, []).append((_o.name, _kb.name))
+        for _t, _w in _viseme_targets(_o.name, _kb.name):
+            _vis_binds.setdefault(_t, []).append((_o.name, _kb.name, _w))
 if _vis_binds:
     _pre = ext.vrm1.expressions.preset
     _said = []
@@ -5718,12 +5758,12 @@ if _vis_binds:
         _e = getattr(_pre, _t, None)
         if _e is None:
             continue
-        for _mesh_name, _key_name in _pairs:
+        for _mesh_name, _key_name, _w in _pairs:
             _b = _e.morph_target_binds.add()
             _b.node.mesh_object_name = _mesh_name
             _b.index = _key_name
-            _b.weight = 1.0
-        _said.append("%s<-%s" % (_t, _pairs[0][1]))
+            _b.weight = _w
+        _said.append("%s<-%s@%.2f" % (_t, _pairs[0][1], _pairs[0][2]))
     print("  visemes: bound %d of 5 mouth expressions (%s)"
           % (len(_said), ", ".join(sorted(_said))))
 else:
