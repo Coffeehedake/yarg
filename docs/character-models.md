@@ -829,6 +829,100 @@ nothing across a whole rig family while reporting cleanly; and the side was read
 which would have called both of Heels' eyes the same side. **A matcher that reports absence is
 making a claim, and it is only as good as what it looked at.**
 
+### Correction, 2026-11-10: a bound blink can be invisible, and facial events CAN reach custom expressions
+
+Two things in the section above were incomplete, and one was wrong in effect.
+
+**Pomni's bound blink did nothing visible.** `Lashes.L/Closed` and `Lashes.R/Closed` were bound
+and counted ("bound 2 eye-closing shape keys"), and at weight 1.0 they move two lash ticks while
+the eyes stay fully open -- in the build and in her untouched source file alike. Her real blink is
+**four eyelid bones** (`EyelidSup.L/R`, `EyelidInf.L/R`) rotating about X on frames 26-34 of her
+`Animation` action, peaking at frame 30 (`Sup` +0.55 / `Inf` -0.5 on X, in quaternion `(1, x, 0, 0)`
+form, mirrored symmetrically). A VRM expression can only drive a morph target, never a bone, so
+none of it was reachable. A bind existing is not the same as a bind doing something: **render the
+expression at weight 1.0 before calling it done.** The count in the build log cannot tell.
+
+The fix is `VRM_BLINK_BAKE`, which poses the named bones to the closed frame, stores the lid
+meshes' deformation as a `Blink` shape key and binds it to the plain `blink` expression:
+
+```
+VRM_BLINK_BAKE="EyelidSup.L=1,0.55,0,0;EyelidInf.L=1,-0.5,0,0;EyelidSup.R=1,0.5,0,0;EyelidInf.R=1,-0.5,0,0"
+VRM_BLINK_MESH="^EyeLid"        # default; which meshes get the key
+```
+
+Three details that each cost a build:
+
+- **The lid meshes carried Solidify and Subsurf ahead of the armature modifier, and nothing in the
+  build applies them** -- the exporter does, at write time. A key written on the 81-vertex base
+  would not survive that. The bake applies them first (the lids have no shape keys yet, and the
+  armature is last in the stack, so `modifier_apply` has no ordering complaint). The first attempt
+  refused with "evaluated 674 vertices, mesh has 81", which is the guard doing its job.
+- **Baked keys must be excluded from the auto-detector**, which matches a key named `Blink`. Left
+  in, they were bound twice and would have closed the lids to double weight.
+- They are bound to `blink` only, not `blink_left` / `blink_right`: the mesh names carry an `L`
+  that does not reliably mean the eye's side (`EyeLidSup.L.001` sits on the other eye), and YARG
+  drives only `blink` anyway.
+
+Verified by render at weight 0 and 1: eyes open at rest, dark lids with a thin slit when closed,
+matching her published blink. Pomni's triangle count is unchanged at 32,764.
+
+**Custom expressions ARE reachable, by lipsync event name.** `VRMCharacter.TryGetExpressionKey(string)`
+looks a custom expression up by exact name, and every `LipsyncEvent` carries a `LipsyncType`
+whose `ToString()` is that name. So a character's own facial shape keys can be driven with no
+change to the game, provided the expression is called by one of those names. `VRM_EXPR` does it:
+
+```
+VRM_EXPR="Wide_eyed=Eye.L/Big;Squint=Eye.L/Small"       # Name=Mesh/Key;Name=Mesh/Key
+```
+
+It spares the named keys through the drop pass and adds a custom expression per name with a
+morph bind of weight 1.0. Pomni's `Big` fills the eye with iris and `Small` shrinks it to a
+pinpoint, on both eyes (rendered at weight 1.0).
+
+#### What a facial event gives you to play with
+
+An event is `LipsyncEvent(Type, Value, time)`. That is all of it:
+
+| Parameter | What it is |
+|---|---|
+| `Type` | one name from the fixed `LipsyncType` list -- it selects which expression fires |
+| `Value` | one float weight, 0 to 1 |
+| time | when it applies. **There is no duration, curve or blend mode in the event** |
+
+Everything else is on the model's side, or in how the generator stacks events:
+
+- **Shape over time** comes from a stream of events, about 30 per second (`STEP_TIME = 1/30`),
+  eased with smoothstep (`EmitRamp`). Blink ramps 0 -> 1 over 0.05 s and 1 -> 0 over 0.10 s,
+  every 2-6 s. Brows ease in and out over `BROW_FADE_TIME = 0.8` s or a quarter of the section.
+- **Strength** is the morph bind's `weight` in the VRM, so it can be scaled or retargeted per
+  character. One expression can bind several keys, so a single name can drive a pupil change and a
+  brow dip together.
+- **Names that reach a custom expression:** `Blink` (preset, not custom), `Brow_aggressive`,
+  `Brow_down`, `Brow_dramatic`, `Brow_openmouthed`, `Brow_pouty`, `Brow_up`, `Squint`,
+  `Wide_eyed`, and the `exp_*` set (`exp_rocker_smile_intense_01`, `exp_banger_roar_01`,
+  `exp_dramatic_mouthopen_01`, and so on). The match is exact and case-sensitive.
+- **Cannot do:** blend several expressions with different weights from one event, loop, or time
+  anything independently of the chart's event list.
+
+#### What the generated charts actually send
+
+When a song has no authored lipsync, `LipsyncGenerator` writes one brow state per vocal section (a
+section is a run of vocals with gaps of 2 s or less; `BROW_SECTION_GAP`):
+
+- primary brow, intensity **0.3 to 0.7**, plus an optional secondary;
+- picked by weight: `Brow_down` 5, `Brow_pouty` 5, `Brow_aggressive` 5, `Brow_up` 2, `Squint` 1.5,
+  `Brow_dramatic` 1;
+- about **8%** of sections (`EXPRESSION_CHANCE`) use the full-face `exp_rocker_smile_intense_01`
+  instead of a brow.
+
+**`Wide_eyed` is never generated**, so it fires only from authored charts. A key bound to it is
+reachable but will rarely move. Bind to a name the generator actually emits (`Brow_up`, `Squint`)
+if the effect should be seen on ordinary songs. Pomni currently has `Wide_eyed` -> `Big` and
+`Squint` -> `Small`, so her irises pinch now and then and do not widen on their own.
+
+Not verified in game: all of this is from the code and from renders in Blender. Nothing here has
+been watched running in YARG.
+
 ## Spring bones need bones
 
 Hair, a skirt or a cape stays rigid however well the character animates, because Unity's humanoid
