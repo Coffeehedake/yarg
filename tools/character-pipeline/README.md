@@ -861,7 +861,7 @@ that rebuilds from her own archive, and she is also the one that covers the text
 | Character | rig | height | notes |
 |---|---|---|---|
 | Prix | mixamo | 1.70 | shape keys must be dropped, else she builds at 0.42 m |
-| Pomni | pomni | 1.70 | exclude `^Circle` |
+| Pomni | pomni | 1.70 | exclude `^Circle`; `VRM_VISEME_GAIN=3.0` (4.4 turns her upper lip inside out); `VRM_BLINK_BAKE="EyelidSup.L=1,0.55,0,0;EyelidInf.L=1,-0.5,0,0;EyelidSup.R=1,0.5,0,0;EyelidInf.R=1,-0.5,0,0"` -- her blink is four eyelid BONES (peak at frame 30 of `Animation`), not a shape key; her `Lashes/Closed` key only moves two lash ticks and leaves the eyes open. The bake applies Solidify+Subsurf to the lid meshes, writes the closed pose as a `Blink` key and binds it. Rendered at weight 1.0: dark lids with a slit, matching her Sketchfab blink. Her iris `Big`/`Small` keys are bone-driven and nothing in YARG can fire them |
 | Sayuri / Aiko | cc_base / mixamo | 1.70 | hairrig `^Hair$` — no hair bones of their own |
 | Aiko | mixamo | 1.70 | exclude `^Girl2\.[0-9]` — one girl, 15 Mixamo clips |
 | Batman | multiversus | 1.88 | run `prep_batman.py` first: two half-characters on two armatures |

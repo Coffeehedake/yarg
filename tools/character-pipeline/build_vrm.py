@@ -5789,6 +5789,99 @@ for s, b in missing:
 # only on a mesh that is plainly an eyelid or lash. Pomni's face also carries
 # 'ClosedTeeth' and 'ClosedTeethVariation', which are mouth shapes, and must
 # not be caught. VRM_BLINK="Mesh=Key,Mesh=Key" overrides the lot.
+# BAKE A BLINK THE MODEL ANIMATES WITH BONES.
+#
+# Pomni's blink is four eyelid BONES (EyelidSup/Inf .L/.R) rotating about X on
+# frames 26-34 of her 'Animation' action, with the lid meshes skinned to them.
+# A VRM expression can only drive a MORPH TARGET, never a bone, so none of that
+# is reachable -- and her only bound blink was Lashes/'Closed', which moves two
+# tiny lash ticks and leaves the eyes fully open (measured 2026-11-10, both in
+# the build and in her source file).
+#
+# So pose the lid bones to the closed frame, evaluate the lid meshes, store the
+# difference from rest as a shape key, and bind that. Opt-in per character:
+#   VRM_BLINK_BAKE="EyelidSup.L=1,0.55,0,0;EyelidInf.L=1,-0.5,0,0;..."  bone=quat
+#   VRM_BLINK_MESH="^EyeLid"                                              meshes
+# The vertex count of the evaluated mesh must equal the mesh's own, or a key
+# written from it would be applied to the wrong vertices; refuse in that case.
+_bake_binds = []
+_BAKE = os.environ.get("VRM_BLINK_BAKE", "").strip()
+if _BAKE:
+    _bake_pose = {}
+    for _part in [x for x in _BAKE.split(";") if x.strip()]:
+        _bn, _, _q = _part.partition("=")
+        _bake_pose[_bn.strip()] = tuple(float(v) for v in _q.split(","))
+    _missing = [b for b in _bake_pose if b not in arm.pose.bones]
+    if _missing:
+        raise SystemExit("ABORT: VRM_BLINK_BAKE names bones this rig has not "
+                         "got: %s" % _missing)
+    _lids = [o for o in meshes
+             if re.search(os.environ.get("VRM_BLINK_MESH", "^EyeLid"), o.name)]
+    if not _lids:
+        raise SystemExit("ABORT: VRM_BLINK_BAKE matched no mesh")
+
+    def _eval_local(_o):
+        _dg = bpy.context.evaluated_depsgraph_get()
+        _e = _o.evaluated_get(_dg)
+        _m = _e.to_mesh()
+        _p = [v.co.copy() for v in _m.vertices]
+        _e.to_mesh_clear()
+        return _p
+
+    # Lid meshes usually carry Solidify and Subsurf AHEAD of the armature
+    # modifier, and nothing else in this script applies them -- the exporter
+    # does, at write time, which would turn the 81-vertex base the key is
+    # written against into a 674-vertex mesh and drop the morph target. Apply
+    # them here, while the lids have no shape keys, so the key is written on
+    # the geometry that ships. Armature is last in the stack, so these are
+    # first and modifier_apply has no ordering complaint.
+    for _o in _lids:
+        _stack = [m for m in _o.modifiers if m.type != "ARMATURE"]
+        if not _stack or _o.data.shape_keys:
+            continue
+        if _o.data.users > 1:
+            _o.data = _o.data.copy()
+        bpy.ops.object.select_all(action="DESELECT")
+        bpy.context.view_layer.objects.active = _o
+        _o.select_set(True)
+        for _m in _stack:
+            bpy.ops.object.modifier_apply(modifier=_m.name)
+        print("  blink bake: applied %s on %s -> %d vertices"
+              % ("+".join(m.type for m in _stack), _o.name, len(_o.data.vertices)))
+    bpy.context.view_layer.update()
+
+    _was = {b: tuple(arm.pose.bones[b].rotation_quaternion) for b in _bake_pose}
+    for b in _bake_pose:
+        arm.pose.bones[b].rotation_mode = "QUATERNION"
+        arm.pose.bones[b].rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
+    bpy.context.view_layer.update()
+    _rest = {o.name: _eval_local(o) for o in _lids}
+    for b, q in _bake_pose.items():
+        arm.pose.bones[b].rotation_quaternion = q
+    bpy.context.view_layer.update()
+    _closed = {o.name: _eval_local(o) for o in _lids}
+    for b, q in _was.items():
+        arm.pose.bones[b].rotation_quaternion = q
+    bpy.context.view_layer.update()
+    for _o in _lids:
+        if len(_rest[_o.name]) != len(_o.data.vertices):
+            print("  blink bake: SKIPPED %s -- evaluated %d vertices, mesh has "
+                  "%d (a non-armature modifier is still live)"
+                  % (_o.name, len(_rest[_o.name]), len(_o.data.vertices)))
+            continue
+        _moved = max(((c - r).length for c, r in
+                      zip(_closed[_o.name], _rest[_o.name])), default=0.0)
+        if _moved < 1e-5:
+            print("  blink bake: %s does not move under this pose -- no key" % _o.name)
+            continue
+        if not _o.data.shape_keys:
+            _o.shape_key_add(name="Basis")
+        _kb = _o.shape_key_add(name="Blink", from_mix=False)
+        for _i, (c, r) in enumerate(zip(_closed[_o.name], _rest[_o.name])):
+            _kb.data[_i].co = _o.data.shape_keys.reference_key.data[_i].co + (c - r)
+        _bake_binds.append((_o, "Blink"))
+        print("  blink bake: %s/Blink, max displacement %.4f" % (_o.name, _moved))
+
 _blink_binds = []
 for _spec in [x for x in os.environ.get("VRM_BLINK", "").split(",") if x.strip()]:
     _mn, _, _kn = _spec.partition("=")
@@ -5803,8 +5896,21 @@ if not _blink_binds:
         if not _sk:
             continue
         for _kb in list(_sk.key_blocks)[1:]:
-            if _is_blink(_o.name, _kb.name):
+            if (_is_blink(_o.name, _kb.name)
+                    and (_o, _kb.name) not in _bake_binds):
                 _blink_binds.append((_o, _kb.name))
+# Baked lid keys go on the plain 'blink' expression only. Their mesh names carry
+# an L that does not reliably mean the eye's side (Pomni's EyeLidSup.L.001 sits
+# on the other eye), and YARG drives only 'blink' anyway.
+for _o, _kn in _bake_binds:
+    _b = ext.vrm1.expressions.preset.blink.morph_target_binds.add()
+    _b.node.mesh_object_name = _o.name
+    _b.index = _kn
+    _b.weight = 1.0
+if _bake_binds:
+    print("  blink: bound %d baked eyelid key(s) to the blink expression: %s"
+          % (len(_bake_binds), ", ".join(o.name for o, _ in _bake_binds)))
+
 if _blink_binds:
     _pre = ext.vrm1.expressions.preset
     _side = {"blink": _pre.blink}
