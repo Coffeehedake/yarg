@@ -240,12 +240,12 @@ shape keys:
 
 | character | what the source has | bound |
 |---|---|---|
-| Chibi Rem | `vrc.v_aa/ih/ou/e/oh` -- a complete VRChat set | not yet rebuilt |
+| Chibi Rem | `vrc.v_aa/ih/ou/e/oh` -- a complete VRChat set | 5/5 |
 | Heels, Alice Ivy | the Character Creator `V_*` set | 5/5 |
 | Alastor | `a`, `e`, `o`, `U` -- no `i` | 5/5 (ih mirrors ee) |
 | Gordon Freeman | FACS action units: `AU26` jaw, `AU12` lip corners, `AU18` pucker | 5/5 |
 | Pomni | `A`, `ClosedTeeth` -- named for an artist | 5/5 |
-| Doom Slayer | `JawDrop`, `CheekPuff`, `CheekSuck` | not yet rebuilt |
+| Doom Slayer | `JawDrop` (`CheekPuff`/`CheekSuck` deliberately NOT used -- puffed cheeks are not a wide mouth) | 5/5, all from `JawDrop` at five weights |
 | Prix | `M_kiss` only, so `ee`/`ih` alone | **skipped on purpose** -- her README row warns her shape keys must be dropped or she builds at 0.42 m |
 | Jessica Rabbit | a DIFFERENT source blend has keys; the GLB she was built from has none | not attempted |
 
@@ -305,9 +305,13 @@ spine bones but whose ends come from the vertices.
 Radii are **median** distances, erring small on purpose: hair sinking slightly into a body reads
 far better than hair held visibly off the head.
 
-**Reach is bounded by what still exists.** 31 of the 66 have a built `.vrm` on this machine and
-24 of those have spring chains; the other 35 have neither source nor VRM and cannot be touched
-without re-acquiring the original download.
+**Reach is bounded by what still exists -- but by MORE than the scratchpad.** A correction to an
+earlier claim here that 35 characters had "neither source nor VRM": there is a durable store at
+`%USERPROFILE%\Documents\YARG-Characters\` holding **25 `.vrm` files** alongside the installed
+bundles, which the scratchpad-only survey never saw. Counting both locations there are **51**
+VRMs for 66 installed characters. Names differ between the two (`DoomSlayer.vrm` against
+`Doom Slayer.yargchar`), so coverage has to be matched case by case rather than by a filename
+join -- the naive join is what produced the wrong 35.
 
 The census caught two of the 23 round trips, which is the whole reason it prints:
 
