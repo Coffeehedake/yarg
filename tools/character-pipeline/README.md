@@ -218,6 +218,40 @@ and Jessica Rabbit both export zero. Every VRM declares all 18 preset expression
 a file always *looks* lipsync-capable -- the distinction is declared versus bound. Check the
 morph-target count before suspecting the venue, the `VRMCharacter` component or the chart.
 
+### Exaggerate the mouth, or nobody sees it
+
+Pomni's visemes worked first time -- her mouth tracked the words -- and were **"barely
+noticeable"**. A mouth modelled for a close-up is far too subtle at the distance YARG draws a
+vocalist, and the bind WEIGHT cannot fix it: `aa` is already at 1.0, which is the ceiling.
+
+`VRM_VISEME_GAIN=2.2` scales the shape key's own displacement, so weight 1.0 then means a
+bigger mouth. Viseme keys only -- amplifying a blink drives the eyelids through the eye.
+
+Check the result at full open before shipping it: doubling a shape key can tear geometry.
+Pomni at 2.2x opens wide with teeth and tongue visible and holds together.
+
+`ih` is the preset most models have no shape for -- Alastor has `a`, `e`, `o`, `U` and no `i` at
+all. It falls back to `ee` at 0.7, because an unbound viseme is a mouth that stalls mid-word.
+
+### Who can lipsync at all
+
+Measured with `viseme_fit.py` over all 44 sources still on this machine. Only **9** have mouth
+shape keys:
+
+| character | what the source has | bound |
+|---|---|---|
+| Chibi Rem | `vrc.v_aa/ih/ou/e/oh` -- a complete VRChat set | not yet rebuilt |
+| Heels, Alice Ivy | the Character Creator `V_*` set | 5/5 |
+| Alastor | `a`, `e`, `o`, `U` -- no `i` | 5/5 (ih mirrors ee) |
+| Gordon Freeman | FACS action units: `AU26` jaw, `AU12` lip corners, `AU18` pucker | 5/5 |
+| Pomni | `A`, `ClosedTeeth` -- named for an artist | 5/5 |
+| Doom Slayer | `JawDrop`, `CheekPuff`, `CheekSuck` | not yet rebuilt |
+| Prix | `M_kiss` only, so `ee`/`ih` alone | **skipped on purpose** -- her README row warns her shape keys must be dropped or she builds at 0.42 m |
+| Jessica Rabbit | a DIFFERENT source blend has keys; the GLB she was built from has none | not attempted |
+
+The other 35 have **no mouth shape keys at all**, Batman among them. No pipeline change can give
+them one.
+
 ### viseme_fit.py -- proposing a mapping for a model that does not follow a convention
 
 ```

@@ -5743,6 +5743,36 @@ else:
 # DECLARED and none BOUND, which reads as a working lipsync setup right up
 # until nothing moves. Measured across 28 built characters: 0 of 28 had a
 # single viseme bound.
+# Exaggerate the mouth before binding it.
+#
+# Pomni's visemes worked first time -- her mouth tracked the words -- and were
+# "barely noticeable". A speaking mouth modelled for a close-up is far too
+# subtle at the distance YARG draws a vocalist, and the bind WEIGHT cannot fix
+# it: aa is already at 1.0, which is the ceiling. So scale the shape key's own
+# displacement instead, and 1.0 then means a bigger mouth.
+#
+# Only viseme keys. Amplifying a blink would drive the eyelids through the eye.
+_VIS_GAIN = float(os.environ.get("VRM_VISEME_GAIN", "1.0"))
+if abs(_VIS_GAIN - 1.0) > 1e-6:
+    _scaled = []
+    for _o in meshes:
+        _sk = _o.data.shape_keys
+        if not _sk:
+            continue
+        _basis = _sk.key_blocks[0]
+        for _kb in list(_sk.key_blocks)[1:]:
+            if not _viseme_targets(_o.name, _kb.name):
+                continue
+            if _is_blink(_o.name, _kb.name):
+                continue
+            for _i, _pt in enumerate(_kb.data):
+                _b = _basis.data[_i].co
+                _pt.co = _b + (_pt.co - _b) * _VIS_GAIN
+            _scaled.append("%s/%s" % (_o.name, _kb.name))
+    if _scaled:
+        print("  visemes: exaggerated %d mouth shape key(s) by %.2fx (%s)"
+              % (len(_scaled), _VIS_GAIN, ", ".join(_scaled[:6])))
+
 _vis_binds = {}
 for _o in meshes:
     _sk = _o.data.shape_keys
@@ -5751,6 +5781,14 @@ for _o in meshes:
     for _kb in list(_sk.key_blocks)[1:]:
         for _t, _w in _viseme_targets(_o.name, _kb.name):
             _vis_binds.setdefault(_t, []).append((_o.name, _kb.name, _w))
+# IH is the one most models have no shape for -- Alastor has a, e, o and U and
+# no i at all. An unbound viseme is a mouth that stops moving mid-word, so
+# mirror EE at a lower weight rather than leave a hole.
+if "ee" in _vis_binds and "ih" not in _vis_binds:
+    _vis_binds["ih"] = [(_m, _k, _w * 0.7) for _m, _k, _w in _vis_binds["ee"]]
+    print("  visemes: no 'ih' shape in this model -- mirroring 'ee' at 0.7 so "
+          "the mouth does not stall mid-word")
+
 if _vis_binds:
     _pre = ext.vrm1.expressions.preset
     _said = []
