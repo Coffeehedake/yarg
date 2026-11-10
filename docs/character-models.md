@@ -1077,6 +1077,235 @@ organised?" was *"you probably aren't going to find any place more organized tha
 - **`_browAggressive`, `_browDown`, `_browOpenmouthed`, `_squint`** are declared in `VRMCharacter`
   and assigned nowhere in the project. The expression surface is still moving.
 
+## Transparency has three states, not two
+
+The builder knew OPAQUE and CUTOUT. A cutout is a *mask*: each pixel is in or out. A **blend**
+is neither, and a material authored as one is a statement, not something to infer.
+
+Pomni's `EyeDetails` is a detail sheet laid over her eye. In the source, `Eyes.png` feeds both
+Base Color and Alpha, the material's `blend_method` is `BLEND`, and that image is **69.2% fully
+clear**. Shipped `alphaMode=OPAQUE`, every clear pixel rendered as the black underneath it --
+"black marks above and below her iris". Inferring a cutout instead was tried earlier and is
+worse: masking her eyes made them see-through into her skull.
+
+Blender 4.5 still carries `Material.blend_method`, so read it at the top of the material loop,
+*before* the loop rewires anything, together with whether an image was wired into Alpha. When
+both hold, ship `alphaMode=BLEND`. No measurement, no guess -- the author already wrote it down.
+
+## A name match is a guess; the UVs are a measurement
+
+A base map picked because its name is a *substring* of the material's name is a weak claim. The
+token guard beside it only protects a material carrying an authored colour, and that left a hole.
+
+`PomniEyes` is the white of her eye: 0.814 grey, **no texture of its own in the file**. It took
+`Eyes.png` because "Eyes" is inside "PomniEyes". Measured against its own 1476 faces, that map is
+**67% fully transparent** -- so two-thirds of her sclera sampled a clear pixel and shipped black.
+
+So measure instead of arguing about the name: sample the candidate's alpha under the UVs of the
+faces that actually use the material. A base colour map is not two-thirds transparent across its
+own geometry. Materials that really are see-through take the cutout or blend path above, where
+the transparency is the point and this test is never reached.
+
+Having declined the nearest thing in the folder, do **not** fall through to the widest pool --
+that reaches for something further away still.
+
+## A spring chain must not swing on an attachment bone
+
+A VRM chain moves each joint by rotating the one before it, so joint 0 is not a passenger: its
+rotation swings everything below it. That is exactly wrong for a bone whose job is to hold the
+mesh *on*.
+
+Lola Bunny's hair chain was `hair_att -> hair1 -> hair2`, and `fml_un_C_hair_att` is **0.260
+long carrying 51.9% of the hair**, against 0.100 and 48.1% for the whole rest of the chain. The
+simulation swung the bulk of her hair on a lever two and a half times the length of the hair
+itself, pivoting at the base of her skull -- and with **zero colliders** in the file, nothing
+caught it. Her ponytail left her head.
+
+The rig says which bone this is, if you measure rather than read the name: **longer than the rest
+of the chain put together** (that is the lever) **and carrying at least as much of the mesh**
+(that is what the lever throws). Both tests, or an ordinary long first segment gets dropped.
+Anchor at the next bone down; the `_att` bone then stays rigid to the head, which is correct.
+
+The builder already treated `_att` as an attachment point for chest bones. It just never applied
+the same idea to hair.
+
+## Feet cannot point along the shoulders
+
+Reading facing off the feet is right until the feet are themselves posed.
+
+Jessica Rabbit is a posed statue -- feet crossed in heels -- and her toe direction measured
+`(1.00, -0.02, 0.00)`, within **2 degrees of her own shoulder line**. No body stands like that:
+feet point *across* the shoulders, never along them. Aligning her by the feet turned her 89
+degrees and shipped her in profile. The existing guard ("the arms already lie along X") could not
+save her, because her arms were posed down too -- and the arm straightening that runs afterwards
+works per-arm from its own side, so the arms came out along X regardless and nothing downstream
+noticed she was sideways.
+
+Cross-check the feet against something posing cannot move. The **heads of the shoulder bones**
+sit at the collarbone roots beside the spine: they are where the arm starts, not where it points,
+so they stay put however the arm is posed. That gives the left-right axis outright, and forward is
+perpendicular to it.
+
+A perpendicular has two directions, and the feet cannot break the tie when it was the feet that
+were wrong. The **knees** can: a leg bends forward, so the knee sits in front of the line from hip
+to ankle. Read it *before* the legs are straightened, while the bend is still there to measure.
+If the knees are silent too, leave the orientation alone rather than guessing.
+
+## Spring bones need something to hit
+
+Every one of the 66 characters installed here shipped with **zero colliders**. A VRM spring
+chain that collides with nothing passes straight through the body, which is Gadget's hair
+through her face, Power Girl's through hers, and why Lola's ponytail had nothing to catch it.
+
+Two colliders per character, both **measured**, because these models run from Yoda to Skibidi
+Toilet to a 2.9 m Alcina and one hardcoded radius would be a helmet on one and a pebble on
+another:
+
+- a **sphere on the head**, centred on the centroid of the vertices whose dominant group is the
+  head bone or one of its descendants, *minus any bone a spring already drives* — the hair must
+  not be part of the thing it collides with, or it pushes itself off the head;
+- a **capsule down the torso**, whose axis comes from the mapped spine bones but whose **ends
+  come from the geometry**. Gadget is why: her shipped humanoid map has `hips -> root`, a bone
+  sitting on the floor at z=0.005, so a capsule drawn between the mapped bone heads ran from her
+  feet to her neck. The bones can be mapped oddly and the capsule still has to land on the torso.
+
+The radius is the **median** distance, not the maximum, and that is deliberate. Hair rests on
+the scalp, so the sphere wants to sit at the skull rather than enclose the nose, ears and chin.
+A collider too small lets hair sink slightly in; one too big holds it visibly off the head, which
+reads as broken rather than imperfect. `VRM_COLLIDER_SCALE` moves both without an edit.
+
+Chest chains are deliberately left out of the group: they sit *on* the torso, so handing them the
+torso capsule would push them out of the body they belong to.
+
+## A collider must never contain a joint it is attached to
+
+The first collider build was worse than no colliders, and the reason is the one thing the VRM
+spec makes unavoidable: **a collider ejects whatever is inside it**. A spring joint that starts
+inside is shoved to the surface on frame one and stays there.
+
+Gadget Hackwrench is the case. Three of her hair joints sat inside a 0.193 head sphere, one of
+them 44% in, and the ejection pushed her hair out by about 10 cm on a head 0.45 m wide: it
+ballooned into a mass bigger than her body. Measured across the batch, **8 of 23** characters
+had at least one joint inside — and that set is exactly the ones that came back looking wrong.
+
+So the radius is now the largest that **clears every joint the group is attached to**, or the
+measured median, whichever is smaller:
+
+| | measured | shrunk to | nearest joint |
+|---|---|---|---|
+| Gadget Hackwrench | 0.193 | 0.103 | 0.108 |
+| Tenna | 0.243 | 0.158 | 0.166 |
+| Killer Clown | 0.121 | 0.081 | 0.086 |
+| Yoda (capsule) | 0.072 | 0.020 | 0.021 |
+
+On a rig whose hair roots sit deep in the skull this leaves a small collider, and that is the
+right trade: a small collider still stops hair driving through the face, while an ejecting one
+is a visible catastrophe. Fourteen of the 23 needed shrinking.
+
+The failure was in the *direction* of the error I had reasoned about. I had written "too big
+holds the hair off the head" — which sounds like a cosmetic gap. It is not: too big does not
+hold hair off, it **throws hair outward from inside**, and the magnitude is the whole collider
+radius rather than a few millimetres.
+
+## The built VRM is not necessarily what is installed
+
+`rollout/out/<name>.vrm` is whatever was last built. The installed `.yargchar` may have come from
+somewhere else entirely — in particular from a **backup restored after a bad build**.
+
+The Mandalorian was restored from backup earlier in the session because a build had shipped him
+upside-down. The restore replaced the installed `.yargchar`; the broken VRM stayed on disk. When
+colliders were later retro-fitted from `rollout/out`, that broken VRM was faithfully carried
+forward and installed over the good one, undoing the restore. He came back upside-down, hanging
+below the podium.
+
+Checking is cheap and there is now a probe for it: head above hips, feet below hips, read off the
+humanoid map. Mando measured head y=-1.355, hips -0.829, feet -1.642 — every bone below the floor
+and the head under the hips. Run it on anything before shipping it.
+
+Note the one false positive it has: Gadget's humanoid map says `hips -> root`, a bone on the
+floor, so her feet measure *above* her hips while she is perfectly upright.
+
+## Most of the characters have no source file any more
+
+Worth stating plainly, because it bounds what any future fix can reach. The 66 characters are
+personal-use conversions whose sources were downloads living in per-session scratchpads, and
+nothing durable holds them — not the repo (deliberately), not `C:\dev`. Of the 66 installed:
+
+- **31** have a built `.vrm` on this machine, and of those **24** have spring chains at all;
+- **35** have neither source nor VRM, so they cannot be rebuilt without re-acquiring the original
+  download and re-deriving the recipe.
+
+So `add_colliders.py` retro-fits a *built* `.vrm` — import, fit, re-export — rather than
+rebuilding from source. It shares `vrm_colliders.py` with `build_vrm.py` so the measuring cannot
+drift between the two paths, and it prints a **census before and after** (triangles, meshes,
+materials, images, springs) so a lossy round trip shows up as a number rather than as a character
+that looks wrong in game three days later.
+
+## A probe that is approximately right is worse than no probe
+
+The first readback for the colliders walked the glTF node tree accumulating **translations only**,
+ignoring every rotation. It reported the head sphere 5 cm from where it had been placed, which
+looked exactly like the offset having been written in the wrong coordinate space — a plausible,
+specific, entirely wrong diagnosis that would have cost an afternoon.
+
+Composing the full 4x4 matrices instead showed the build was already exact:
+
+| | measured in Blender (Z-up) | exported (Y-up) |
+|---|---|---|
+| head sphere | `(0.002, -0.159, 1.252)` | `[0.002, 1.252, 0.159]` |
+| torso capsule | `(0.0, -0.177, 0.731)` | `[0.0, 0.731, 0.177]` |
+
+The same trap as *The check can be the bug*, and the same answer: a measurement tool gets verified
+against a case whose answer is already known before its output is allowed to steer anything.
+
+## A partial hair rig is worse than none
+
+Rigging *some* of a hair mesh tears it. Miku's hair is ~250 separate ribbon strips, and the
+rigger reported its own problem plainly:
+
+```
+hair rig: 198 hair verts spanning 0.529 m
+hair rig: built 2 chains of 4 bones
+hair rig: weighted 59 hair vertices onto the new chains
+```
+
+59 of her 3,974 vertices ended up with any spring weight, and on the strips that got some, the
+chain owned only 11% against `Bone06` 38% and the head bone 33%. So a handful of ribbons were
+dragged a fraction of the way while the ribbons beside them stayed put, and the hair sheared
+into what looked in game like loose floating shards.
+
+Three drivers on one mesh is the tell. Either the chain owns the hair or it should not touch it.
+
+## Measure before blaming the pipeline
+
+Miku's twintails splay straight out sideways, and that looks exactly like a rigging fault. It is
+not ours. Measured at all three stages, normalised by height:
+
+| | hair x-span / height | hair z-span / height |
+|---|---|---|
+| `Miku.fbx`, the original download | 0.93 | 0.70 |
+| `miku-final.blend`, our intermediate | 0.93 | 0.70 |
+| `Miku.vrm`, as shipped | 0.92 | 0.70 |
+
+Unchanged end to end: **the model was authored with the hair flying outward**. Only a re-pose of
+the hair bones would change it, and that is a modelling decision rather than a defect to fix.
+
+Note the original is 0.019 units tall, so absolute numbers are useless at two decimals -- the
+first comparison said "x -0.01..0.01" for both and looked like a match by accident. Normalise,
+or the precision decides the answer for you.
+
+## An intermediate .blend carries its own spring configuration
+
+`ext.spring_bone1` lives in the .blend. A source that has been through this pipeline before
+arrives with the chains it was given last time, so asking for no springs still ships springs --
+they were never *added* by that run, they were inherited.
+
+Miku's intermediate holds the `HairSpring` chains an earlier session built. Rebuilt with the hair
+rigger off and a spring regex matching nothing, the log said `spring bone chains added: 0` and
+the exported file still had two. `VRM_CLEAR_SPRINGS=1` wipes what the file came with, before
+anything is added. Opt-in on purpose: the VRoid characters arrive with their own authored chains,
+which are correct and must not be thrown away.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:

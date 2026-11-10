@@ -110,6 +110,55 @@ had simply never been looked at.
 | Jessica Rabbit | dress static while the body moves; sequin texture on her skin | the rigger took one group per build, so her hair and her dress could not both be rigged. `rskin` had already been given its own map |
 | Alcina | chest drifts like a balloon | **chest spring parameters do not scale.** 0.85 stiffness and 0.60 drag were set looking at Prix at 1.70 m; Alcina is 2.9 m and VRM spring stiffness is scale-dependent |
 | Yui | looks out of proportion | not yet measured |
+
+### Round of 2026-11-09, after the undriven-weight batch went in
+
+Four more in-game reports, four separate causes. All four are written up in
+`docs/character-models.md`; the short version:
+
+| character | what is wrong | what it is |
+|---|---|---|
+| Batman | his chest jiggles | the shared MultiVersus rig ships `fml_un_C_breast` on **every** character, and on his export it carries enough weight to be sprung. Rebuilt with `VRM_BREAST_SPRING=0`. The pipeline cannot know he should not jiggle, so this stays a per-character knob |
+| Pomni | black marks above and below the iris | **two faults on one eye.** `EyeDetails` is authored `blend_method=BLEND` with `Eyes.png` in its Alpha and exported `alphaMode=OPAQUE`, so the 69.2%-clear sheet rendered its clear pixels black; and `PomniEyes`, the sclera, has **no texture at all** in the source but took `Eyes.png` on a substring match — measured against its own UVs that map is 67% transparent. It also held a *hair* normal map |
+| Lola Bunny | ponytail detached and floating beside her head | the hair spring chain was anchored on `fml_un_C_hair_att`, which is **0.260 long carrying 51.9% of the hair** against 0.100 and 48.1% for the rest of the chain. A VRM chain rotates joint 0 to move joint 1, so the sim swung the bulk of her hair on a lever 2.5× the hair's own length, with zero colliders to catch it |
+| Jessica Rabbit | turned to the side, rubber legs, dress clipping | facing was read off the feet, and her feet are crossed in heels pointing **within 2° of her own shoulder line**. The build turned her 89° to face the feet forward and shipped her in profile; the per-arm straightening then put the arms along X anyway, so nothing downstream noticed |
+
+### Colliders
+
+Every character shipped with **zero spring-bone colliders**, so every sprung chain passed
+through the body. Two measured colliders now go on each: a sphere fitted to the head geometry
+(excluding anything a spring drives) and a capsule down the torso whose axis comes from the
+spine bones but whose ends come from the vertices.
+
+- `vrm_colliders.py` — the measuring, shared so it cannot drift
+- `build_vrm.py` — calls it during a build; `VRM_COLLIDERS=0` opts out
+- `add_colliders.py` — retro-fits a built `.vrm` (import, fit, re-export) for the characters
+  whose source files are gone, and prints a before/after census so a lossy round trip is visible
+- `VRM_COLLIDER_SCALE` — multiplies both radii, for tuning from in-game feedback
+
+Radii are **median** distances, erring small on purpose: hair sinking slightly into a body reads
+far better than hair held visibly off the head.
+
+**Reach is bounded by what still exists.** 31 of the 66 have a built `.vrm` on this machine and
+24 of those have spring chains; the other 35 have neither source nor VRM and cannot be touched
+without re-acquiring the original download.
+
+The census caught two of the 23 round trips, which is the whole reason it prints:
+
+- **Pomni** lost 14 triangles and gained 4 materials. She has a source file, so she was rebuilt
+  from it instead -- back to the full 32,764 triangles with the colliders built in.
+- **Link** gained a material, `Link` -> `Link` + `Link.001`, and the two copies point at
+  *different* base textures, which looks alarming. Checked per primitive: all 8 keep exactly the
+  image they had. The importer split one material across meshes that already used different maps,
+  so it is bookkeeping, not a visual change. Shipped.
+
+Four characters were skipped because they have no spring chains at all, so a collider would have
+nothing to collide with: **Alastor, Elite Terrorist, Gordon Freeman, Joker**. Alastor is worth
+noting — "his hair is still not right" has a simpler cause than any collider: it was never sprung.
+
+The Lola and Jessica fixes are general and apply to every rebuild; Pomni's two are general to
+material handling. Batman's is a per-character flag. None of them touches a character that is
+not rebuilt, so the other installed builds are unaffected.
 | Kasane Teto | does not animate at all, stands in her T-pose | **her bundle has no AnimatorController and no AnimationClip.** 1 of 66; every other character has both. She has an Animator and an Avatar, 20 skinned renderers and a complete humanoid map, so nothing else distinguishes her |
 | Lola Bunny | head floats detached above the neck | a part following a bone that does not follow the body — the same shape as Judy's belt and the static hair |
 | Judy Hopps | belt detached, arms and legs crossed | the crossing is the mirrored rig above; the belt is the detached-part case |
@@ -660,7 +709,7 @@ that rebuilds from her own archive, and she is also the one that covers the text
 | Anakin Skywalker | anakin | 1.85 | a posed SCULPT — see the section above; needs `VRM_STANDUP=1 VRM_REBIND_STALE=1`. One leg's mesh still smears |
 | Judy Hopps | rigify_plain | 1.05 | exclude `^NurbsPath` (whiskers). Arms bind straight down at 86.6 deg off X and web to the torso when straightened — needs a Mixamo re-rig |
 | Yoda | mixamo | 0.66 | USDZ, no skeleton at all — auto-rigged; `VRM_RIGID="island:0=Head"`, robe on `island:1` with `HAIR_BONE=Spine1 HAIR_STRANDS=1`. The USDZ has **no** eye map: merge `CHA_yodaEye_C.png` from the original zip and pin it with `VRM_TEX="yoda_mesh_RoninShader7=CHA_yodaEye_C.png"` |
-| Miku | maxbiped | 1.58 | `VRM_FINGER_FILL=1`, hairrig `island:7+8` for the twintails, exclude `^ts_bot` (a detached guitar) |
+| Miku | maxbiped | 1.58 | `VRM_FINGER_FILL=1`, exclude `^ts_bot` (a detached guitar), spring regex `$^` and `VRM_CLEAR_SPRINGS=1`. **The hairrig was removed**: `island:7+8` reached 198 of her ~493 hair verts and weighted 59, which sheared the ribbons apart. Her hair is ~250 strips and is splayed outward in the ORIGINAL download, not by us |
 | Skibidi Toilet | valvebiped | 1.60 | exclude `^(Icosphere\|Object_2$)` — the toilet shell swamps the model |
 
 ### Recovering a character from its own .yargchar

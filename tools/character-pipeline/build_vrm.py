@@ -2830,6 +2830,71 @@ for _s in ("left", "right"):
         _v.z = 0.0
         if _v.length > 1e-6:
             _fwd += _v.normalized()
+# The feet are only a good forward signal while the feet are not themselves
+# posed. Jessica Rabbit is the case against: she is a posed statue, feet
+# crossed in heels, and her toe direction came out (1.00, -0.02, 0.00) --
+# within 2 degrees of her own SHOULDER LINE. No body stands like that; feet
+# point across the shoulders, not along them. Aligning her by the feet turned
+# her 89 degrees and shipped her in profile, and because the arm straightening
+# afterwards works per-arm from its own side, the arms still came out along X
+# and nothing downstream noticed.
+#
+# So cross-check the feet against something posing cannot move. The heads of
+# the shoulder bones sit at the collarbone roots beside the spine: they are
+# where the arm STARTS, not where it points, so they stay put however the arm
+# is posed. That gives the left-right axis outright, and forward is
+# perpendicular to it.
+#
+# A perpendicular has two directions, and the feet cannot break the tie when it
+# was the feet that were wrong. The knees can: a leg bends forward, so the knee
+# sits in front of the line from hip to ankle. That is a rest-pose property of
+# every biped rig here, and it is read BEFORE the legs are straightened a few
+# steps below, while the bend is still there to measure.
+def _flat(v):
+    v = Vector((v.x, v.y, 0.0))
+    return v.normalized() if v.length > 1e-6 else None
+
+
+_lat = None
+for _a, _b in (("left_shoulder", "right_shoulder"),
+               ("left_upper_arm", "right_upper_arm")):
+    _l, _r = MAP.get(_a), MAP.get(_b)
+    if _l in bone_names and _r in bone_names:
+        _lat = _flat(arm.data.bones[_l].head_local - arm.data.bones[_r].head_local)
+        if _lat is not None:
+            break
+
+_knee = Vector((0.0, 0.0, 0.0))
+for _s in ("left", "right"):
+    _h, _k, _f = (MAP.get("%s_upper_leg" % _s), MAP.get("%s_lower_leg" % _s),
+                  MAP.get("%s_foot" % _s))
+    if _h in bone_names and _k in bone_names and _f in bone_names:
+        _mid = (arm.data.bones[_h].head_local + arm.data.bones[_f].head_local) / 2.0
+        _kv = _flat(arm.data.bones[_k].head_local - _mid)
+        if _kv is not None:
+            _knee += _kv
+_knee = _flat(_knee) if _knee.length > 1e-6 else None
+
+if _lat is not None and _fwd.length > 1e-6:
+    _par = abs(_flat(_fwd).dot(_lat))
+    if _par > 0.707:
+        _perp = Vector((_lat.y, -_lat.x, 0.0)).normalized()
+        if _knee is not None and abs(_knee.dot(_perp)) > 0.3:
+            _new = _perp if _knee.dot(_perp) > 0 else -_perp
+            print("  facing: the feet point %s, which is %.0f deg off this "
+                  "rig's own shoulder line -- feet do not point along the "
+                  "shoulders, so they are posed. Taking forward from the "
+                  "shoulders instead, %s, with the knees breaking the tie."
+                  % (tuple(round(v, 2) for v in _fwd),
+                     math.degrees(math.acos(min(1.0, _par))),
+                     tuple(round(v, 2) for v in _new)))
+            _fwd = _new
+        else:
+            print("  facing: the feet point along the shoulder line and the "
+                  "knees do not say which way is front -- leaving the "
+                  "orientation alone rather than guessing")
+            _fwd = Vector((0.0, 0.0, 0.0))
+
 if _fwd.length > 1e-6:
     _fwd.normalize()
     _want = Vector((0.0, -1.0, 0.0))
@@ -4964,6 +5029,65 @@ for o in meshes:
         if ms.material:
             used.add(ms.material.name)
 
+def _mostly_clear_under_uvs(mat, path):
+    """Is this candidate base map transparent where THIS material's faces use it?
+
+    A name match is a substring match, and the token guard beside it only
+    protects a material that carries an authored colour. Pomni's 'PomniEyes'
+    is the white of her eye -- 0.814 grey, no texture of its own in the file --
+    and it took 'Eyes.png' because "Eyes" is inside "PomniEyes". Measured
+    against its own UVs that map is 67% FULLY CLEAR, and shipped opaque those
+    clear pixels render as the black underneath them: the marks above and
+    below her iris.
+
+    A name is a guess; this is a measurement, and it is the right one. A base
+    colour map is not two-thirds transparent across the geometry that uses it.
+    Materials that really are see-through take the cutout or blend path, where
+    the transparency is the point and this test is never reached.
+
+    Returns True only when it actually sampled something -- a file it cannot
+    read, or a material with no faces, is not evidence of anything.
+    """
+    try:
+        img = bpy.data.images.load(path, check_existing=True)
+        if img.channels != 4 or not img.has_data:
+            return False
+        probe = img.copy()
+        probe.scale(128, 128)
+        buf = [0.0] * (128 * 128 * 4)
+        probe.pixels.foreach_get(buf)
+        bpy.data.images.remove(probe)
+    except Exception:
+        return False
+    hits = 0
+    clear = 0
+    for o in bpy.data.objects:
+        if o.type != "MESH" or not o.data.materials:
+            continue
+        idx = [i for i, m in enumerate(o.data.materials) if m is mat]
+        if not idx:
+            continue
+        uvl = o.data.uv_layers.active
+        if uvl is None:
+            continue
+        uvd = uvl.data
+        for poly in o.data.polygons:
+            if poly.material_index not in idx:
+                continue
+            for li in poly.loop_indices:
+                u, v = uvd[li].uv
+                x = int(min(127, max(0, (u % 1.0) * 128)))
+                y = int(min(127, max(0, (v % 1.0) * 128)))
+                hits += 1
+                if buf[(y * 128 + x) * 4 + 3] < 0.02:
+                    clear += 1
+            if hits > 40000:
+                break
+    if hits < 64:
+        return False
+    return (float(clear) / hits) > 0.5
+
+
 for mat in bpy.data.materials:
     if mat.name not in used:
         print("  material %-12s -> SKIPPED (not used by any mesh)" % mat.name)
@@ -4976,6 +5100,25 @@ for mat in bpy.data.materials:
         out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None)
         if out:
             nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    # What did the AUTHOR say about transparency, before this loop rewires
+    # anything? Blender 4.5 still carries Material.blend_method, and a material
+    # set to BLEND with an IMAGE wired into its Alpha is a statement, not a
+    # guess -- the one case where transparency needs no inference at all.
+    #
+    # Pomni is why this exists. Her 'EyeDetails' is a detail sheet laid over the
+    # eye: 'Eyes.png' feeds Base Color AND Alpha, blend_method BLEND, and the
+    # image is 69.2% fully clear. Shipped OPAQUE, those clear pixels render as
+    # the black they sit on -- the marks above and below her iris. Inferring a
+    # CUTOUT instead was tried and is worse: a blend is not a mask, and masking
+    # her eyes made them see-through into her skull. Neither of the two states
+    # this loop had was the one the author wrote down.
+    _src_blend = getattr(mat, "blend_method", None)
+    _src_alpha_img = None
+    if bsdf is not None and "Alpha" in bsdf.inputs:
+        for _l in bsdf.inputs["Alpha"].links:
+            if _l.from_node.type == "TEX_IMAGE" and _l.from_node.image:
+                _src_alpha_img = _l.from_node.image
+
     # If the source file already told us which texture this material uses, trust
     # that over guessing from the material's name — generic names like
     # 'Material.013' carry no information at all.
@@ -4988,6 +5131,20 @@ for mat in bpy.data.materials:
     # the wrong set is not a near miss -- it is a mirror. Link's tunic, hair and
     # skin all took 'LinkEquip_Equipment_Metallic.png' and he came out chromed.
     set_prefix = None
+    # Did the FILE wire this material's base map, rather than the folder being
+    # searched for one? If so the author already said what this material uses,
+    # and the widest pool -- which matches on the MAP-KIND word alone, so every
+    # normal map in the folder answers to every material -- has no claim on its
+    # other slots. Pomni's 'EyeDetails' carries a packed 'Eyes.png' and was
+    # handed 'PomniNSFW_Hair_Normal.png': a HAIR normal map on an eye, matched
+    # only because "normal" appears in the filename. Same shape as the rule
+    # already written for opacity maps a few lines down in pick(): it comes
+    # from a file that names the material, or not at all.
+    _base_authored = False
+    # A near-miss in the NAME pool was still the closest thing in the folder.
+    # Falling through to the widest pool after declining it would reach for
+    # something further away still, so the decline is final.
+    _name_declined = False
     # Blender's untouched default is 0.8 grey, and plain white is the other
     # "nothing here yet" value. Anything else was chosen -- Pomni's flat
     # Blue/Red/Yellow, Jessica Rabbit's red hair -- and the widest pool, which
@@ -5017,6 +5174,7 @@ for mat in bpy.data.materials:
         if keep is not None:
             if kind == "base":
                 base_tex = keep
+                _base_authored = True
             wired.append((kind, "packed:" + (keep.image.name or "?")))
             continue
         if set_prefix and len(_SET_OF(set_prefix)) > 1 and kind != "base":
@@ -5058,6 +5216,17 @@ for mat in bpy.data.materials:
                           % (mat.name, tuple(round(c, 3) for c in _bc),
                              os.path.basename(p)))
                     p, _from = None, None
+                # The same weak claim, where the colour cannot speak for the
+                # material. Measure the map against the geometry instead.
+                elif (p is not None and kind == "base"
+                        and _toks_eq is not None and not _toks_eq(mat.name, p)
+                        and _mostly_clear_under_uvs(mat, p)):
+                    print("    %s only shares a word with '%s', and that map "
+                          "is transparent over most of %s's own UVs -- "
+                          "keeping the flat colour"
+                          % (mat.name, os.path.basename(p), mat.name))
+                    p, _from = None, None
+                    _name_declined = True
         if p is None and kind == "base" and slot in bsdf.inputs:
             # Nothing named this material and nothing shares a word with its
             # mesh. Whether it WANTS a texture is readable from the material
@@ -5066,7 +5235,7 @@ for mat in bpy.data.materials:
             # is meant to be flat and must keep it - handing Pomni's Blue, Red
             # and Yellow a texture from the global pool wiped her colours out.
             col = bsdf.inputs[slot].default_value
-            if _default_col:
+            if _default_col and not _name_declined:
                 p = choose(BY_SIZE, kind, loose=True)
                 _from = "loose" if p else None
         if not p or slot not in bsdf.inputs:
@@ -5079,6 +5248,8 @@ for mat in bpy.data.materials:
         if kind == "base":
             base_tex = t
             base_from = _from
+            if _from == "authored":
+                _base_authored = True
             _st = norm(MAPTOK.sub("", os.path.splitext(os.path.basename(p))[0]))
             set_prefix = _st if len(_st) >= 4 else None
         wired.append((kind, p))
@@ -5093,8 +5264,10 @@ for mat in bpy.data.materials:
         p = (authored(bsdf, "Normal")
              or (pick_stem(stem, "normal") if stem else None)
              or (pick_stem(stem, "height") if stem else None)
-             or pick(mat.name, "normal", wide=_default_col)
-             or pick(mat.name, "height", wide=_default_col))
+             or pick(mat.name, "normal",
+                     wide=_default_col and not _base_authored)
+             or pick(mat.name, "height",
+                     wide=_default_col and not _base_authored))
     if already_good(bsdf, "Normal") is not None:
         wired.append(("normal", "packed"))
     if p:
@@ -5176,6 +5349,7 @@ for mat in bpy.data.materials:
                   % (os.path.basename(ap), _astem, _bstem))
             ap = None
     cut = False
+    blend = False
     if ap and "Alpha" in bsdf.inputs:
         img = bpy.data.images.load(ap, check_existing=True)
         img.colorspace_settings.name = "Non-Color"
@@ -5235,6 +5409,24 @@ for mat in bpy.data.materials:
         except Exception as _e:
             print("    (could not read the base map's alpha: %s)" % _e)
 
+    # Honour the authored blend. Not a guess about what an alpha channel MEANS
+    # -- the material was SET to BLEND with that image in its Alpha, and all
+    # this does is carry that across. Only when a cutout was not already
+    # established, since a dedicated opacity map is the stronger signal.
+    if not cut and _src_blend == "BLEND" and _src_alpha_img is not None             and bsdf is not None and "Alpha" in bsdf.inputs:
+        _at = None
+        if base_tex is not None and base_tex.image == _src_alpha_img:
+            _at = base_tex
+        else:
+            _at = nt.nodes.new("ShaderNodeTexImage")
+            _at.image = _src_alpha_img
+        if not bsdf.inputs["Alpha"].links:
+            nt.links.new(_at.outputs["Alpha"], bsdf.inputs["Alpha"])
+        blend = True
+        print("    the source material is BLEND with '%s' in its Alpha -- "
+              "keeping it blended rather than flattening it to opaque"
+              % _src_alpha_img.name)
+
     # Metalness with no MAP is the same trap as emission with no map, one slot
     # over: a leftover Metallic of 1.0 turns the surface into a mirror that
     # reflects the world instead of showing its own colour. Link's face shipped
@@ -5277,8 +5469,10 @@ for mat in bpy.data.materials:
     # and all. Blended opaque geometry sorts against itself and samples the base
     # map's alpha channel, which is what turned Sayuri's skin into brown and
     # white blotches. Set it on the add-on's own property instead.
-    for attr, val in (("blend_method", "CLIP"), ("shadow_method", "CLIP"),
-                      ("surface_render_method", "BLENDED" if cut else "DITHERED")):
+    for attr, val in (("blend_method", "BLEND" if blend else "CLIP"),
+                      ("shadow_method", "CLIP"),
+                      ("surface_render_method",
+                       "BLENDED" if (cut or blend) else "DITHERED")):
         try: setattr(mat, attr, val)
         except Exception: pass
     try:
@@ -5295,9 +5489,9 @@ for mat in bpy.data.materials:
         # Turned on only for the materials that NEED a cutout. Enabling MToon
         # across a whole character swaps its shading model, which is a much
         # larger change than this defect warrants.
-        if cut:
+        if cut or blend:
             mt.enabled = True
-        mt.alpha_mode = "MASK" if cut else "OPAQUE"
+        mt.alpha_mode = "BLEND" if blend else ("MASK" if cut else "OPAQUE")
         mt.alpha_cutoff = 0.5
         # Once mtoon1 is in play the exporter writes ITS base colour factor,
         # which starts at white, and the Principled node's colour never leaves
@@ -5475,6 +5669,30 @@ else:
 DEFAULT_SPRING = (r"(hair|ponytail|pigtail|braid|bang|tail|skirt|dress|cloth|"
                   r"ribbon|scarf|cape|coat|tassel|fringe|antenna|hat|bell|horn|wing|feather|tie)")
 SPRING = a[8] if len(a) > 8 and a[8] else DEFAULT_SPRING
+
+# A source that has been through this pipeline before carries the spring
+# configuration it was given last time, inside the .blend. Asking for no
+# springs then quietly produces two anyway, because they were never added by
+# this run -- they were inherited. Miku is the case: her intermediate holds
+# the HairSpring chains an earlier session built, and rebuilding her with the
+# hair rigger switched off still shipped them.
+#
+# VRM_CLEAR_SPRINGS=1 wipes what the file came with before anything is added.
+# Deliberately opt-in: the VRoid characters arrive with their OWN authored
+# chains, which are correct and must not be thrown away.
+if os.environ.get("VRM_CLEAR_SPRINGS"):
+    try:
+        _sb0 = ext.spring_bone1
+        _had = len(_sb0.springs)
+        while len(_sb0.springs):
+            _sb0.springs.remove(len(_sb0.springs) - 1)
+        while len(_sb0.collider_groups):
+            _sb0.collider_groups.remove(len(_sb0.collider_groups) - 1)
+        while len(_sb0.colliders):
+            _sb0.colliders.remove(len(_sb0.colliders) - 1)
+        print("  cleared %d spring chain(s) the source file came with" % _had)
+    except Exception as _e:
+        print("  could not clear inherited springs: %s" % _e)
 if SPRING:
     try:
         sb = ext.spring_bone1
@@ -5518,7 +5736,63 @@ if SPRING:
         _CLOTH = r"(skirt|dress|cloth|cape|coat|robe|apron|tabard|sash|scarf)"
         _cp = os.environ.get("VRM_CLOTH_PARAMS", "0.85,0.8,0.0").split(",")
         _c_stiff, _c_drag, _c_grav = [float(x) for x in _cp]
+        # How much of the mesh does each bone actually carry? An attachment
+        # bone is the giveaway, and it needs measuring rather than naming.
+        _wt = {}
+        for _o in bpy.data.objects:
+            if _o.type != "MESH":
+                continue
+            if not any(m.type == "ARMATURE" and m.object is arm
+                       for m in _o.modifiers):
+                continue
+            _gn = [g.name for g in _o.vertex_groups]
+            for _v in _o.data.vertices:
+                for _g in _v.groups:
+                    if _g.group < len(_gn):
+                        _wt[_gn[_g.group]] = _wt.get(_gn[_g.group], 0.0) + _g.weight
+
+        def _trim_anchor(chain):
+            """Drop a leading ATTACHMENT bone out of the chain.
+
+            A VRM chain moves every joint by rotating the one before it, so
+            joint 0 is not a passenger -- its rotation swings everything below
+            it. That is wrong for a bone whose job is to hold the mesh ON.
+
+            Lola Bunny's hair is the case. Her chain was
+            hair_att -> hair1 -> hair2, and hair_att is 0.260 long carrying
+            51.9% of the hair, against 0.100 and 48.1% for the whole rest of
+            the chain. Rotating it swung the bulk of her hair on a lever two
+            and a half times the length of the hair itself, pivoting at the
+            base of her skull -- and with no colliders in the file, nothing
+            caught it. In game her ponytail left her head.
+
+            Both tests have to pass: LONGER than the rest of the chain put
+            together (that is the lever) and carrying at least as much of the
+            mesh (that is what the lever throws). A bone that is merely long,
+            or merely heavy, is still an ordinary first segment.
+            """
+            if len(chain) < 3:
+                return chain
+            _b = arm.data.bones.get(chain[0])
+            _rest = [arm.data.bones.get(x) for x in chain[1:]]
+            if _b is None or any(x is None for x in _rest):
+                return chain
+            _rl = sum(x.length for x in _rest)
+            _rw = sum(_wt.get(x.name, 0.0) for x in _rest)
+            _bw = _wt.get(_b.name, 0.0)
+            if _b.length > _rl and _bw >= _rw and (_bw + _rw) > 0.0:
+                print("    '%s' is an attachment bone, not a segment: %.3f long "
+                      "against %.3f for the rest of the chain, and carrying "
+                      "%.0f%% of the weight -- anchoring at '%s' instead"
+                      % (chain[0], _b.length, _rl,
+                         100.0 * _bw / (_bw + _rw), chain[1]))
+                return chain[1:]
+            return chain
+
         for chain in [c for root in roots for c in walk(root)]:
+            if len(chain) < 2:
+                continue
+            chain = _trim_anchor(chain)
             if len(chain) < 2:
                 continue
             _is_cloth = bool(re.search(_CLOTH, chain[0], re.I))
@@ -5669,6 +5943,20 @@ if os.environ.get("VRM_BREAST_SPRING", "1") != "0":
             _made, "" if _made else "  (no weighted chest bones in this rig)"))
     except Exception as _e:
         print("breast spring setup failed: %s: %s" % (type(_e).__name__, _e))
+
+# ------------------------------------------------------------- colliders
+# Measured per character and shared with add_colliders.py, which retro-fits a
+# built .vrm -- most of the 66 have no source file on this machine any more.
+# One copy of the logic, in vrm_colliders.py, so the two cannot drift.
+#
+# VRM_COLLIDERS=0 turns the step off.
+if os.environ.get("VRM_COLLIDERS", "1") != "0":
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import vrm_colliders
+        vrm_colliders.fit(arm, ext, MAP, bone_names)
+    except Exception as _e:
+        print("collider setup failed: %s: %s" % (type(_e).__name__, _e))
 
 if os.environ.get("VRM_SAVE_BLEND"):
     bpy.ops.wm.save_as_mainfile(filepath=os.environ["VRM_SAVE_BLEND"])
