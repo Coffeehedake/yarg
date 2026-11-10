@@ -135,6 +135,18 @@ public static class YargCharExporter
                             var nm = new Material(urp) { name = src.name + "_urp" };
                             if (baseMap != null) { nm.SetTexture("_BaseMap", baseMap); nm.SetTexture("_MainTex", baseMap); }
                             nm.SetColor("_BaseColor", col);
+                            // An untextured near-black material is an outline shell. URP/Lit
+                            // gives it a specular sheen that shows as pale lines along edges
+                            // (Alastor's fingers), so strip the shine.
+                            if (baseMap == null && col.maxColorComponent < 0.1f)
+                            {
+                                nm.SetFloat("_Smoothness", 0f);
+                                nm.SetFloat("_Metallic", 0f);
+                                nm.SetFloat("_SpecularHighlights", 0f);
+                                nm.SetFloat("_EnvironmentReflections", 0f);
+                                nm.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
+                                nm.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
+                            }
                             if (normal != null) { nm.SetTexture("_BumpMap", normal); nm.EnableKeyword("_NORMALMAP"); }
                             if (mr != null)
                             {
@@ -180,6 +192,17 @@ public static class YargCharExporter
                             "Assets/Resources/Animations/Vocals/Default/DefaultController.controller");
                         if (ctrl != null) animator.runtimeAnimatorController = ctrl;
                         Debug.Log($"[YARGCHAR] {outName}: controller {(ctrl != null ? ctrl.name : "NOT FOUND")}");
+                    }
+
+                    // Opt-in: render both hands inside Unity instead of exporting.
+                    // Run WITHOUT -nographics. See YargCharHandRender.cs.
+                    var renderDir = Arg(args, "-renderDir");
+                    if (!string.IsNullOrEmpty(renderDir))
+                    {
+                        YargCharHandRender.Render(instance, outName.Replace(" ", ""), renderDir, 0f);
+                        YargCharHandRender.Render(instance, outName.Replace(" ", ""), renderDir, 0.5f);
+                        Debug.Log($"[YARGCHAR] {outName}: hands rendered to {renderDir}");
+                        continue;
                     }
 
                     BackgroundHelper.Export(instance, BackgroundHelper.ExportType.Character,
