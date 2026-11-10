@@ -5647,6 +5647,111 @@ for attr, value in (
     try: setattr(meta, attr, value)
     except Exception: pass
 
+# Fill in a finger chain the model does not have.
+#
+# YARG's AddMicrophoneToCharacter reads SIX bones off the humanoid map --
+# rightHand, rightThumbDistal, rightLittleDistal, rightLittleProximal,
+# rightIndexIntermediate, rightIndexProximal -- and a null one throws. The
+# throw escapes before LoadCharacter can put the character on the Venue layer,
+# so the character loads and is then INVISIBLE, which in game reads as "he
+# doesn't show up at all, just a floating mic".
+#
+# Alastor is the case: his rig is a four-fingered cartoon hand with index, ring
+# and thumb only, so rightLittle* genuinely do not exist and no mapping can
+# find them. Note the game computes `littleGripCenter` from them and then never
+# uses it -- the mic is placed from the index. The bones only have to be
+# non-null.
+#
+# So synthesise them FUSED to a real finger: each new bone sits exactly on its
+# donor counterpart and is parented to it, so it moves in lockstep rather than
+# hanging beside the hand as a separate digit. That is what a four-fingered
+# hand is anyway -- the outermost finger does the work of two -- and it means
+# any animation that drives the little finger drives it correctly instead of
+# waving a bone through empty space. The fused bones carry NO weight, so they
+# change nothing about how the character deforms. VRM_FILL_FINGERS=0 opts out.
+if os.environ.get("VRM_FILL_FINGERS", "1") != "0":
+    # VRM names the thumb's joints differently from the other four.
+    _FINGER_PARTS = {
+        "thumb":  ("metacarpal", "proximal", "distal"),
+        "index":  ("proximal", "intermediate", "distal"),
+        "middle": ("proximal", "intermediate", "distal"),
+        "ring":   ("proximal", "intermediate", "distal"),
+        "little": ("proximal", "intermediate", "distal"),
+    }
+    # What YARG's microphone code actually dereferences. A missing one of these
+    # is what makes a character invisible; the rest are cosmetic.
+    _MIC_NEEDS = ("thumb", "index", "little")
+
+    def _have(_side, _f):
+        _parts = _FINGER_PARTS[_f]
+        return all("%s_%s_%s" % (_side, _f, _c) in MAP
+                   and MAP["%s_%s_%s" % (_side, _f, _c)] in bone_names
+                   for _c in _parts)
+
+    _made_fingers = []
+    for _side in ("right", "left"):
+        _handslot = "%s_hand" % _side
+        if _handslot not in MAP or MAP[_handslot] not in bone_names:
+            continue
+        for _f in _MIC_NEEDS:
+            if _have(_side, _f):
+                continue
+            # Donor: any finger on this hand that IS complete. Prefer a
+            # neighbour, so a fused thumb lands on the index rather than
+            # across the palm.
+            _order = {"thumb": ("index", "middle", "ring", "little"),
+                      "index": ("middle", "ring", "little", "thumb"),
+                      "little": ("ring", "middle", "index", "thumb")}[_f]
+            _donor = next((_d for _d in _order if _have(_side, _d)), None)
+            _fparts = _FINGER_PARTS[_f]
+            bpy.context.view_layer.objects.active = arm
+            bpy.ops.object.mode_set(mode="EDIT")
+            _hand_eb = arm.data.edit_bones.get(MAP[_handslot])
+            # Positions come from the donor, so the new chain sits ON a real
+            # finger. With no complete finger anywhere -- Judy and Miku -- step
+            # along the hand instead; the bones are weightless, so this is only
+            # about them existing somewhere sane.
+            _src_names = ([MAP["%s_%s_%s" % (_side, _donor, _c)]
+                           for _c in _FINGER_PARTS[_donor]] if _donor else [])
+            # PARENTING MUST BE hand -> proximal -> intermediate -> distal.
+            # Parenting each fused bone to its donor counterpart is what a
+            # fused finger really is, and VRM rejects it: the exporter dropped
+            # the bones silently, the humanoid map still reported 52/52, and
+            # the written file had no little finger at all. The POSITION can be
+            # fused; the hierarchy cannot. So they sit on the donor and move
+            # with the hand rather than with that finger -- which for a
+            # weightless bone nothing renders is a distinction without a
+            # difference.
+            _prev = _hand_eb
+            _names = []
+            for _i, _c in enumerate(_fparts):
+                _nb = arm.data.edit_bones.new(
+                    "%s_%s_%s_fused" % (_side, _f, _c))
+                if _src_names:
+                    _src = arm.data.edit_bones.get(_src_names[_i])
+                    _nb.head, _nb.tail, _nb.roll = _src.head, _src.tail, _src.roll
+                else:
+                    _v = _hand_eb.vector * 0.33
+                    _nb.head = _hand_eb.tail + _v * _i
+                    _nb.tail = _hand_eb.tail + _v * (_i + 1)
+                    _nb.roll = _hand_eb.roll
+                _nb.parent = _prev
+                _nb.use_connect = False
+                _nb.use_deform = True  # humanoid slots must survive the export
+                _prev = _nb
+                _names.append(_nb.name)
+            bpy.ops.object.mode_set(mode="OBJECT")
+            bpy.context.view_layer.update()
+            bone_names = set(b.name for b in arm.data.bones)
+            for _c, _n in zip(_fparts, _names):
+                MAP["%s_%s_%s" % (_side, _f, _c)] = _n
+            _made_fingers.append("%s %s on %s" % (_side, _f, _donor or "the hand"))
+    if _made_fingers:
+        print("  fingers: filled %d missing finger chain(s) with WEIGHTLESS "
+              "bones fused to a real one, because YARG's microphone code "
+              "dereferences them and a null makes the character INVISIBLE "
+              "-- %s" % (len(_made_fingers), ", ".join(_made_fingers)))
+
 trace("before export")
 hb = ext.vrm1.humanoid.human_bones
 ok, missing = 0, []
