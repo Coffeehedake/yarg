@@ -925,6 +925,46 @@ if the effect should be seen on ordinary songs. Pomni currently has `Wide_eyed` 
 Not verified in game: all of this is from the code and from renders in Blender. Nothing here has
 been watched running in YARG.
 
+## A hand can ship turned 100 degrees, and only the written file shows it
+
+2026-11-10. Judy Hopps' hands stood UP out of her cuffs in game, like white sticks, beside a
+character such as the Joker whose hands follow the arm. In Blender her rebuilt hands rendered the
+same way, but the numbers that should have explained it did not: her wrist angle matched her source
+model exactly (21.3 degrees in both), because that figure was measured on raw vertices and the
+fault is not in the vertices.
+
+**The fault is in the skeleton the game poses against the mesh.** A VRM stores node transforms
+(what the game poses the bones with) and inverse bind matrices (what the mesh was bound against).
+Where they disagree, the mesh is deformed by exactly the disagreement. Importing the file and
+comparing every bone's pose with its rest found it: `n50`, her hand, and everything under it were
+**100.1 degrees** off, about the bone's own axis; her forearm was 1.7. `tools/character-pipeline/
+bind_check.py` does this for any exported `.vrm` and should read zero. Pomni: 0 bones over 5
+degrees. Judy as shipped: 106 of 141.
+
+**The cause was the stub-finger step.** YARG's microphone code dereferences six finger bones and a
+null makes the character invisible, so the build synthesises weightless stubs for any missing
+finger. With no donor finger (Judy, Miku) it laid them along the hand bone's direction -- and
+Judy's hand bone points almost straight down. Built with the step off, the same file measured 8
+bones off, none of them the hand. Laid along the forearm instead: 14 off, all weightless thumb stubs
+plus ears that are 11 degrees off with or without it, and the hand renders straight out along the arm.
+
+Three things that cost time and should not again:
+
+- **A check inside the build cannot see it.** I added a pose-versus-rest test just before export and
+  it reported "every bone is at rest" for the broken character; the defect only exists in the written
+  file. Measure the exported file, in a fresh import.
+- **Edit mode was blamed first and was innocent.** Entering and leaving it did rotate nothing (0
+  bones). The bone pointing straight down made a roll singularity the obvious suspect, and
+  recording and restoring every bone around the round trip changed nothing. Measure the suspect
+  before building the repair.
+- **Folding the finger weights into the hand bone changed nothing** either, for the same reason:
+  the hand bone itself was the one turned, not the fingers.
+
+Her real hands are closed fists with the thumb out -- the source model is modelled that way -- and
+her finger bones are not in the humanoid map, so they do not animate. That is a separate matter from
+the 100 degrees. **Miku takes the same no-donor path and measured 94.6 degrees on her stubs in the
+installed build; she has not been rebuilt with this fix.**
+
 ## Spring bones need bones
 
 Hair, a skirt or a cape stays rigid however well the character animates, because Unity's humanoid

@@ -5744,9 +5744,19 @@ if os.environ.get("VRM_FILL_FINGERS", "1") != "0":
                     _src = arm.data.edit_bones.get(_src_names[_i])
                     _nb.head, _nb.tail, _nb.roll = _src.head, _src.tail, _src.roll
                 else:
-                    _v = _hand_eb.vector * 0.33
-                    _nb.head = _hand_eb.tail + _v * _i
-                    _nb.tail = _hand_eb.tail + _v * (_i + 1)
+                    # Along the FOREARM, not along the hand bone: a hand bone
+                    # that points straight down (Judy's, 2.5 cm long, tail at
+                    # -Z) laid its stubs downward, and with them present the
+                    # exported hand came out turned 100 degrees against the
+                    # pose the mesh is bound in -- the hands stood UP out of
+                    # the cuffs in game. Measured by rest-vs-pose on the
+                    # exported file: 106 of 141 bones off with the stubs laid
+                    # down the bone, 8 without any.
+                    _dir = ((_hand_eb.head - _hand_eb.parent.head)
+                            if _hand_eb.parent else _hand_eb.vector)
+                    _dir = _dir.normalized() * max(_hand_eb.length, 0.02) * 0.33
+                    _nb.head = _hand_eb.head + _dir * (_i + 1)
+                    _nb.tail = _hand_eb.head + _dir * (_i + 2)
                     _nb.roll = _hand_eb.roll
                 _nb.parent = _prev
                 _nb.use_connect = False
