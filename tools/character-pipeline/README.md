@@ -230,6 +230,12 @@ bigger mouth. Viseme keys only -- amplifying a blink drives the eyelids through 
 Check the result at full open before shipping it: doubling a shape key can tear geometry.
 Pomni at 2.2x opens wide with teeth and tongue visible and holds together.
 
+**Measured 2026-11-10 -- 4.4x is too much for Pomni.** At 4.4x her upper lip peels back over her
+nose and forehead and the open mouth shows straight into her head (front and side renders at
+weight 1.0). At 3.0x the lips stay on the face and teeth and tongue read clearly; her lower lip
+droops onto the collar but nothing is see-through. She now ships at **3.0**. Render the mouth at
+weight 1.0 from the side as well as the front: the front view hid the lip flip.
+
 `ih` is the preset most models have no shape for -- Alastor has `a`, `e`, `o`, `U` and no `i` at
 all. It falls back to `ee` at 0.7, because an unbound viseme is a mouth that stalls mid-word.
 
