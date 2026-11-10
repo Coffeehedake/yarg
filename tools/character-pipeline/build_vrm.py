@@ -5818,6 +5818,7 @@ for s, b in missing:
 # The vertex count of the evaluated mesh must equal the mesh's own, or a key
 # written from it would be applied to the wrong vertices; refuse in that case.
 _bake_binds = []
+_bake_lash = []
 _BAKE = os.environ.get("VRM_BLINK_BAKE", "").strip()
 if _BAKE:
     _bake_pose = {}
@@ -5895,6 +5896,66 @@ if _BAKE:
         _bake_binds.append((_o, "Blink"))
         print("  blink bake: %s/Blink, max displacement %.4f" % (_o.name, _moved))
 
+    # LASHES CLOSE WITH THE LIDS. Pomni's lash ticks collapse onto the seam where
+    # the lids meet (measured in her source at frame 30: a z-spread of 0.009 at
+    # the eye's centre height), and the reference shows them lying along that
+    # line. Her own 'Closed' key does this in the source and does NOT survive
+    # the build -- it moves the lashes 0.011 the wrong way -- so write a fresh
+    # key from the closed lids: slide each lash vertex to the seam height and
+    # forward onto the lid's closed surface.
+    #   VRM_BLINK_LASH="^Lashes"
+    _LASH = os.environ.get("VRM_BLINK_LASH", "").strip()
+    if _LASH and _bake_binds:
+        import mathutils
+        from mathutils.bvhtree import BVHTree
+        _lashes = [o for o in meshes if re.search(_LASH, o.name)]
+        _wcl = {o.name: [o.matrix_world @ c for c in _closed[o.name]] for o in _lids}
+        def _xc(_n):
+            _xs = [v.x for v in _wcl[_n]]
+            return (min(_xs) + max(_xs)) / 2
+        def _nearest(_kind, _x):
+            _c = [o for o in _lids if _kind in o.name and o.name in _wcl]
+            return min(_c, key=lambda o: abs(_xc(o.name) - _x)) if _c else None
+        for _lo in _lashes:
+            if not _lo.data.vertices:
+                continue
+            _wv = [_lo.matrix_world @ v.co for v in _lo.data.vertices]
+            _cx = sum(v.x for v in _wv) / len(_wv)
+            _sup, _inf = _nearest("Sup", _cx), _nearest("Inf", _cx)
+            if _sup is None or _inf is None:
+                print("  blink bake: no lid pair for %s -- lashes left alone" % _lo.name)
+                continue
+            _seam = (min(v.z for v in _wcl[_sup.name])
+                     + max(v.z for v in _wcl[_inf.name])) / 2
+            # Surface in front of the seam: ray from the front onto both lids.
+            _verts = _wcl[_sup.name] + _wcl[_inf.name]
+            _polys = []
+            for _l in (_sup, _inf):
+                _off = 0 if _l is _sup else len(_wcl[_sup.name])
+                _polys += [[_off + i for i in pl.vertices] for pl in _l.data.polygons]
+            _bvh = BVHTree.FromPolygons([tuple(v) for v in _verts], _polys)
+            _inv = _lo.matrix_world.inverted()
+            _targets = []
+            # Keep 40% of each tick's height about the seam. Flattening them to
+            # zero leaves invisible degenerate lines; her source keeps a z-spread
+            # of 0.009 against 0.024 open, which is 0.375.
+            _cz = sum(v.z for v in _wv) / len(_wv)
+            for w in _wv:
+                _zs = _seam + (w.z - _cz) * 0.4
+                _o3 = mathutils.Vector((w.x, w.y - 1.0, _zs))
+                _hit = _bvh.ray_cast(_o3, mathutils.Vector((0, 1, 0)), 2.0)
+                _y = (_hit[0].y - 0.004) if _hit[0] is not None else w.y
+                _targets.append(_inv @ mathutils.Vector((w.x, _y, _zs)))
+            if not _lo.data.shape_keys:
+                _lo.shape_key_add(name="Basis")
+            _kb = _lo.shape_key_add(name="Blink", from_mix=False)
+            for _i, t in enumerate(_targets):
+                _kb.data[_i].co = t
+            _bake_binds.append((_lo, "Blink"))
+            _bake_lash.append(_lo)
+            print("  blink bake: %s/Blink laid on the seam of %s + %s (z %.3f)"
+                  % (_lo.name, _sup.name, _inf.name, _seam))
+
 _blink_binds = []
 for _spec in [x for x in os.environ.get("VRM_BLINK", "").split(",") if x.strip()]:
     _mn, _, _kn = _spec.partition("=")
@@ -5910,7 +5971,8 @@ if not _blink_binds:
             continue
         for _kb in list(_sk.key_blocks)[1:]:
             if (_is_blink(_o.name, _kb.name)
-                    and (_o, _kb.name) not in _bake_binds):
+                    and (_o, _kb.name) not in _bake_binds
+                    and _o not in _bake_lash):
                 _blink_binds.append((_o, _kb.name))
 # Custom facial expressions (VRM_EXPR), reachable by YARG's own lipsync events.
 for _en, _tg in _EXPR.items():

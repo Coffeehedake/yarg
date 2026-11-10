@@ -863,6 +863,8 @@ Three details that each cost a build:
   that does not reliably mean the eye's side (`EyeLidSup.L.001` sits on the other eye), and YARG
   drives only `blink` anyway.
 
+**Lashes close with the lids (`VRM_BLINK_LASH="^Lashes"`).** In her source the lash ticks collapse onto the seam where the lids meet (z-spread 0.009 against 0.024 open, at the eye's centre height). Her own `Closed` key does that in the source and does not survive the build: it moved the lashes 0.011 the wrong way. So the bake writes a fresh `Blink` key on each lash mesh from the closed lids: seam height from the nearest Sup/Inf pair, a ray cast from the front onto the closed lids, 4 mm in front of the surface, and 40% of each tick's height kept. Flattening them to zero height left degenerate lines that rendered as nothing -- the first attempt. The old `Closed` binds are skipped on baked meshes, or the two keys would add.
+
 Verified by render at weight 0 and 1: eyes open at rest, dark lids with a thin slit when closed,
 matching her published blink. Pomni's triangle count is unchanged at 32,764.
 
