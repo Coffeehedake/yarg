@@ -962,8 +962,11 @@ Three things that cost time and should not again:
 
 Her real hands are closed fists with the thumb out -- the source model is modelled that way -- and
 her finger bones are not in the humanoid map, so they do not animate. That is a separate matter from
-the 100 degrees. **Miku takes the same no-donor path and measured 94.6 degrees on her stubs in the
-installed build; she has not been rebuilt with this fix.**
+the 100 degrees. **Miku took the same no-donor path.** In her installed build her hand and finger bones measured
+62.1 degrees off (88 bones, 44 over 5 degrees); rebuilt with the stubs along the forearm it is 22,
+none of them her hands (the rest are weightless thumb stubs and ~6 degree drift on legs and one
+finger that was already there). Her old render showed the hands flared up at the wrists; the new one
+lies along the arms. Triangles unchanged at 4,588.
 
 ## Spring bones need bones
 

@@ -33,5 +33,5 @@ for pb in arm.pose.bones:
 res.sort(reverse=True)
 off = [r for r in res if r[0] > 5]
 print("BINDCHECK %s: %d bones, %d over 5 degrees" % (SRC, len(res), len(off)))
-for a, n in off[:30]:
+for a, n in off[:60]:
     print("  %6.1f  %s" % (a, n))
