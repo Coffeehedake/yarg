@@ -797,6 +797,18 @@ def _is_blink(_mesh_name, _key_name):
     return bool(_BLINK_KEY.search(_key_name)
                 or (_BLINK_EXACT.match(_key_name)
                     and _BLINK_MESH.search(_mesh_name)))
+# VRM_EXPR="Wide_eyed=Eye.L/Big;Squint=Eye.L/Small" -- shape keys to spare and
+# expose as CUSTOM VRM expressions. YARG sets a custom expression whenever a
+# lipsync event's type NAME equals the expression's name (VRMCharacter.cs
+# TryGetExpressionKey(string)), and the chart generator emits Brow_*, Squint
+# and Wide_eyed on its own. So a character's own facial keys can be reached
+# without any change to the game, provided they are called by those names.
+_EXPR = {}
+for _part in [x for x in os.environ.get("VRM_EXPR", "").split(";") if x.strip()]:
+    _en, _, _tgt = _part.partition("=")
+    _mn, _, _kn = _tgt.strip().rpartition("/")
+    _EXPR.setdefault(_en.strip(), []).append((_mn, _kn))
+_EXPR_KEEP = {(m, k) for v in _EXPR.values() for m, k in v}
 for o in meshes:
     sk = o.data.shape_keys
     if not sk or not sk.key_blocks:
@@ -809,7 +821,8 @@ for o in meshes:
     if not os.environ.get("VRM_KEEP_MORPHS"):
         _spare = [kb.name for kb in list(sk.key_blocks)[1:]
                   if _is_blink(o.name, kb.name)
-                  or _viseme_targets(o.name, kb.name)]
+                  or _viseme_targets(o.name, kb.name)
+                  or (o.name, kb.name) in _EXPR_KEEP]
         for _kb in list(sk.key_blocks)[1:]:
             if _kb.name not in _spare:
                 o.shape_key_remove(_kb)
@@ -5899,6 +5912,24 @@ if not _blink_binds:
             if (_is_blink(_o.name, _kb.name)
                     and (_o, _kb.name) not in _bake_binds):
                 _blink_binds.append((_o, _kb.name))
+# Custom facial expressions (VRM_EXPR), reachable by YARG's own lipsync events.
+for _en, _tg in _EXPR.items():
+    _ce = ext.vrm1.expressions.custom.add()
+    _ce.custom_name = _en
+    _n = 0
+    for _mn, _kn in _tg:
+        _mo = bpy.data.objects.get(_mn)
+        if _mo is None or not _mo.data.shape_keys or _kn not in _mo.data.shape_keys.key_blocks:
+            raise SystemExit("ABORT: VRM_EXPR %s names %s/%s, which is not in "
+                             "this file" % (_en, _mn, _kn))
+        _b = _ce.morph_target_binds.add()
+        _b.node.mesh_object_name = _mn
+        _b.index = _kn
+        _b.weight = 1.0
+        _n += 1
+    print("  expression: custom '%s' bound to %d key(s): %s"
+          % (_en, _n, ", ".join("%s/%s" % t for t in _tg)))
+
 # Baked lid keys go on the plain 'blink' expression only. Their mesh names carry
 # an L that does not reliably mean the eye's side (Pomni's EyeLidSup.L.001 sits
 # on the other eye), and YARG drives only 'blink' anyway.
