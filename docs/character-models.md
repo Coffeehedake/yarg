@@ -1998,23 +1998,53 @@ textures.
 The two ruled-out ends are the controls. A comparison in which nothing fails has not been shown
 to discriminate, and the 0.0% / 4.3% rows are what make the 97.1% rows mean something.
 
-### Sonic's wrists are off in every build, including the installed one
+### Sonic's wrists are NOT off — retracting the previous entry
 
-With the installed rig identified, the open "Sonic wrists 90° off" item can be measured instead
-of guessed. Comparing each bone's rest rotation against its mirror:
+**The entry that stood here was wrong, and so was the one before it.** Both reported a wrist
+defect in Sonic's installed build. There isn't one. It is worth keeping the record of how two
+different measurements each produced a confident wrong answer, because both traps are easy to
+fall into again.
 
-| bone pair | installed | `SonicHD` | `SonicHD_nt` |
+**Wrong answer 1: local rotations.** Comparing each bone's rest rotation against its mirror gave
+`LeftHand` 0.87° against `RightHand` 69.76°, and `LeftHandIndex1` 0.09° against 127.43°, with the
+shoulders symmetric to 1° as an apparent control. Those numbers are real. They mean nothing: a
+local rotation is relative to the parent, and left/right bone **rolls** need not match. The
+shoulders agreeing showed only that two particular bones happened to agree, not that disagreement
+implies misplacement.
+
+**Wrong answer 2: bone axes.** Measuring the angle between each bone's own head-to-tail direction
+gave "the wrist is bent exactly 90.00° on both sides" on the reverted build — a number so clean it
+read as a diagnosis. It is an artefact. The VRM importer **synthesises a bone tail** wherever the
+hierarchy does not pin one, and a synthetic tail points somewhere arbitrary. Measured:
+
+| rig | `Hand` tail vs child head | bone length | reading |
 |---|---|---|---|
-| Shoulder L/R | 127° / 127° — **Δ1°** | Δ1° | Δ1° |
-| Arm | Δ11° | Δ8° | Δ11° |
-| ForeArm | Δ17° | Δ17° | Δ17° |
-| **Hand** | **Δ69°** | Δ60° | Δ58° |
-| **HandIndex1** | **Δ127°** | Δ116° | Δ116° |
+| Sonic, installed | gap 0.0000 | 0.1418 | 0.00° — genuine |
+| Sonic, reverted | gap **3.4903** | 1.8199 | "90.00°" — **artefact** |
+| Ariel | gap **0.0741** | 0.0067 | "86.8°" — **artefact**, eleven times the bone |
 
-The shoulders are the control: mirrored bones in this rig preserve their angle magnitude to
-within a degree, so the hand's 69° and the index finger's 127° are a real asymmetry and not an
-artefact of mirroring. It is present in **every** Sonic build measured, so it comes from the
-source rig and no rebuild has ever fixed it — which also means rebuilding him is not the remedy.
+Ariel renders with perfectly straight arms, which is what made her the case that exposed it.
+
+**What is actually true.** Measured joint to joint — the angle between the shoulder-to-elbow
+segment and the elbow-to-wrist segment, built from bone **head** positions only, which no
+synthesised tail can disturb — Sonic's installed rig is straight and symmetric:
+
+| | installed |
+|---|---|
+| elbow | 0.00° / 0.00° |
+| wrist | 0.00° / 0.00° |
+| knee | 0.02° / 0.00° |
+| ankle | 55.6° / 57.0°, Δ1.5° — an ankle is *supposed* to be bent |
+
+Mirrored bone heads agree to 2–7 mm, the humanoid map is correct and symmetric on both sides, and
+close-up renders show two correctly formed, correctly attached mirror-image gloves. **There is
+nothing to fix**, and the attempt to fix it was abandoned for that reason rather than completed.
+
+`tools/character-pipeline/limb_check.py` is the measurement that survived. It uses joint positions
+only, reports how many bones carry a synthetic tail so nobody re-derives the artefact and believes
+it, and has a `LIMB_CONTROL=1` mode that displaces a wrist to prove the detector fires — it reads
+73.46° on the bent side against 0.00° on the other.
+
 
 ## Open questions
 
