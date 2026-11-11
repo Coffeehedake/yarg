@@ -3518,6 +3518,130 @@ if _ORIENT:
             _flip_faces(_o, _fp)
             print("  oriented %d faces outward on '%s' (%s)" % (_fp.__len__(), _o.name, ", ".join(_names)))
 
+# VRM_ORIENT_CONSISTENT="Body.001;Other" is the per-piece version, and the better one. A GROUP
+# rule cannot be right when a group is mixed: flipping a mostly-inverted group also flips the
+# faces that were already correct, and those vanish under back-face culling (patches missing from
+# gloves and cuffs); leaving a mixed group alone leaves its inverted half inside-out (a coat
+# skirt). So work on connected pieces of surface instead. 1) Join faces that share an edge
+# (vertices welded by position, so UV seams do not split a piece) and propagate ONE winding
+# through each piece, so neighbours agree. 2) Then decide each piece as a whole: flip it when
+# fewer than half of its faces point away from their driving bone.
+if os.environ.get("VRM_ORIENT_CONSISTENT", "").strip():
+    import collections as _c2
+    _names = set(x.strip() for x in os.environ["VRM_ORIENT_CONSISTENT"].split(";") if x.strip())
+    _amw2 = arm.matrix_world
+    _seg2 = {b.name: (_amw2 @ b.head_local, _amw2 @ b.tail_local) for b in arm.data.bones}
+
+    def _near2(_pt, _a, _b):
+        _ab = _b - _a
+        _t = 0.0 if _ab.length_squared == 0 else max(0.0, min(1.0, (_pt - _a).dot(_ab) / _ab.length_squared))
+        return _a + _ab * _t
+
+    for _o in meshes:
+        _me = _o.data
+        _mw = _o.matrix_world
+        _n3 = _mw.to_3x3()
+        _gn = {g.index: g.name for g in _o.vertex_groups}
+        _polys = [p for p in _me.polygons
+                  if p.material_index < len(_o.material_slots)
+                  and _o.material_slots[p.material_index].material
+                  and _o.material_slots[p.material_index].material.name in _names]
+        if len(_polys) < 40:
+            continue
+        # weld by position so UV seams do not cut a piece in two
+        _wid = {}
+        _weld = {}
+        for _p in _polys:
+            for _vi in _p.vertices:
+                if _vi not in _weld:
+                    _co = _me.vertices[_vi].co
+                    _k = (round(_co.x * 1e4), round(_co.y * 1e4), round(_co.z * 1e4))
+                    _weld[_vi] = _wid.setdefault(_k, len(_wid))
+        _edges = _c2.defaultdict(list)          # welded edge -> [(face index, direction)]
+        for _p in _polys:
+            _vs = [_weld[v] for v in _p.vertices]
+            for _i in range(len(_vs)):
+                _a, _b = _vs[_i], _vs[(_i + 1) % len(_vs)]
+                if _a != _b:
+                    _edges[(min(_a, _b), max(_a, _b))].append((_p.index, 1 if _a < _b else -1))
+        _adj = _c2.defaultdict(list)
+        for _fl in _edges.values():
+            if len(_fl) == 2:                    # manifold edges only
+                (_f1, _d1), (_f2, _d2) = _fl
+                _adj[_f1].append((_f2, _d1, _d2))
+                _adj[_f2].append((_f1, _d2, _d1))
+        _state = {}
+        _comp = {}
+        _ncomp = 0
+        for _p in _polys:
+            if _p.index in _state:
+                continue
+            _state[_p.index] = 1
+            _comp[_p.index] = _ncomp
+            _q = [_p.index]
+            while _q:
+                _f = _q.pop()
+                for _g, _df, _dg in _adj[_f]:
+                    if _g not in _state:
+                        # neighbours agree when the shared edge is traversed in opposite directions
+                        _state[_g] = -_df * _state[_f] * _dg
+                        _comp[_g] = _ncomp
+                        _q.append(_g)
+            _ncomp += 1
+        _out = _c2.defaultdict(lambda: [0, 0])
+        for _p in _polys:
+            _w = _c2.Counter()
+            for _vi in _p.vertices:
+                for _g in _me.vertices[_vi].groups:
+                    _w[_gn.get(_g.group, "")] += _g.weight
+            _best = next((b for b, _ in _w.most_common() if b in _seg2), None)
+            if _best is None:
+                continue
+            _c = _mw @ _p.center
+            _o2 = _c - _near2(_c, *_seg2[_best])
+            if _o2.length < 0.01:
+                continue
+            _nrm = (_n3 @ _p.normal).normalized() * _state[_p.index]
+            _out[_comp[_p.index]][0] += 1
+            if _nrm.dot(_o2.normalized()) > 0:
+                _out[_comp[_p.index]][1] += 1
+        # A CLOSED piece has an exact answer that needs no bone: the signed volume (divergence
+        # theorem) is positive when its faces point outward and negative when the whole piece is
+        # inside-out. The bone vote is only a fallback for open sheets. It is wrong for a shell
+        # driven by bones that run through its middle: Alastor's coat skirt (thigh bones) voted 52%
+        # outward while its signed volume was negative, and it was left inside-out.
+        _ecount = _c2.defaultdict(lambda: [0, 0])
+        for _fl in _edges.values():
+            _cid = _comp[_fl[0][0]]
+            _ecount[_cid][1] += 1
+            if len(_fl) == 2:
+                _ecount[_cid][0] += 1
+        _cen = _c2.defaultdict(lambda: [Vector((0.0, 0.0, 0.0)), 0])
+        for _p in _polys:
+            _cc = _cen[_comp[_p.index]]
+            _cc[0] += _mw @ _p.center
+            _cc[1] += 1
+        _vol = _c2.defaultdict(float)
+        for _p in _polys:
+            _cid = _comp[_p.index]
+            _cv = (_mw @ _p.center) - _cen[_cid][0] / _cen[_cid][1]
+            _vol[_cid] += _p.area * _cv.dot((_n3 @ _p.normal).normalized() * _state[_p.index]) / 3.0
+        _flipcomp = set()
+        for _cid in set(_comp.values()):
+            _closed = _ecount[_cid][1] > 0 and _ecount[_cid][0] / _ecount[_cid][1] >= 0.95
+            _n, _k = _out.get(_cid, (0, 0))
+            if _closed:
+                if _vol[_cid] < 0:
+                    _flipcomp.add(_cid)
+            elif _n >= 3 and _k / _n < 0.5:
+                _flipcomp.add(_cid)
+        _fp = set(p.index for p in _polys
+                  if (_state[p.index] == -1) != (_comp[p.index] in _flipcomp))
+        if _fp:
+            _flip_faces(_o, _fp)
+            print("  made %d pieces of '%s' consistent: flipped %d of %d faces (%d pieces turned outward)"
+                  % (_ncomp, _o.name, len(_fp), len(_polys), len(_flipcomp)))
+
 # ---------------------------------------------------------------- hair rig
 # Spring bones need bones. A character whose hair is skinned straight to the
 # head bone - Character Creator and stock Mixamo rigs both do this - has nothing

@@ -1120,6 +1120,56 @@ driving bone" means nothing there. Doom Slayer's large armour material reads 50%
 and Chibi Rem read 59-63% overall; none of them is anywhere near Alastor's numbers and none has been
 looked at for this. A low reading is a prompt to look, not a verdict.
 
+**The group flip was wrong too: it cut across connected pieces (same day, later).** Alastor's
+screenshot after the group pass showed the coat skirt still inverted and patches missing from the gloves
+and cuffs. The winding-conflict count explains the patches: the unflipped surface had 0% of its shared
+edges in conflict, because every connected piece was wound uniformly (just the wrong way round), and
+the group flip left 3%. Flipping a group that cuts across a piece flips some faces and not their
+neighbours, and the inverted side of each such edge is culled. `VRM_ORIENT_CONSISTENT="Body.001;..."`
+works on whole connected pieces instead: faces are joined by shared edges with vertices welded by
+position (so a UV seam does not split a piece), one winding is propagated through each piece, and each
+piece is then oriented as a whole. Result: 0% winding conflicts, body faces outward 85% / 91%
+(group flip 76% / 88%).
+
+**A closed piece has an exact answer: its signed volume.** The coat skirt (a 670-face piece, z 0.47-1.01)
+was still inside-out after that pass. Its bone vote read 52% outward, because the thigh bones that
+drive it run through its middle, and a vote taken against the wrong bone says nothing. For a piece whose
+edges are 95% or more shared by exactly two faces, the signed volume (divergence theorem) is positive
+when the faces point outward and negative when the whole piece is inside-out, and needs no bone: it read
+-0.00301 m3 before and after. The build now decides closed pieces by signed volume and uses the bone
+vote only for open sheets. `facing_check.py` prints VOLUME lines for inside-out closed pieces and a
+VOLSUM per file. Validated: the unflipped Alastor reads 16 of 19 closed pieces inside-out; Heels and
+Ariel 0 of 10 each. How much to trust a negative volume: Alastor's real inside-out solids fill 11-39% of
+their bounding box; a paper-thin double-layer shell fills 1-2% and its sign is noise.
+
+**Sweep with the exact test, all 28 installed VRMs.** 22 characters have no inside-out closed piece.
+Candidates, with size (nothing near Alastor's): Alcina Dimitrescu 3 (a 0.9 cm sphere, a 1.6 cm shell, a
+flat 5 cm plane at z 2.66), Chibi Rem 2 (a pair, 10 x 6 x 3 cm, 13% solid, at hip height), Jessica
+Rabbit 1 (4 x 1.2 x 1 cm), Pomni 1 (flat, 1.4% solid: ignore), Power Girl 1 (head-sized but 6% solid).
+None has been looked at in the game and none was changed. Alastor's own five (all `Head.001`) were
+hair and ear pieces drawn double-sided, so they looked right either way.
+
+**Head test (installed 2026-11-11, in-game result not recorded yet).** To find out whether the mask
+showing through the fringe was ever a missing double-sided flag, the head was oriented outward the same
+way (`VRM_ORIENT_CONSISTENT="Body.001;Head.001"`: 0 of 19 closed pieces inside-out, winding conflicts 1%
+-> 0%) and `Head.001` taken OFF the cull-off list, leaving only `Eyes.001` double-sided. If the fringe
+still covers the mask, it was winding; if the mask pokes through again, the sheets need double-sided
+whatever their winding.
+
+**The eyes were inverted and nobody could see it.** `Eyes.001` is two open sheets of 89 faces and all
+89 pointed back into the head (0% facing the front), hidden by the double-sided material and below
+every size threshold used so far (the 100-150 face minimums). Oriented: 99% facing the front. Built, not
+yet installed.
+
+**What the small pieces showed (79 of Alastor's 103 pieces are under 100 faces).** 17 look wrong: about
+15 lone single-triangle pieces at z 0.53 pointing inward (at about the height of the torn coat hem, so
+probably hem teeth missing from outside; not confirmed), a CLOSED 30-face head piece that is inside-out
+(z 1.54-1.57, near the eyes: a monocle or piercing is a guess), and two 2-face head slivers. The build
+missed them by construction: it skips a material with fewer than 40 faces on a mesh, never flips a
+piece under 3 faces, and joins only the faces of the materials it was told to orient, so a small shell
+touching anything else can look open and be judged by the unreliable bone vote. Also in the file: an
+80-face untextured `Icosphere` spanning z -0.90..0.90 that has not been explained.
+
 **What was tried and did not matter.** Each was measured, in the editor, before it was believed:
 culling the black material's back faces (renders identical); letting the black hull cast shadows or
 not, with soft shadows on (nearly identical, no dark patches either way); making every material
