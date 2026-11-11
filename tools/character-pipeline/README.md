@@ -649,6 +649,7 @@ right.
   Expect centimetres. A finger bone 20-30 cm out is a mesh left in the A-pose while the skeleton went
   to T, and it throws the fingers out as long strips when the animation plays. It prints
   `FINGERFIT: n of m finger bones more than 5 cm from their mesh` -- expect 0
+- `facing_check.py <vrm> [min_faces]` — which way each mesh/material's faces point, measured away from the nearest point of the bone that drives them. Textured clothing far under 50% is inside-out; thin sheets, hair cards and teeth read 45-60% and are fine; a rig where one bone drives everything (Sonic) cannot be judged
 - `bind_check.py <vrm>` — pose versus rest for every bone, rotation AND position. Reads clean when
   pose and rest agree even if both are wrong against the mesh, so it does not replace `bone_fit.py`
 - `YargCharHandRender.cs` — renders both hands INSIDE Unity, at rest and in the animated pose
@@ -873,6 +874,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 |---|---|---|
 | `VRM_DROP_MATERIAL_FACES="Mat1;Mat2"` | build | deletes every face using a named material and the vertices only they used. A material is not always just what its name suggests: Alastor's black `Material.001` is the outline hull AND half his clothes. Measure before dropping, and expect `-Force` on the install |
 | `VRM_FLIP_FACES="Mesh:z<0.9;Mesh2:z<0.15"` | build | reverses the winding and the split normals of every face of the named mesh below that height (metres). For clothing modelled inside-out behind an outline hull. Check with the share of faces pointing away from the local body axis |
+| `VRM_ORIENT_OUTWARD="Body.001@0.25"` | build | for each mesh, named material and driving bone, flips the WHOLE group (winding and split normals) when fewer than that share of its faces point away from the bone. Whole groups only, so mixed groups (a double-layered coat) are left alone. Runs after `VRM_FLIP_FACES`. Measure first with `facing_check.py` |
 | `YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001"` | export | draws the named materials double-sided. The source `Standard` material has no cull property, so the glTF `doubleSided` flag is lost on import and single-sided sheets (hair fringe, ears, eye planes) vanish from behind |
 | `YARG_NO_SHINE_MATERIALS="Body.001;..."` or `*` | export | smoothness, metallic, specular and environment reflections off. Partly overridden for materials with a metallic map (the exporter sets `_Metallic` 1 afterwards) |
 | `YARG_SHELL_NO_SHADOW=1` | export | an untextured near-black material stops casting shadows. Made no visible difference on Alastor |
@@ -892,7 +894,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Junio Sonic | sonic | 1.00 | `VRM_DROP_SOLIDIFY=1`, exclude `^Dots` |
 | B1 Battle Droid | b1 | 1.93 | four of five meshes are empty placeholders |
 | Thanos | advskel | 2.40 | source is a kneeling pose; head emission must be zeroed |
-| Alastor | mixamo | 1.95 | exclude `^(Cube\|Microph)` — detached mic inflates the bounds **As installed 2026-11-10:** build with `VRM_VISEME_GAIN=2.2 VRM_DROP_MATERIAL_FACES="Material.001" VRM_FLIP_FACES="BodyOutline.001:z<0.9;BodyOutline.002:z<0.15"`, export with `YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001" YARG_NO_SHINE_MATERIALS="Body.001;Head.001;Eyes.001"` and `-Force` (21,415 triangles against 40,124 on purpose). Without the cull setting his mask shows through his fringe; without the drop-and-flip his coat, pants and boots look inside-out in game. He has no outline now. See `docs/character-models.md` |
+| Alastor | mixamo | 1.95 | exclude `^(Cube\|Microph)` — detached mic inflates the bounds **As installed 2026-11-10:** build with `VRM_VISEME_GAIN=2.2 VRM_DROP_MATERIAL_FACES="Material.001" VRM_ORIENT_OUTWARD="Body.001@0.25"` (replaces the earlier z-band `VRM_FLIP_FACES`), export with `YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001" YARG_NO_SHINE_MATERIALS="Body.001;Head.001;Eyes.001"` and `-Force` (21,415 triangles against 40,124 on purpose). Without the cull setting his mask shows through his fringe; without the drop-and-flip his coat, pants and boots look inside-out in game. He has no outline now. See `docs/character-models.md` |
 | Jessica Rabbit | rigify_plain | 1.80 | exclude `^(BezierCurve\|Cylinder\|Cube)` |
 | Clone troopers | mixamo | 1.83 | |
 | Jinx | ue4 | 1.68 | braids and bangs already in the rig |

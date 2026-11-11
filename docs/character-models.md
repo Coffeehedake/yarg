@@ -1097,6 +1097,29 @@ are probably interior surfaces). Triangles 40,124 -> 21,415, so the install guar
 too, it looks right.** Not flipped: the collar (10% outward) and the torso and coat top (about 40%).
 He loses his black outline.
 
+**A second pass found the rest of him inside-out too (same day).** The z-band flip had only covered
+what was named. Measuring every region against the bone that drives it
+(`tools/character-pipeline/facing_check.py`) showed his forearms and hands 0% outward, head and
+collar 2%, spine 2-8%, even after the legs were flipped. `VRM_ORIENT_OUTWARD="Body.001@0.25"` does
+it from the data: for each mesh, material and driving bone, if fewer than that share of the faces
+point away from the bone's nearest point, the WHOLE group is flipped (winding and split normals
+together). Mixed groups are left alone: the double-layered coat top reads 38% and a flip would only
+trade one half for the other. Result: body-material faces outward 17% -> 76% (second mesh) and
+9% -> 88% (first mesh); 1,805 + 2,820 faces flipped across head, spine, arms, forearms, hands,
+thumbs, ring fingers, legs and feet. This replaces the `VRM_FLIP_FACES` z bands in his recipe.
+Installed 2026-11-10; the in-game result of this pass is not recorded yet.
+
+**Sweep of the other 27 (and what it cannot say).** `facing_check.py` was validated first: Ariel and
+Heels read 83-100% outward on their skin, hair and clothes, and only thin or interior parts
+(eyelashes, brows, teeth) read low. Over all 28 installed VRMs, no character other than Alastor
+shows the signature (textured clothing at 0-17% outward behind an untextured hull). The rest of
+the low readings sit at 45-60% and are hair cards, teeth, eyelashes, cloth sheets and layered
+armour, which have no inside to be wrong about. Sonic's one low material (shoes, 30%) is an
+artefact: every shoe face is driven by `Thigh_L` and his whole body by `Hips`, so "away from the
+driving bone" means nothing there. Doom Slayer's large armour material reads 50% and Jinx, Sayuri
+and Chibi Rem read 59-63% overall; none of them is anywhere near Alastor's numbers and none has been
+looked at for this. A low reading is a prompt to look, not a verdict.
+
 **What was tried and did not matter.** Each was measured, in the editor, before it was believed:
 culling the black material's back faces (renders identical); letting the black hull cast shadows or
 not, with soft shadows on (nearly identical, no dark patches either way); making every material

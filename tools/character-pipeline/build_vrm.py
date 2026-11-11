@@ -3409,51 +3409,114 @@ if _DROPMAT:
         _bm.free()
 
 # ---------------------------------------------------------------- flip faces
-# VRM_FLIP_FACES="MeshName:z<0.9;Other:z<0.3" reverses the winding of every face of the named
-# mesh whose centre sits below the given height (metres, after scaling), and flips its split
-# normals with it. For a part modelled inside-out: the outline-hull workflow leaves clothing
-# wound the wrong way and hides it behind the hull, so the moment the hull is dropped, or the
-# renderer culls back faces, the part draws its far interior instead of its outside.
+# Clothing and skin modelled INSIDE-OUT behind an outline hull draws as its far interior the
+# moment the hull is dropped or the renderer culls back faces. Two ways to turn it round, both of
+# which reverse the winding AND the split normals together.
+#
+# VRM_FLIP_FACES="MeshName:z<0.9;Other:z<0.3" reverses every face of the named mesh whose centre
+# sits below that height (metres, after scaling): the blunt tool, for a region you can name.
+#
+# VRM_ORIENT_OUTWARD="Body.001@0.25" does it from the data. For each mesh, material and DRIVING
+# BONE (the bone carrying most of a face's weight) it measures how many faces point away from the
+# nearest point of that bone, and flips the whole group when fewer than the given share do. Whole
+# groups, never single faces, so a limb turns round together; groups between the threshold and
+# the point where they read as correct are left alone (a double-layered coat is half in, half out
+# and must not be touched). Alastor: forearms, hands, head, spine 0-8% outward before.
+from mathutils import Vector as _Vec
+
+
+def _flip_faces(_o, _flip_poly):
+    import bmesh
+    _me = _o.data
+    _hadc = _me.has_custom_normals
+    if _hadc:
+        _new = [v.vector.copy() for v in _me.corner_normals]
+        for _p in _me.polygons:
+            if _p.index in _flip_poly:
+                for _li in _p.loop_indices:
+                    _new[_li] = -_new[_li]
+    _bm = bmesh.new()
+    _bm.from_mesh(_me)
+    _bm.faces.ensure_lookup_table()
+    bmesh.ops.reverse_faces(_bm, faces=[_bm.faces[i] for i in _flip_poly])
+    _bm.to_mesh(_me)
+    _bm.free()
+    if _hadc:
+        # reverse_faces reverses each flipped face's loop order, so remap the negated normals the
+        # same way: loop k of a flipped face is now its old loop (n-k) mod n.
+        _out = list(_new)
+        for _p in _me.polygons:
+            if _p.index in _flip_poly:
+                _ls = list(_p.loop_indices)
+                _n = len(_ls)
+                for _k, _li in enumerate(_ls):
+                    _out[_li] = _new[_ls[(_n - _k) % _n]]
+        _me.normals_split_custom_set(_out)
+    _me.update()
+
+
 _FLIP = []
 for _part in [x for x in os.environ.get("VRM_FLIP_FACES", "").split(";") if x.strip()]:
     _mn, _, _cond = _part.partition(":")
     _FLIP.append((_mn.strip(), float(_cond.strip().replace("z<", ""))))
-if _FLIP:
-    import bmesh
+for _o in meshes:
+    for _mn, _zmax in _FLIP:
+        if _o.name != _mn:
+            continue
+        _mw = _o.matrix_world
+        _fp = set(p.index for p in _o.data.polygons if (_mw @ p.center).z < _zmax)
+        _flip_faces(_o, _fp)
+        print("  flipped %d of %d faces of '%s' below z=%.2f" % (len(_fp), len(_o.data.polygons), _o.name, _zmax))
+
+_ORIENT = {}
+for _part in [x for x in os.environ.get("VRM_ORIENT_OUTWARD", "").split(";") if x.strip()]:
+    _mat, _, _thr = _part.partition("@")
+    _ORIENT[_mat.strip()] = float(_thr) if _thr.strip() else 0.25
+if _ORIENT:
+    import collections as _col
+    _amw = arm.matrix_world
+    _seg = {b.name: (_amw @ b.head_local, _amw @ b.tail_local) for b in arm.data.bones}
+
+    def _near(_pt, _a, _b):
+        _ab = _b - _a
+        _t = 0.0 if _ab.length_squared == 0 else max(0.0, min(1.0, (_pt - _a).dot(_ab) / _ab.length_squared))
+        return _a + _ab * _t
+
     for _o in meshes:
-        for _mn, _zmax in _FLIP:
-            if _o.name != _mn:
+        _me = _o.data
+        _mw = _o.matrix_world
+        _n3 = _mw.to_3x3()
+        _gn = {g.index: g.name for g in _o.vertex_groups}
+        _grp = _col.defaultdict(lambda: [[], 0])
+        for _p in _me.polygons:
+            _slot = _p.material_index
+            _mat = _o.material_slots[_slot].material if _slot < len(_o.material_slots) else None
+            if not _mat or _mat.name not in _ORIENT:
                 continue
-            _me = _o.data
-            _mw = _o.matrix_world
-            _hadc = _me.has_custom_normals
-            _cn = [v.vector.copy() for v in _me.corner_normals] if _hadc else None
-            _flip_poly = set(p.index for p in _me.polygons if (_mw @ p.center).z < _zmax)
-            if _hadc:
-                _new = list(_cn)
-                for _p in _me.polygons:
-                    if _p.index in _flip_poly:
-                        for _li in _p.loop_indices:
-                            _new[_li] = -_new[_li]
-            _bm = bmesh.new()
-            _bm.from_mesh(_me)
-            _bm.faces.ensure_lookup_table()
-            bmesh.ops.reverse_faces(_bm, faces=[_bm.faces[i] for i in _flip_poly])
-            _bm.to_mesh(_me)
-            _bm.free()
-            if _hadc:
-                # reverse_faces reverses each flipped face's loop order, so remap the negated
-                # normals the same way: loop k of a flipped face is now its old loop (n-1-k) shifted.
-                _out = list(_new)
-                for _p in _me.polygons:
-                    if _p.index in _flip_poly:
-                        _ls = list(_p.loop_indices)
-                        _n = len(_ls)
-                        for _k, _li in enumerate(_ls):
-                            _out[_li] = _new[_ls[(_n - _k) % _n]]
-                _me.normals_split_custom_set(_out)
-            _me.update()
-            print("  flipped %d of %d faces of '%s' below z=%.2f" % (len(_flip_poly), len(_me.polygons), _o.name, _zmax))
+            _w = _col.Counter()
+            for _vi in _p.vertices:
+                for _g in _me.vertices[_vi].groups:
+                    _w[_gn.get(_g.group, "")] += _g.weight
+            _best = next((b for b, _ in _w.most_common() if b in _seg), None)
+            if _best is None:
+                continue
+            _c = _mw @ _p.center
+            _out = _c - _near(_c, *_seg[_best])
+            if _out.length < 0.01:
+                continue
+            _g2 = _grp[(_mat.name, _best)]
+            _g2[0].append(_p.index)
+            if (_n3 @ _p.normal).normalized().dot(_out.normalized()) > 0:
+                _g2[1] += 1
+        _fp = set()
+        _names = []
+        for (_mn2, _bn), (_idx, _outn) in _grp.items():
+            if len(_idx) >= 40 and _outn / len(_idx) < _ORIENT[_mn2]:
+                _fp.update(_idx)
+                _names.append("%s %d" % (_bn, len(_idx)))
+        if _fp:
+            _flip_faces(_o, _fp)
+            print("  oriented %d faces outward on '%s' (%s)" % (_fp.__len__(), _o.name, ", ".join(_names)))
 
 # ---------------------------------------------------------------- hair rig
 # Spring bones need bones. A character whose hair is skinned straight to the
