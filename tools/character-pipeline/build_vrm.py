@@ -5428,6 +5428,131 @@ for o in meshes:
         if ms.material:
             used.add(ms.material.name)
 
+def _is_glow_mask(path):
+    """Is this emissive map a MASK, or just a copy of the base colour?
+
+    Daz writes a full PBR channel set per surface, and that set includes an
+    emission-COLOUR map for every surface whether or not it glows. In Daz that
+    map is gated by an emission STRENGTH, which no FBX carries, so arriving
+    here it looks exactly like a glow mask -- and wiring it sets strength 1.0
+    and the surface lights itself up. Ariel shipped `Irises_Emissive.png` that
+    way, at emissiveFactor [1,1,1].
+
+    Mean brightness is the obvious test and it is the WRONG one. It looked
+    decisive on a sample of two (Master Chief 0.0, Ariel 88) and fell apart on
+    the full set: in linear terms Thanos's gauntlet sits at 0.013 and K-2SO's
+    DROID_Misc at 0.044, both genuine, leaving no honest gap.
+
+    What actually distinguishes them is not how bright the map is but how much
+    of it is lit. A glow mask is LOCAL -- a visor, a gauntlet, a pair of eyes --
+    on a black field. A colour copy covers the whole UV layout:
+
+        MKV_Helmet              99.98% black    0.01% lit
+        DROID_Body              99.90% black    0.03% lit
+        Thanos gauntlet         95.43% black    4.06% lit
+        Clone Phase1 helmet     93.73% black    4.17% lit
+        DROID_Misc              89.91% black    9.10% lit
+        Prix eyes               43.82% black    0.92% lit
+        Ariel Irises             0.00% black  100.00% lit   <-- not one black pixel
+
+    Every genuine mask lights at most 9.1% of its area; the copy lights all of
+    it. The threshold is 50% -- five times clear of the genuine maps on one
+    side and twice clear of the copy on the other.
+    """
+    try:
+        img = bpy.data.images.load(path, check_existing=True)
+    except Exception:
+        return True
+    w, h = img.size
+    if w == 0 or h == 0:
+        return True
+    try:
+        import numpy as np
+        px = np.empty(w * h * 4, dtype=np.float32); img.pixels.foreach_get(px)
+        lum = px.reshape(-1, 4)[:, :3].max(axis=1)
+        lit = float((lum > 0.05).mean())
+    except ImportError:
+        px = list(img.pixels)
+        n = 0; hot = 0
+        for i in range(0, w * h * 4, 4 * 97):
+            if max(px[i], px[i + 1], px[i + 2]) > 0.05:
+                hot += 1
+            n += 1
+        lit = float(hot) / max(n, 1)
+    return lit <= 0.5
+
+
+def _bake_opacity_into_base(nt, bsdf, base_tex, ap):
+    """Put the opacity map INTO the base colour texture's alpha channel.
+
+    glTF has no separate opacity map. Alpha is baseColorTexture's own alpha
+    channel times baseColorFactor.a, and nothing else. Wiring a second image
+    into the Principled node's Alpha input is therefore a Blender-side
+    arrangement that has to survive a translation, and once mtoon1 is enabled
+    -- which this builder does for every cutout, because without it alphaMode
+    ships OPAQUE -- MToon carries ONE base colour texture and the second image
+    has nowhere to go. It is dropped silently.
+
+    Measured on Ariel, whose Cornea_Opacity.png is 100% below 10% opacity and
+    whose Cornea_BaseColor.png is pure white: the exported Cornea texture came
+    out RGB, with no alpha channel at all, so alpha fell back to 1.0, every
+    pixel passed the MASK cutoff, and an opaque white shell was drawn over her
+    eyes. Her Hair Cap failed the same way and painted a pale band across her
+    forehead -- one bug, two symptoms that look unrelated.
+
+    So do the merge here rather than hoping the exporter does it. After this
+    the alpha is in the one place glTF reads, and no later stage can lose it.
+    """
+    bi = getattr(base_tex, "image", None)
+    if bi is None or tuple(bi.size) == (0, 0):
+        return False
+    try:
+        op = bpy.data.images.load(ap, check_existing=True)
+    except Exception:
+        return False
+    if tuple(op.size) == (0, 0):
+        return False
+    op.colorspace_settings.name = "Non-Color"
+    w, h = bi.size
+    if tuple(op.size) != (w, h):
+        op = op.copy()
+        try:
+            op.scale(w, h)
+        except Exception:
+            return False
+    n = w * h * 4
+    try:
+        import numpy as np
+        bp = np.empty(n, dtype=np.float32); bi.pixels.foreach_get(bp)
+        o_ = np.empty(n, dtype=np.float32); op.pixels.foreach_get(o_)
+        bp[3::4] = o_[0::4]
+        buf = bp
+    except ImportError:
+        bp = list(bi.pixels); o_ = list(op.pixels)
+        bp[3::4] = o_[0::4]
+        buf = bp
+    # A float buffer, so the linear values read out of `pixels` go back in
+    # without an 8-bit sRGB round trip mangling them. The colour space is
+    # copied from the source for the same reason: `pixels` is scene-linear,
+    # and tagging the copy differently would re-encode the RGB.
+    new = bpy.data.images.new(bi.name + "_OPA", w, h, alpha=True, float_buffer=True)
+    try:
+        new.colorspace_settings.name = bi.colorspace_settings.name
+    except Exception:
+        pass
+    try:
+        new.pixels.foreach_set(buf)
+    except Exception:
+        new.pixels = list(buf)
+    new.pack()
+    base_tex.image = new
+    if "Alpha" in bsdf.inputs:
+        for l in list(bsdf.inputs["Alpha"].links):
+            nt.links.remove(l)
+        nt.links.new(base_tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+    return True
+
+
 def _mostly_clear_under_uvs(mat, path):
     """Is this candidate base map transparent where THIS material's faces use it?
 
@@ -5486,6 +5611,67 @@ def _mostly_clear_under_uvs(mat, path):
         return False
     return (float(clear) / hits) > 0.5
 
+
+# Does this file's base colours mean anything at all?
+#
+# The guard below lets a material's own colour veto a texture that merely
+# shares a word with its name -- the fix for Pomni, whose RedEyes and BlueEyes
+# are geometry rather than a picture and were being painted over by 'Eyes.png'.
+# That guard assumes a colour is art direction. For some exports it is not: the
+# colour is a per-material palette the exporter generated, carrying no
+# information whatsoever.
+#
+# Ariel is the measured case. All 26 of her materials carry a different
+# saturated pastel -- a PURE GREEN cornea (0.03, 1.0, 0.03), teal teeth, yellow
+# toenails. Nobody authored that. The veto then fired on the three that needed
+# it least, and her eyebrows shipped purple, her eyelashes pink and her scalp
+# cap navy, painting a pale band across her forehead.
+#
+# Authored colours and generated ones separate cleanly when measured, because a
+# real one is almost always either NEUTRAL (grey, white, black) or HUE-PURE (a
+# primary, with its other channels near zero), while a generated palette is
+# spread across mid-range pastels where neither holds:
+#
+#     Pomni      100%   0.8 greys, pure black, and Red/Blue/Yellow primaries
+#     Heels      100%   Peach 100%   Alice Ivy 95%   Alcina 85%   Gordon 86%
+#     Peacemaker  50%   muted but real: navy, brown hair, skin, neutral silver
+#     Ariel        4%   <-- generated
+#     Power Girl   0%   <-- generated, and its materials are named 'mesh0'
+#
+# Measured over every build log in the rollout: nothing else in the whole set
+# falls below 79%. The threshold sits at 25%, which is a factor of two clear of
+# Ariel on one side and of Peacemaker on the other -- deliberately well under
+# Peacemaker, because the test UNDER-counts muted-but-real colours and it is
+# the generated palettes that have to be unmistakable.
+def _palette_is_generated():
+    cols = []
+    for _m in bpy.data.materials:
+        if _m.name not in used or not _m.use_nodes:
+            continue
+        _b = next((n for n in _m.node_tree.nodes
+                   if n.type == "BSDF_PRINCIPLED"), None)
+        if _b is None or "Base Color" not in _b.inputs:
+            continue
+        try:
+            cols.append(tuple(_b.inputs["Base Color"].default_value[:3]))
+        except (TypeError, KeyError):
+            continue
+    if len(cols) < 4:
+        return False
+    good = 0
+    for c in cols:
+        mn, mx = min(c), max(c)
+        if (mx - mn) < 0.05 or mn < 0.12:
+            good += 1
+    frac = float(good) / len(cols)
+    gen = frac < 0.25
+    print("  palette: %d of %d base colours are neutral or hue-pure (%.0f%%)%s"
+          % (good, len(cols), frac * 100,
+             " -- GENERATED, so a colour cannot veto a texture" if gen else ""))
+    return gen
+
+
+_PALETTE_GENERATED = _palette_is_generated()
 
 for mat in bpy.data.materials:
     if mat.name not in used:
@@ -5621,6 +5807,7 @@ for mat in bpy.data.materials:
                 # merely contain its name. 'PomniEyes' sits at 0.814 grey --
                 # no authored colour -- so it still takes the map.
                 if (p is not None and kind == "base" and not _default_col
+                        and not _PALETTE_GENERATED
                         and _toks_eq is not None
                         and not _toks_eq(mat.name, p)):
                     print("    %s carries its own colour %s and '%s' only "
@@ -5655,6 +5842,13 @@ for mat in bpy.data.materials:
         img = bpy.data.images.load(p, check_existing=True)
         if kind != "base" and kind != "emis":
             img.colorspace_settings.name = "Non-Color"
+        if kind == "emis" and not _is_glow_mask(p):
+            print("    %s: '%s' lights its whole UV layout -- it is an "
+                  "emission-COLOUR copy, not a glow mask, and wiring it makes "
+                  "the surface light itself up. Refused."
+                  % (mat.name, os.path.basename(p)))
+            p = None
+            continue
         t = nt.nodes.new("ShaderNodeTexImage"); t.image = img
         nt.links.new(t.outputs["Color"], bsdf.inputs[slot])
         if kind == "base":
@@ -5764,10 +5958,17 @@ for mat in bpy.data.materials:
     blend = False
     blend_alpha = 1.0
     if ap and "Alpha" in bsdf.inputs:
-        img = bpy.data.images.load(ap, check_existing=True)
-        img.colorspace_settings.name = "Non-Color"
-        t = nt.nodes.new("ShaderNodeTexImage"); t.image = img
-        nt.links.new(t.outputs["Color"], bsdf.inputs["Alpha"])
+        # Bake it into the base map's alpha channel where glTF reads it. The
+        # separate-node arrangement below is kept only for a material that has
+        # no base texture to bake into; see _bake_opacity_into_base.
+        if base_tex is not None and _bake_opacity_into_base(nt, bsdf, base_tex, ap):
+            print("    opacity %s baked into the base map's alpha channel"
+                  % os.path.basename(ap))
+        else:
+            img = bpy.data.images.load(ap, check_existing=True)
+            img.colorspace_settings.name = "Non-Color"
+            t = nt.nodes.new("ShaderNodeTexImage"); t.image = img
+            nt.links.new(t.outputs["Color"], bsdf.inputs["Alpha"])
         wired.append(("alpha", ap))
         cut = True
     # A dedicated opacity map is the first choice, and plenty of characters

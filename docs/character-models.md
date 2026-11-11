@@ -1781,9 +1781,114 @@ Hence opt-in. Three things worth keeping from it:
 - A faithful export is not automatically a better one. The source's intent was authored against
   Blender's renderer, not against URP with a different sort order.
 - Ariel does not share the cause: she reports **zero** value-alpha materials, her Sclera and
-  Irises being plainly OPAQUE. Same symptom, different fault, so the blank eyes are still open.
+  Irises being plainly OPAQUE. Same symptom, different fault -- *answered* below, in
+  *glTF has nowhere to put a separate opacity map*.
 - The close-up and the podium disagreed, and the podium is the one that matches the game. A
   change that only improves a Blender render has not been shown to improve anything.
+
+## glTF has nowhere to put a separate opacity map
+
+Ariel's eyes rendered as flat white discs, and a pale band ran across her forehead. They look
+like two unrelated faults. They are one.
+
+glTF has no opacity map. Alpha is `baseColorTexture`'s **own alpha channel** times
+`baseColorFactor.a`, and nothing else. The builder was loading `X_Opacity.png` into a second
+image node and wiring it to the Principled node's Alpha input -- a Blender-side arrangement that
+has to survive translation. It does not. The builder enables `mtoon1` for every cutout (it has
+to; without it `alphaMode` ships OPAQUE), and MToon carries **one** base colour texture, so the
+second image has nowhere to go. It is dropped silently.
+
+Measured on the exported file, which is the only place the question can be settled:
+
+| Material | opacity map | exported base texture | result |
+|---|---|---|---|
+| `Cornea` | 100% below 10% opacity | `Cornea_BaseColor.png`, **RGB** | an opaque **pure white** shell over the eye |
+| `EyeMoisture` | 49% clear, 46% partial | RGB | a second white film |
+| `Hair Cap` | 19% clear, 45% opaque | RGB | an opaque scalp cap -- the forehead band |
+
+With no alpha channel, alpha falls back to 1.0 and every pixel passes the MASK cutoff. The
+cornea is *supposed* to be invisible; it was being drawn as a white disc in front of her iris.
+
+So do the merge in the builder rather than hoping the exporter does it -- `_bake_opacity_into_base`
+writes the opacity into the base map's alpha channel, where glTF reads it, and no later stage can
+lose it. Verify by extracting the texture from the `.vrm` and checking its PNG colour type is
+**RGBA**: the symptom and the cause are both invisible in Blender, where the second node works
+fine.
+
+Heels shows the same fault partially masked: five of her cutouts carry a texture UniGLTF managed
+to merge, and the two that stayed plain RGB -- `High_Heels`, `Underwear_Bottoms` -- are the two
+that are wrong. "It works for most materials" was what made this hard to see.
+
+## A colour can only veto a texture if the colour means something
+
+A material carrying a real colour is allowed to refuse a texture that merely shares a word with
+its name. That guard exists for Pomni, whose `RedEyes` and `BlueEyes` are geometry rather than a
+picture and were being painted over by `Eyes.png`.
+
+It assumes the colour is art direction. For some exports it is not. **All 26** of Ariel's
+materials carry a different saturated pastel -- a pure green cornea `(0.03, 1.0, 0.03)`, teal
+teeth, yellow toenails. Nobody authored that; it is a per-material palette the exporter
+generated, and it carries no information at all. The veto then fired on the three materials that
+could least afford it, and her eyebrows shipped **purple**, her eyelashes pink and her scalp cap
+navy.
+
+The two kinds separate cleanly when measured, because a real colour is almost always either
+**neutral** (grey, white, black) or **hue-pure** (a primary, other channels near zero), while a
+generated palette is spread across mid-range pastels where neither holds. Over every build log
+in the rollout:
+
+| Fraction neutral or hue-pure | Characters |
+|---|---|
+| 100% | Pomni, Heels, Peach, Prix, Sayuri, Gadget, Judy, Alastor, Killer Clown, Link, Yoda, Mando |
+| 79-95% | Alice Ivy, Alcina, Jessica Rabbit, Gordon, Doom Slayer |
+| 50% | Peacemaker -- muted but real: navy, brown hair, skin, neutral silver |
+| **4%** | **Ariel** |
+| **0%** | **Power Girl** (her materials are named `mesh0`, `mesh0.001`) |
+
+Nothing else in the set falls below 79%. The threshold sits at **25%**, a factor of two clear of
+Ariel on one side and of Peacemaker on the other -- deliberately well under Peacemaker, because
+the test under-counts muted-but-real colours and it is the generated palettes that have to be
+unmistakable. It is decided **once per file**, which is right: it is a property of the export,
+not of any one material.
+
+## An emissive map is not proof of emission
+
+Daz writes a full PBR channel set per surface, and that set includes an emission-**colour** map
+whether or not the surface glows. In Daz it is gated by an emission *strength* that no FBX
+carries, so it arrives looking exactly like a glow mask -- and wiring it sets strength 1.0 and
+lights the surface up.
+
+Ariel shipped `Irises_Emissive.png` that way, at `emissiveFactor [1,1,1]`.
+
+**Mean brightness is the obvious test and it is the wrong one.** It looked decisive on a sample
+of two — Master Chief's maps at 0.0, Ariel's at 88 — and that is exactly how far it was taken
+before being checked. On the full set it collapses: in linear terms Thanos's gauntlet sits at
+0.013 and K-2SO's `DROID_Misc` at 0.044, both genuine glows, leaving no honest gap above them.
+A threshold drawn from the first two would have **stripped Thanos's gauntlet**, the one case the
+existing code comment already named as a material that legitimately glows.
+
+What separates them is not how bright the map is but how much of it is **lit**. A glow mask is
+local — a visor, a gauntlet, a pair of eyes — on a black field. A colour copy covers the whole
+UV layout:
+
+| Map | black | lit |
+|---|---|---|
+| Master Chief `MKV_Helmet` | 99.98% | 0.01% |
+| K-2SO `DROID_Body` | 99.90% | 0.03% |
+| Thanos gauntlet | 95.43% | 4.06% |
+| Clone Trooper Phase 1 helmet | 93.73% | 4.17% |
+| K-2SO `DROID_Misc` | 89.91% | 9.10% |
+| Prix eyes | 43.82% | 0.92% |
+| **Ariel `Irises_Emissive`** | **0.00%** | **100.00%** |
+
+Not one black pixel in Ariel's. Every genuine mask lights at most 9.1% of its area; the copy
+lights all of it. The threshold is **50%** — five times clear of the genuine maps on one side
+and twice clear of the copy on the other.
+
+Worth noting what this did *not* explain: killing the emission changed her render not at all.
+It is a real defect and it is fixed, but it was never the reason her eyes were white. Rendering
+the hypothesis before shipping it is what kept that from being written down as the answer.
+
 
 ## Open questions
 
