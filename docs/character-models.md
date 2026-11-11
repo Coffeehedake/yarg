@@ -1752,6 +1752,39 @@ When a character will not lipsync, check for morph targets before looking at the
 `VRMCharacter` component or the chart. If the count is zero the answer is the source model, and
 the only route is a different model or a face rig built by hand.
 
+## Faithful is not the same as correct
+
+Heels and Ariel render with blank white eyes on the podium. The obvious diagnosis -- the known
+"missing eye textures" item -- is wrong: **every eye material has its texture**. Checked first,
+which is the only reason the real measurement happened.
+
+What the source actually says:
+
+```
+Std_Cornea_L   HASHED   alphaVal 0.553   alphaLinked False
+Std_Cornea_R   HASHED   alphaVal 0.553   alphaLinked False
+Std_Eye_L/R    HASHED   alphaVal 1.000   (opaque, correctly -- that is the eyeball)
+```
+
+So a Character Creator cornea is 55% transparent by a plain Alpha **value**, with nothing wired
+into it. The builder's authored-blend rule demands `blend_method == BLEND` **and** an image in
+Alpha, so the cornea fails both tests and ships `alphaMode: OPAQUE`. That is a genuine gap, and
+`VRM_VALUE_ALPHA=1` now carries such a value across, on the base colour factor's alpha.
+
+**And it made her worse.** With the cornea opaque, its own diffuse was drawing her iris. Export
+it 55% transparent and the iris washes out against the white sclera behind it -- visible in a
+head close-up before and after. On the podium, at character-select distance, it changed nothing
+at all.
+
+Hence opt-in. Three things worth keeping from it:
+
+- A faithful export is not automatically a better one. The source's intent was authored against
+  Blender's renderer, not against URP with a different sort order.
+- Ariel does not share the cause: she reports **zero** value-alpha materials, her Sclera and
+  Irises being plainly OPAQUE. Same symptom, different fault, so the blank eyes are still open.
+- The close-up and the podium disagreed, and the podium is the one that matches the game. A
+  change that only improves a Blender render has not been shown to improve anything.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:

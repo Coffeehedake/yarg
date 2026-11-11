@@ -5513,10 +5513,23 @@ for mat in bpy.data.materials:
     # this loop had was the one the author wrote down.
     _src_blend = getattr(mat, "blend_method", None)
     _src_alpha_img = None
+    # Transparency is not always a TEXTURE. A Character Creator cornea is
+    # HASHED with a plain Alpha VALUE of 0.553 and nothing wired into it --
+    # 55% see-through, so the iris reads through it. The rule below used to
+    # demand BLEND *and* an image in Alpha, so a cornea failed both tests,
+    # shipped alphaMode OPAQUE and became a solid grey disc over the eye.
+    # Measured on Heels and Ariel: blank white eyes in the podium render,
+    # while every eye material had its texture all along.
+    _src_alpha_val = 1.0
     if bsdf is not None and "Alpha" in bsdf.inputs:
         for _l in bsdf.inputs["Alpha"].links:
             if _l.from_node.type == "TEX_IMAGE" and _l.from_node.image:
                 _src_alpha_img = _l.from_node.image
+        if not bsdf.inputs["Alpha"].links:
+            try:
+                _src_alpha_val = float(bsdf.inputs["Alpha"].default_value)
+            except Exception:
+                _src_alpha_val = 1.0
 
     # If the source file already told us which texture this material uses, trust
     # that over guessing from the material's name — generic names like
@@ -5749,6 +5762,7 @@ for mat in bpy.data.materials:
             ap = None
     cut = False
     blend = False
+    blend_alpha = 1.0
     if ap and "Alpha" in bsdf.inputs:
         img = bpy.data.images.load(ap, check_existing=True)
         img.colorspace_settings.name = "Non-Color"
@@ -5826,6 +5840,28 @@ for mat in bpy.data.materials:
               "keeping it blended rather than flattening it to opaque"
               % _src_alpha_img.name)
 
+    # The same statement made with a VALUE instead of a texture. HASHED counts
+    # as well as BLEND: Blender's dithered transparency is still transparency,
+    # and a cornea is the common case. The alpha has to travel on the base
+    # colour FACTOR, since there is no map to carry it.
+    #
+    # OPT-IN, and the reason is worth keeping. Carrying the value across is
+    # FAITHFUL to the source and still made Heels WORSE: her Std_Cornea_L/R sit
+    # at HASHED alpha 0.553, and with the cornea opaque its own diffuse was
+    # drawing her iris. Export it 55% transparent and the iris washes out
+    # against the white sclera behind it -- measured on a head close-up, before
+    # and after. On the podium at character-select distance it changed nothing
+    # either way, so the blank-eye look that started this has a different
+    # cause and is still open. Faithful is not the same as correct.
+    elif (os.environ.get("VRM_VALUE_ALPHA")
+            and not cut and _src_blend in ("BLEND", "HASHED")
+            and _src_alpha_img is None and _src_alpha_val < 0.99):
+        blend = True
+        blend_alpha = _src_alpha_val
+        print("    the source material is %s at alpha %.3f with nothing wired "
+              "into it -- keeping it that transparent rather than flattening "
+              "it to opaque" % (_src_blend, _src_alpha_val))
+
     # Metalness with no MAP is the same trap as emission with no map, one slot
     # over: a leftover Metallic of 1.0 turns the surface into a mirror that
     # reflects the world instead of showing its own colour. Link's face shipped
@@ -5897,11 +5933,15 @@ for mat in bpy.data.materials:
         # Blender. A material whose whole appearance is a flat colour -- Jessica
         # Rabbit's red hair, Pomni's Blue/Red/Yellow -- then ships pure white,
         # which is indistinguishable from a missing texture.
+        # blend_alpha carries a transparency the source stated as a VALUE
+        # rather than a map. With no texture to hold it, the base colour
+        # factor's alpha is the only place it can travel.
         if base_tex is None:
             mt.pbr_metallic_roughness.base_color_factor = (
-                _bc[0], _bc[1], _bc[2], 1.0)
+                _bc[0], _bc[1], _bc[2], blend_alpha)
         else:
-            mt.pbr_metallic_roughness.base_color_factor = (1.0, 1.0, 1.0, 1.0)
+            mt.pbr_metallic_roughness.base_color_factor = (
+                1.0, 1.0, 1.0, blend_alpha)
     except Exception as _e:
         print("    (could not set alpha mode: %s)" % _e)
 
