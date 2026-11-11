@@ -5,7 +5,7 @@
 // frame through the scene's own camera with the game's renderer settings.
 //
 //   Unity -batchmode -projectPath <scratch> -executeMethod YargSceneShot.Run
-//         -yargchars "<path.yargchar>|<Name>;<path2>|<Name2>" -shotDir <out>
+//         -yargchars "<path.yargchar>|<Name>;<path2>|<Name2>" -shotDir <out> [-res 2560] [-yaws "0;35;-35;180"]
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -27,9 +27,12 @@ public static class YargSceneShot
 
     // Unity moves bones on Animator.Update but does not re-skin in an editor pass, so bake each
     // skinned mesh to a static copy at the current pose and hide the original.
+    private static readonly List<SkinnedMeshRenderer> Disabled = new List<SkinnedMeshRenderer>();
+
     private static List<GameObject> Bake(GameObject root)
     {
         var baked = new List<GameObject>();
+        Disabled.Clear();
         foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>())
         {
             if (!smr.enabled || smr.sharedMesh == null) continue;
@@ -44,6 +47,7 @@ public static class YargSceneShot
             mr.shadowCastingMode = smr.shadowCastingMode;
             mr.receiveShadows = smr.receiveShadows;
             smr.enabled = false;
+            Disabled.Add(smr);
             baked.Add(go);
         }
         return baked;
@@ -58,6 +62,8 @@ public static class YargSceneShot
             var list = Arg(args, "-yargchars");
             var outDir = Arg(args, "-shotDir");
             Directory.CreateDirectory(outDir);
+            int res = int.TryParse(Arg(args, "-res"), out var rr) ? rr : 1280;
+            var yawList = (Arg(args, "-yaws") ?? "0").Split(';');
 
             // The game ships a Low and a High pipeline asset; the High one has SSAO.
             int high = Array.IndexOf(QualitySettings.names, "High");
@@ -112,24 +118,30 @@ public static class YargSceneShot
                         anim.Rebind();
                         anim.Update(1.0f);
                     }
-                    var baked = Bake(ch);
+                    foreach (var yawText in yawList)
+                    {
+                        float yaw = float.Parse(yawText);
+                        ch.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+                        var baked = Bake(ch);
 
-                    var rt = new RenderTexture(1280, 1280, 24, RenderTextureFormat.ARGB32);
-                    var oldTarget = cam.targetTexture;
-                    cam.targetTexture = rt;
-                    cam.Render();
-                    RenderTexture.active = rt;
-                    var tex = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
-                    tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
-                    tex.Apply();
-                    RenderTexture.active = null;
-                    cam.targetTexture = oldTarget;
-                    File.WriteAllBytes(Path.Combine(outDir, $"{name.Replace(" ", "")}_podium.png"), tex.EncodeToPNG());
-                    UnityEngine.Object.DestroyImmediate(tex);
-                    rt.Release();
-                    UnityEngine.Object.DestroyImmediate(rt);
+                        var rt = new RenderTexture(res, res, 24, RenderTextureFormat.ARGB32);
+                        var oldTarget = cam.targetTexture;
+                        cam.targetTexture = rt;
+                        cam.Render();
+                        RenderTexture.active = rt;
+                        var tex = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
+                        tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+                        tex.Apply();
+                        RenderTexture.active = null;
+                        cam.targetTexture = oldTarget;
+                        File.WriteAllBytes(Path.Combine(outDir, $"{name.Replace(" ", "")}_yaw{yaw:0}_podium.png"), tex.EncodeToPNG());
+                        UnityEngine.Object.DestroyImmediate(tex);
+                        rt.Release();
+                        UnityEngine.Object.DestroyImmediate(rt);
 
-                    foreach (var b in baked) UnityEngine.Object.DestroyImmediate(b);
+                        foreach (var g in baked) UnityEngine.Object.DestroyImmediate(g);
+                        foreach (var smr in Disabled) if (smr != null) smr.enabled = true;
+                    }
                     UnityEngine.Object.DestroyImmediate(podiumGo);
                     bundle.Unload(true);
                     Debug.Log($"[SHOT] {name}: rendered");
