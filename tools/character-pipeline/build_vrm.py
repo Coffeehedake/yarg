@@ -5428,6 +5428,14 @@ for o in meshes:
         if ms.material:
             used.add(ms.material.name)
 
+# UniGLTF's merged-texture name: `<A>_Diffuse-<B>_Opacity.png`, the diffuse
+# and the opacity joined across a hyphen. The hyphen is what makes this safe to
+# match on -- `Hair_1001_Transparency_Diffuse.jpeg` is a plain diffuse used as a
+# mask and must not be caught by it.
+_MERGED_RE = re.compile(
+    r"(?:diffuse|base_?color|albedo)[^-]*-[^-]*(?:opacity|alpha)", re.I)
+
+
 def _is_glow_mask(path):
     """Is this emissive map a MASK, or just a copy of the base colour?
 
@@ -5482,6 +5490,30 @@ def _is_glow_mask(path):
     return lit <= 0.5
 
 
+def _alpha_varies(img):
+    """Does this image's alpha channel carry anything?
+
+    An opacity map stored with an alpha channel that is flat 1.0 everywhere is
+    an RGB mask wearing an RGBA container, and reading its alpha would report
+    "fully opaque" for a surface whose mask is in the colour. Only trust the
+    alpha channel when it actually varies.
+    """
+    w, h = img.size
+    if w == 0 or h == 0:
+        return False
+    try:
+        import numpy as np
+        px = np.empty(w * h * 4, dtype=np.float32); img.pixels.foreach_get(px)
+        a = px.reshape(-1, 4)[:, 3]
+        return float(a.max() - a.min()) > 0.02
+    except ImportError:
+        px = list(img.pixels)
+        lo, hi = 1.0, 0.0
+        for i in range(3, w * h * 4, 4 * 97):
+            lo = min(lo, px[i]); hi = max(hi, px[i])
+        return (hi - lo) > 0.02
+
+
 def _bake_opacity_into_base(nt, bsdf, base_tex, ap):
     """Put the opacity map INTO the base colour texture's alpha channel.
 
@@ -5513,6 +5545,41 @@ def _bake_opacity_into_base(nt, bsdf, base_tex, ap):
     if tuple(op.size) == (0, 0):
         return False
     op.colorspace_settings.name = "Non-Color"
+
+    # WHICH CHANNEL of the opacity file actually holds the opacity.
+    #
+    # Not always the colour. UniGLTF writes a MERGED texture named
+    # `<A>_Diffuse-<B>_Opacity.png`, whose RGB is the diffuse and whose alpha
+    # is the mask, and the builder's name matcher picks those up as opacity
+    # maps. Heels has six, and they are not alike -- `img.depth` tells them
+    # apart where the name cannot:
+    #
+    #   High_Heels_Diffuse-High_Heels_Opacity        24  RGB, grey  dark leather
+    #   Underwear_Bottoms_Diffuse-..._Opacity        24  RGB        coloured
+    #   Std_Eyelash_Diffuse-Std_Eyelash_Opacity       8  grey       a real mask
+    #   Std_Tearline_L_Diffuse-..._R_Opacity         16  grey+A     mask in A
+    #   tail_Transparency_Diffuse-..._Opacity        32  RGBA       mask in A
+    #
+    # Taking the colour channel of the first of those put the shoes at 0.25,
+    # under the 0.5 MASK cutoff, and HER SHOES VANISHED -- a regression this
+    # fix would have introduced had the rebuild not been rendered before being
+    # shipped. A merged file that arrives with no alpha channel has lost its
+    # opacity altogether and carries nothing usable, so decline it and let the
+    # caller fall back to the old separate-node path, which is what produced
+    # the correct opaque shoe.
+    _depth = getattr(op, "depth", 24)
+    if _depth in (16, 32) and _alpha_varies(op):
+        _chan = 3                      # the alpha channel really is the mask
+    elif _depth == 8:
+        _chan = 0                      # one channel can only ever be a mask
+    elif _MERGED_RE.search(os.path.basename(ap)):
+        print("    opacity %s is a merged diffuse whose alpha channel is gone "
+              "-- it carries no opacity, declining to bake it"
+              % os.path.basename(ap))
+        return False
+    else:
+        _chan = 0
+
     w, h = bi.size
     if tuple(op.size) != (w, h):
         op = op.copy()
@@ -5525,11 +5592,11 @@ def _bake_opacity_into_base(nt, bsdf, base_tex, ap):
         import numpy as np
         bp = np.empty(n, dtype=np.float32); bi.pixels.foreach_get(bp)
         o_ = np.empty(n, dtype=np.float32); op.pixels.foreach_get(o_)
-        bp[3::4] = o_[0::4]
+        bp[3::4] = o_[_chan::4]
         buf = bp
     except ImportError:
         bp = list(bi.pixels); o_ = list(op.pixels)
-        bp[3::4] = o_[0::4]
+        bp[3::4] = o_[_chan::4]
         buf = bp
     # A float buffer, so the linear values read out of `pixels` go back in
     # without an 8-bit sRGB round trip mangling them. The colour space is

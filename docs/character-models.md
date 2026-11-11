@@ -1819,6 +1819,36 @@ Heels shows the same fault partially masked: five of her cutouts carry a texture
 to merge, and the two that stayed plain RGB -- `High_Heels`, `Underwear_Bottoms` -- are the two
 that are wrong. "It works for most materials" was what made this hard to see.
 
+### Which channel of the opacity file holds the opacity
+
+Not always the colour, and the filename cannot be trusted to say. UniGLTF writes a **merged**
+texture named `<A>_Diffuse-<B>_Opacity.png` whose RGB is the diffuse and whose alpha is the
+mask, and the name matcher picks those up as opacity maps. Heels has six and they are not
+alike — `img.depth` tells them apart where the name cannot:
+
+| file | depth | what it actually is |
+|---|---|---|
+| `High_Heels_Diffuse-High_Heels_Opacity` | 24 | RGB, greyscale — **dark leather diffuse** |
+| `Underwear_Bottoms_Diffuse-…_Opacity` | 24 | RGB, coloured — **a diffuse** |
+| `Std_Eyelash_Diffuse-Std_Eyelash_Opacity` | 8 | one channel — a real mask |
+| `Std_Tearline_L_Diffuse-…_R_Opacity` | 16 | grey + alpha — mask in **A** |
+| `tail_Transparency_Diffuse-…_Opacity` | 32 | RGBA — mask in **A** |
+
+So: an alpha channel that **varies** is the mask; a single-channel image can only be a mask, so
+use its value; and an RGB image with a merged name has lost its alpha and carries no opacity at
+all, so decline it rather than inventing one from the colour.
+
+Each clause is load-bearing, and two were written only after a render disagreed:
+
+- Taking the colour of `High_Heels_Diffuse-High_Heels_Opacity` put the shoes at 0.25, under the
+  0.5 MASK cutoff, and **her shoes vanished**. The triangle count was identical and every
+  automated check passed. Only the render caught it.
+- Power Girl's `Supergirl_A_Hair_Alpha.png` is depth 32 with a varying alpha (mean 0.19) and a
+  red channel at 0.83. Reading the colour gave **blocky rectangular hair cards**; reading the
+  alpha gives cut-out strands.
+- The variance test exists because an RGB mask in an RGBA container would otherwise report
+  "fully opaque" and erase a cutout the colour was carrying.
+
 ## A colour can only veto a texture if the colour means something
 
 A material carrying a real colour is allowed to refuse a texture that merely shares a word with
