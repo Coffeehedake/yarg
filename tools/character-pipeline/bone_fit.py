@@ -51,11 +51,13 @@ rows.sort(reverse=True)
 far = [r for r in rows if r[0] > 5]
 import re
 _FIN = re.compile(r"thumb|index|mid|ring|pinky|little|f_|finger", re.I)
-_TOE = re.compile(r"toe", re.I)
+_TOE = re.compile(r"toe|spring|calf|twist", re.I)  # not fingers: toes, spring chains, calf_twist ("f_")
 fing = [r for r in rows if _FIN.search(r[1]) and not _TOE.search(r[1])]
 fing_far = [r for r in fing if r[0] > 5]
 print("FINGERFIT %s: %d of %d finger bones more than 5 cm from their mesh (worst %.1f cm)" % (
     SRC.replace("\\", "/").split("/")[-1], len(fing_far), len(fing), fing[0][0] if fing else 0.0))
+for _d, _n in fing_far[:12]:
+    print("  far finger bone: %5.1f cm  %s" % (_d, _n))
 print("BONEFIT %s: %d bones, %d more than 5 cm from their mesh" % (SRC.replace("\\", "/").split("/")[-1], len(rows), len(far)))
 for d, n in rows[:5]:
     print("  %6.1f cm  %s" % (d, n))

@@ -1004,13 +1004,19 @@ the finger bones separated cleanly:
 | Alice Ivy | 30 of 30 | 32.7 cm |
 | Chibi Rem | 30 of 30 | 22.2 cm |
 | Heels | 30 of 42 | 32.2 cm |
-| Doom Slayer | 8 of 42 | 10.6 cm |
-| Jinx, Lola Bunny | 2 of 34, 2 of 30 | 7.0, 5.9 cm |
+| Doom Slayer | 8 of 42 | 10.6 cm (clean, see below) |
+| Jinx, Lola Bunny | 2 of 34, 2 of 30 | 7.0, 5.9 cm (clean, see below) |
 | the other 21 | 0 | at most 4.9 cm |
 
 The four reported characters, and only they, are the ones that started with arms 30 degrees off the
 T axis AND carry shape keys. Ariel and Jinx start with the arms already on the axis, so nothing was
-rotated. Doom Slayer, Jinx and Lola have not been looked at.
+rotated. Doom Slayer, Jinx and Lola were rendered in the animated pose and are clean: **the
+threshold is a flag, not a verdict.** Jinx's two "finger" bones were `calf_twist` (the filter matched
+`f_`; it now excludes calf, twist, toe and spring bones). Lola's right index and ring finger are 5.9 and
+5.1 cm out under a thick glove. Doom Slayer's knuckle bones are 5-11 cm from armour plates that are
+weighted to them, and his hip and upper-arm bones are 38 and 24 cm from large armour meshes; his hands
+animate as closed gauntleted fists. What marks the bug is 20-30 cm on ALL the fingers of a hand,
+together with rods in the animated render.
 
 **The fix** is in the T-pose bake in `build_vrm.py`: build one blended skinning matrix per vertex
 (a weighted sum of the bone matrices -- linear blending is linear, so it applies to any coordinate
