@@ -2169,6 +2169,55 @@ Judy's mapped chains are named `*_fused`, which is the deliberate fifth-finger f
 of that reduction is by design rather than by accident. Telling the two apart needs the recipe, not
 the count — which is why the count alone was not treated as the answer.
 
+## Kasane Teto: the stated cause does not survive reading the game code
+
+Teto's bundle really does have **no `AnimatorController` and no `AnimationClip`**, and she really
+is the only one of the 66. But "and that is why she does not animate" does not follow, and the
+attempt to fix her on that basis failed for a reason worth keeping.
+
+**The game already supplies a controller.** `BackgroundManager.LoadAnimationDefaults` runs as the
+first statement of `LoadCharacter`, and when the animator has none it loads
+`Animations/Vocals/Default/DefaultController` from Resources. That controller **has states named
+`Idle` and `Playing`** — exactly the two Teto's `VRMCharacter` is configured to use. `GetDefaultGenre`
+returns the constant `"Default"`, so the path always resolves. Every hypothesis built on "the
+controller is missing" dies here.
+
+**She has no source, so a rebuild is not available either.** She is a *downloaded* `.yargchar`
+(a copy sits in `yargchar-dl`), not something this pipeline built, which is why no controller was
+baked in. There is nothing to re-export.
+
+**What the sweep did establish.** Seven characters carry `_enableAnimationStates = 1` with
+`Idle`/`Playing` — Adachi Rei, Harq Alkahana, both Hatsune Mikus, Inforder Trogen, Kaiser
+Aufhänger and Teto. They are one family of community bundles built to drive their own clips. Six
+ship 5–7 clips and a controller; Teto is the only one that ships neither.
+
+### The bundled controller is discarded for 65 of the 66 characters
+
+Reading the guard closely:
+
+```csharp
+if (!vrmCharacter.UseCustomAnimations && animator != null)
+{
+    var controller = animator.runtimeAnimatorController;
+    if (controller == null || !vrmCharacter.UseCustomAnimations)
+```
+
+The outer test already guarantees `UseCustomAnimations` is false, so the inner `|| !UseCustomAnimations`
+is **always true** and the `controller == null` check is dead. The default controller is therefore
+loaded over whatever the bundle carried, for every character whose `UseCustomAnimations` is false.
+Measured across the 66, **exactly one** has it set: **Adachi Rei**. Hers is the only bundle whose
+own controller survives; the other 65 have theirs replaced, including the clips the exporter takes
+trouble to bake in.
+
+That is worth knowing on its own, independently of Teto — it means a bundled controller is nearly
+always inert.
+
+**So Teto is not fixed, and the cause is not known.** What is known is what it is *not*: not a
+missing component (she has `VRMCharacter`, same script set as Judy, who works), not
+`UseCustomAnimations` (hers is 0), not a mismatched state name, and not a failed Resources path.
+Settling it needs the game rebuilt and run with logging around `LoadAnimationDefaults`, which is
+the same rebuild the Gordon and Heels lipsync question is already waiting on.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
