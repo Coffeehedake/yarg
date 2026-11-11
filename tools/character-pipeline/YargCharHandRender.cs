@@ -221,6 +221,30 @@ public static class YargCharHandRender
             }
         }
 
+        foreach (var face in new[] { ("back", -1f), ("front", 1f) })
+        {
+            // Whole body, for shading questions. An imported VRM instance can face either way
+            // along Z, so render from both sides and let the picture say which is the front.
+            var rt2 = new RenderTexture(800, 1000, 24);
+            cam.targetTexture = rt2;
+            cam.orthographicSize = 1.1f;
+            var mid = instance.transform.position + Vector3.up * 0.95f;
+            var look = instance.transform.forward * face.Item2;
+            camGo.transform.position = mid - look * 3f;
+            camGo.transform.rotation = Quaternion.LookRotation(look, Vector3.up);
+            cam.Render();
+            RenderTexture.active = rt2;
+            var tb = new Texture2D(800, 1000, TextureFormat.RGB24, false);
+            tb.ReadPixels(new Rect(0, 0, 800, 1000), 0, 0);
+            tb.Apply();
+            RenderTexture.active = null;
+            File.WriteAllBytes(Path.Combine(dir, $"{name}_{(animateSeconds > 0f ? "anim" : "rest")}_body_{face.Item1}.png"), tb.EncodeToPNG());
+            Object.DestroyImmediate(tb);
+            cam.targetTexture = null;
+            rt2.Release();
+            Object.DestroyImmediate(rt2);
+        }
+
         cam.targetTexture = null;
         rt.Release();
         Object.DestroyImmediate(rt);
