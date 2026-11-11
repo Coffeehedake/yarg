@@ -1,9 +1,13 @@
-# Draft upstream issue — not filed
+# Upstream issue — FILED 2026-11-11 as YARC-Official/YARG#1769
 
-Target: https://github.com/YARC-Official/YARG/issues (Issues is enabled and active; a search for
-custom character animation returns no existing report). `CONTRIBUTING.md` names Discord for
-discussion and YouTrack for the feature list, and does not name a bug channel — so Discord may be
-the better first stop before opening this.
+https://github.com/YARC-Official/YARG/issues/1769 — filed from the Coffeehedake account, which is
+the account every other bug report from here is under. Kept below as the record of what was sent,
+so a reply can be read against it.
+
+No existing issue covered this (Issues is enabled and active there; a search for custom character
+animation returned nothing). `CONTRIBUTING.md` names Discord for discussion and YouTrack for the
+feature list and no bug channel, so Discord may still be worth a nudge if the issue goes quiet —
+the other two open reports from this account have sat 3 and 5 weeks without a response.
 
 ---
 
