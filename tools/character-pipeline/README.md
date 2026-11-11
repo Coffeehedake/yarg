@@ -645,6 +645,15 @@ right.
 - `fingerpose.py <model>` — per-chain finger curl, REST vs POSE, both hands. The left/right
   comparison is the measurement: one relaxed hand is the control that says whether the other is
   really clenched
+- `bone_fit.py <vrm>` — how far each bone sits from the mesh it carries, in the written file.
+  Expect centimetres. A finger bone 20-30 cm out is a mesh left in the A-pose while the skeleton went
+  to T, and it throws the fingers out as long strips when the animation plays. It prints
+  `FINGERFIT: n of m finger bones more than 5 cm from their mesh` -- expect 0
+- `bind_check.py <vrm>` — pose versus rest for every bone, rotation AND position. Reads clean when
+  pose and rest agree even if both are wrong against the mesh, so it does not replace `bone_fit.py`
+- `YargCharHandRender.cs` — renders both hands INSIDE Unity, at rest and in the animated pose
+  (`-renderDir`, with `export_one`-style `-vrmList`; run WITHOUT `-nographics`). Only the animated
+  pose shows a skinning fault, and only because it bakes each skinned mesh first
 - `meshbb.py <blend>` — per-mesh vertex count, world size and materials; how to tell which
   numbered mesh is the eyes before pinning a texture to its material
 - `alpha_check.py` / `mat_check.py` / `spring_scan.py` / `uv_test.py` / `tex_stats.py` — material,

@@ -28,10 +28,15 @@ bpy.ops.import_scene.gltf(filepath=SRC)
 arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
 res = []
 for pb in arm.pose.bones:
-    d = (pb.matrix @ pb.bone.matrix_local.inverted()).to_quaternion().angle
-    res.append((round(math.degrees(d), 1), pb.name))
+    m = pb.matrix @ pb.bone.matrix_local.inverted()
+    d = m.to_quaternion().angle
+    # Translation of the pose-vs-rest matrix, in mm. A rotation about the bone's own
+    # head has no translation relative to it, so compute it about the bone head.
+    head = pb.bone.matrix_local.translation
+    mm = (m @ head - head).length * 1000.0
+    res.append((round(math.degrees(d), 1), round(mm, 1), pb.name))
 res.sort(reverse=True)
-off = [r for r in res if r[0] > 5]
-print("BINDCHECK %s: %d bones, %d over 5 degrees" % (SRC, len(res), len(off)))
-for a, n in off[:60]:
-    print("  %6.1f  %s" % (a, n))
+off = [r for r in res if r[0] > 5 or r[1] > 5]
+print("BINDCHECK %s: %d bones, %d over 5 degrees or 5 mm" % (SRC, len(res), len(off)))
+for a, mm, n in off[:60]:
+    print("  %6.1f deg %7.1f mm  %s" % (a, mm, n))

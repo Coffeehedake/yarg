@@ -968,6 +968,82 @@ none of them her hands (the rest are weightless thumb stubs and ~6 degree drift 
 finger that was already there). Her old render showed the hands flared up at the wrists; the new one
 lies along the arms. Triangles unchanged at 4,588.
 
+## Grey strips at the hands: the T-pose step left shape-keyed meshes in the A-pose
+
+2026-11-10. Alastor, Alice Ivy, Chibi Rem and Heels each showed thin grey rods, 30-40 cm long,
+reaching out from the hands in game (in-game screenshots of all four, taken at the character-select
+podium). It had been guessed at twice and measured never.
+
+**It only shows when the animation runs, and the first four checks could not see it.**
+
+- Blender renders of the exported `.vrm`: clean hands.
+- Unity renders at rest: clean hands -- an editor pass does not re-skin the mesh until something
+  forces it, so a "rest" render shows the unskinned mesh.
+- Unity renders AFTER `Animator.Update`: the bones moved and the mesh did not. `Animator.Update`
+  moves the transforms but the skinned mesh is not refreshed in that pass. Bake each skinned mesh with
+  `SkinnedMeshRenderer.BakeMesh` and render the baked copy, and the rods appear exactly as in game.
+  `tools/character-pipeline/YargCharHandRender.cs` does this (opt-in `-renderDir`; run Unity WITHOUT
+  `-nographics`, which has no GPU context to render with).
+
+**The cause.** For a character whose arms start in an A-pose the build rotates the arm bones out to
+a T-pose and moves the mesh with them. It moved `vertices[i].co` and nothing else. A mesh that keeps
+shape keys is evaluated and exported from its KEY BLOCKS, not from `vertices[].co`, so every keyed
+mesh (the blink and viseme keys are kept on purpose) stayed in the old pose while the skeleton went to
+T. The finger bones then sat 20-33 cm from their own fingers, and when the animation curled a bone the
+mesh rotated about a pivot far away and was thrown out as a long thin strip. A 30-degree A-pose on a
+60 cm arm is about 30 cm at the hand, which is the size of the offset.
+
+**The measurement that found it** is `tools/character-pipeline/bone_fit.py`: for every bone that
+carries at least 10 vertices, the distance from the centroid of those vertices to the bone's
+head-to-tail segment, in the exported file. Expect a few centimetres. Over all 28 installed characters
+the finger bones separated cleanly:
+
+| | finger bones over 5 cm from their mesh | worst |
+|---|---|---|
+| Alastor | 17 of 17 | 30.9 cm |
+| Alice Ivy | 30 of 30 | 32.7 cm |
+| Chibi Rem | 30 of 30 | 22.2 cm |
+| Heels | 30 of 42 | 32.2 cm |
+| Doom Slayer | 8 of 42 | 10.6 cm |
+| Jinx, Lola Bunny | 2 of 34, 2 of 30 | 7.0, 5.9 cm |
+| the other 21 | 0 | at most 4.9 cm |
+
+The four reported characters, and only they, are the ones that started with arms 30 degrees off the
+T axis AND carry shape keys. Ariel and Jinx start with the arms already on the axis, so nothing was
+rotated. Doom Slayer, Jinx and Lola have not been looked at.
+
+**The fix** is in the T-pose bake in `build_vrm.py`: build one blended skinning matrix per vertex
+(a weighted sum of the bone matrices -- linear blending is linear, so it applies to any coordinate
+set) and apply it to every shape-key block as well as to the vertices. Rebuilt Heels: 0 of 42 finger
+bones over 5 cm, worst 0.9 cm, against 30 of 42 at 32 cm. Alice Ivy 0 of 30 (1.0 cm), Alastor 0 of 17
+(1.5 cm), Chibi Rem 0 of 30 (0.5 cm). Triangle counts identical to the references. **In game: Heels and
+Alice Ivy confirmed fixed. Alastor and Chibi Rem are installed and not yet seen.**
+
+**What was ruled out on the way, and what that cost.** Each of these looked likely and was measured
+before it was believed:
+
+- *The animator.* Heels and Ariel get identical bone deltas from the same controller, rotation only,
+  no scale, no translation; Ariel's animated hand is clean.
+- *The thumb bind.* Heels' thumb joints are 22.9 degrees off pose-versus-rest and Ariel has no
+  deviation anywhere, which made it the tempting cause. It is a symptom: the same wrong-pose mesh. A
+  rotation of 23 degrees about a thumb joint cannot move skin 25 cm.
+- *Single-bone vertices.* Every vertex fully weighted to one bone kept its distance to that bone in
+  the animated pose. Nothing there was stretching.
+- *Translation.* `bind_check.py` only measured rotation. Measured about each bone's own head the
+  position error is 25 mm or less; an earlier reading of 265 mm was a small rotation measured from the
+  character's feet. `bind_check.py` now reports both.
+- *Materials.* The finger faces use ordinary skin and nail materials.
+
+**The lesson is the same as Judy's, one step further.** Pose and rest agreed with each other and both
+disagreed with the mesh, so `bind_check.py` read clean while the bones were not inside the character.
+Check the bones against the MESH they carry, in the written file, and look at the animated pose.
+
+**A separate fault on the same hands, Alastor only.** His outline shell (`BodyOutline`, an untextured
+near-black material) is rebuilt as URP/Lit and picks up a specular sheen that shows as pale lines
+along every finger. The exporter now gives any untextured near-black material no smoothness,
+metallic, specular highlights or environment reflections. Rendered before and after: the double pale
+lines become a solid black edge. One thin pale line per finger gap remains, unexplained.
+
 ## Spring bones need bones
 
 Hair, a skirt or a cape stays rigid however well the character animates, because Unity's humanoid

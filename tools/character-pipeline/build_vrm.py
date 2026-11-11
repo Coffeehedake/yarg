@@ -3341,19 +3341,35 @@ if (not os.environ.get("VRM_NO_TPOSE")) and (
                  sum(1 for v in _o.data.vertices
                      if any(g.weight > 0.0 for g in v.groups)),
                  len(_o.data.vertices)))
-        _new = []
+        # One blended skinning matrix per vertex. Linear blending is a weighted
+        # sum of the bone matrices, so it can be applied to ANY coordinate set,
+        # and that is the point: a mesh that keeps shape keys is evaluated from
+        # the KEY BLOCKS, not from vertices[].co. Writing only .co left every
+        # keyed mesh (blink and viseme keys) in its old pose while the skeleton
+        # went to T, which put the finger bones 20-33 cm from their own fingers
+        # on Heels, Alice Ivy, Alastor and Chibi Rem: the hand animation then
+        # swung each finger about a pivot far from it and threw it out as a
+        # long thin strip.
+        _mats = []
         for _v in _o.data.vertices:
-            _acc = Vector((0.0, 0.0, 0.0))
+            _M = None
             _tot = 0.0
             for _g in _v.groups:
                 _pb = arm.pose.bones.get(_g2n.get(_g.group, ""))
                 if _pb is None or _g.weight <= 0.0:
                     continue
-                _acc += ((_pb.matrix @ _pb.bone.matrix_local.inverted()) @ _v.co) * _g.weight
+                _m1 = (_pb.matrix @ _pb.bone.matrix_local.inverted()) * _g.weight
+                _M = _m1 if _M is None else _M + _m1
                 _tot += _g.weight
-            _new.append(_acc / _tot if _tot > 1e-9 else _v.co.copy())
-        for _v, _c in zip(_o.data.vertices, _new):
-            _v.co = _c
+            _mats.append(_M * (1.0 / _tot) if (_M is not None and _tot > 1e-9) else None)
+        if _o.data.shape_keys:
+            for _kb in _o.data.shape_keys.key_blocks:
+                for _i, _pt in enumerate(_kb.data):
+                    if _i < len(_mats) and _mats[_i] is not None:
+                        _pt.co = _mats[_i] @ _pt.co
+        for _v, _M in zip(_o.data.vertices, _mats):
+            if _M is not None:
+                _v.co = _M @ _v.co
         _o.data.update()
 
     bpy.ops.pose.armature_apply()
