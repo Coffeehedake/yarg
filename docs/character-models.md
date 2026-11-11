@@ -2046,6 +2046,60 @@ it, and has a `LIMB_CONTROL=1` mode that displaces a wrist to prove the detector
 73.46° on the bent side against 0.00° on the other.
 
 
+## Sweeping all 66: check the bundle, and calibrate the threshold
+
+Only **29 of the 66** characters still have a `.vrm` anywhere, so a sweep over source files silently
+covers less than half the set — and covers it with builds that may not be what is installed. Both
+problems go away by reading the installed `.yargchar` instead, which carries everything needed:
+every bone's `Transform`, and the Avatar's `m_HumanDescription.m_Human`, a list of `m_BoneName` ->
+`m_HumanName` that *is* the humanoid map. `tools/character-pipeline/limb_check_installed.py` does
+that, and it agrees exactly with the `.vrm`-based check where both can run, which is how it was
+validated.
+
+Two traps were hit building it, both the same shape as ones already in this document:
+
+- Unity spells body bones `LeftUpperArm` but finger bones `Left Index Proximal`, **with spaces**.
+  Looking up only the first form dropped every wrist row, and a missing row reads exactly like a
+  clean one.
+- Writing the fix through a bash heredoc turned `` into a literal `0x01` byte, so the
+  substitution silently deleted the capital it was meant to keep. The file *looked* right when
+  printed. See *Bash heredoc eats backslashes* — same quirk, new disguise.
+
+**The first thresholds were guesses, and wrong.** "Bent more than 30°" is meaningless for the
+wrist: the index finger naturally starts off to one side of the wrist, so the population median
+there is **16.9°** and a healthy character reads 20. Measured over all 66:
+
+| joint | median | p90 | max | asym median | asym p90 | asym max |
+|---|---|---|---|---|---|---|
+| elbow | 0.0 | 0.0 | 15.4 | **0.0** | 0.0 | 0.0 |
+| wrist | 16.9 | 23.6 | 36.1 | **0.0** | 2.7 | 16.0 |
+| knee | 0.0 | 2.2 | 8.9 | **0.0** | 0.0 | 0.0 |
+| ankle | 62.6 | 75.4 | 97.4 | **0.0** | 1.2 | 26.4 |
+
+**Asymmetry is the signal worth trusting.** Its median is 0.0 at every joint, and elbow and knee
+asymmetry is *exactly* 0.0 for all 66 — a character compared against its own other side needs no
+population baseline. Absolute angle only means something where the population says the joint
+should be straight, which is the elbow and the knee.
+
+### What the sweep found
+
+| character | reading | verdict |
+|---|---|---|
+| **The Mandalorian** | ankle **45.9 / 72.3, Δ26.4** and wrist Δ10.1 | **real** — 20× the population p90, and visible: his left boot is pointed and hangs over the podium edge while his right sits flat |
+| Alcina Dimitrescu | wrist 28.7 / 12.7, Δ16.0 | **expected** — her static pose *is* her shape, and the pipeline deliberately "relaxes the left hand, 61.3 vs 0.0 deg" |
+| Kasane Teto | elbow 15.4/15.4, knee 8.9/8.9 | symmetric; she is the one that does not animate at all and stands in her T-pose |
+| Adachi Rei | knee 6.6/6.6 | symmetric, mild |
+| Jessica Rabbit, Shrek, Peacemaker | wrist Δ5.2–6.5 | marginal, just over the 5° limit |
+| Jessica Rabbit | ankle **7.3/7.3** against a median of 62.6 | symmetric — her feet are pointed, which is what heels do |
+| B1 Battle Droid, Mannequin, Steve, Shadow | no finger bones mapped | no wrist row; worth knowing rather than reading as a pass |
+| B1 Battle Droid, Mannequin, Peacemaker, Steve, Vigilante | no toe bones mapped | no ankle row |
+
+**The Mandalorian is the one real find, and it is not trivially fixable.** A symmetric build exists
+— `rollout/out/The Mandalorian.vrm` measures ankle Δ1.96 — but it shares **0.0%** of its bone names
+with the installed bundle, so it is a different rig, not a newer version of the same one. He has
+already been broken once by an unverified rebuild, coming back upside-down from a stale VRM, so
+swapping him on the strength of one measurement is exactly the move this document warns against.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
