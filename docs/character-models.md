@@ -1970,6 +1970,52 @@ because that is rendered from the installed bundle, and it is correct.
 Timestamps are the weakest evidence in that table and are marked as such on purpose: `Copy-Item`
 preserves `LastWriteTime`, which this project has already been caught by once.
 
+## The rig is readable from a .yargchar even when the geometry is not
+
+*The built VRM is not necessarily what is installed* leaves a question it does not answer: given
+an installed bundle and several candidate `.vrm` files, **which one produced it?** The obvious
+checks do not settle it. Triangle and vertex counts are identical across a character's variants
+whenever what differs is the rig, and UnityPy reports `verts=0` for a `.yargchar` — a limit of
+the reader, not a measurement, and exactly the kind of zero that reads as an answer.
+
+The rig *is* readable. GameObject names survive in a bundle and every bone's `Transform` carries
+`m_LocalPosition` and `m_LocalRotation`. `tools/character-pipeline/identify_build.py` compares
+those in three steps of increasing resolution — **skeleton names** catch a different rig family,
+**bone lengths** catch a rescale, and **rotation angles** catch a re-pose, which neither of the
+other two can see. Rotations are compared as angle magnitude (`2*acos|w|`), which survives the
+Unity/glTF handedness difference where a raw quaternion does not.
+
+Sonic was the case that needed it: five candidates, all carrying 10,259 verts and the same four
+textures.
+
+| candidate | names | verdict |
+|---|---|---|
+| `JunioSonic` | 0.0% | nothing in common — a different model |
+| `withcols/Sonic` | 4.3% | the wrong-rig-family rebuild, `Hips` 180° against 0° |
+| `SonicHD`, `SonicHD_nt` | 97.1% | `Hips` 0.518 against 0.5206 — ruled out on length |
+| `rollout/out`, `reg-Sonic`, `SonicHD_fix` | 97.1% | **34/34 bones agree in length and rotation — INSTALLED** |
+
+The two ruled-out ends are the controls. A comparison in which nothing fails has not been shown
+to discriminate, and the 0.0% / 4.3% rows are what make the 97.1% rows mean something.
+
+### Sonic's wrists are off in every build, including the installed one
+
+With the installed rig identified, the open "Sonic wrists 90° off" item can be measured instead
+of guessed. Comparing each bone's rest rotation against its mirror:
+
+| bone pair | installed | `SonicHD` | `SonicHD_nt` |
+|---|---|---|---|
+| Shoulder L/R | 127° / 127° — **Δ1°** | Δ1° | Δ1° |
+| Arm | Δ11° | Δ8° | Δ11° |
+| ForeArm | Δ17° | Δ17° | Δ17° |
+| **Hand** | **Δ69°** | Δ60° | Δ58° |
+| **HandIndex1** | **Δ127°** | Δ116° | Δ116° |
+
+The shoulders are the control: mirrored bones in this rig preserve their angle magnitude to
+within a degree, so the hand's 69° and the index finger's 127° are a real asymmetry and not an
+artefact of mirroring. It is present in **every** Sonic build measured, so it comes from the
+source rig and no rebuild has ever fixed it — which also means rebuilding him is not the remedy.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:

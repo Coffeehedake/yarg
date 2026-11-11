@@ -869,7 +869,7 @@ not the renders, the numbers, which are in their build logs:
 
 | Model | height | scale factor | humanoid | other |
 |---|---|---|---|---|
-| Sonic | 1.00 | `x0.9968` | 28/52 | keeps the authored T-pose clip |
+| Sonic | 1.00 | `x0.9968` | 28/52 | keeps the authored T-pose clip. **Installed build identified 2026-11-11** with `identify_build.py`: it is `rollout/out/Sonic.vrm` = `reg-Sonic.vrm` = `SonicHD_fix.vrm` (34/34 bones agree in length and rotation). `SonicHD`/`SonicHD_nt` differ on bone length, and the `withcols` copy is the wrong-rig rebuild that was reverted. His **wrists are off in every build**: mirrored-bone rest rotations differ by 69° at the hand and 127° at the index finger, against a shoulder control symmetric to 1°, so it comes from the source rig and a rebuild will not fix it |
 | Yoda | 0.66 | `x0.6471` | 28/52 | 1 spring chain |
 | Alcina | 2.90 | `x0.7388` | 52/52 | relaxes the left hand, 61.3 vs 0.0 deg |
 
