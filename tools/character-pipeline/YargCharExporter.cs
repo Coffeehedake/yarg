@@ -135,11 +135,38 @@ public static class YargCharExporter
                             var nm = new Material(urp) { name = src.name + "_urp" };
                             if (baseMap != null) { nm.SetTexture("_BaseMap", baseMap); nm.SetTexture("_MainTex", baseMap); }
                             nm.SetColor("_BaseColor", col);
+                            // A fresh URP/Lit culls back faces. The source materials are Standard,
+                            // which has no cull property to read, so the glTF doubleSided flag is
+                            // lost on import and single-sided sheets (a hair fringe, an ear, an eye
+                            // plane) vanish from the side their normals face away from: Alastor's mask
+                            // showed through his fringe. YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001"
+                            // draws just those materials double-sided; everything else stays culled.
+                            // Double-sided everywhere tints the lighting, so name them, do not blanket.
+                            var cullOff = Environment.GetEnvironmentVariable("YARG_CULL_OFF_MATERIALS");
+                            if (!string.IsNullOrEmpty(cullOff) && Array.IndexOf(cullOff.Split(';'), src.name) >= 0)
+                                nm.SetFloat("_Cull", 0f);
+                            // A flat toon character does not want URP's default shine: the sky
+                            // reflection and specular on every sheet read as a cool purple tint and
+                            // blown-out highlights (Alastor in game). Name the materials to flatten.
+                            var noShine = Environment.GetEnvironmentVariable("YARG_NO_SHINE_MATERIALS");
+                            if (!string.IsNullOrEmpty(noShine) && (noShine == "*" || Array.IndexOf(noShine.Split(';'), src.name) >= 0))
+                            {
+                                nm.SetFloat("_Smoothness", 0f);
+                                nm.SetFloat("_Metallic", 0f);
+                                nm.SetFloat("_SpecularHighlights", 0f);
+                                nm.SetFloat("_EnvironmentReflections", 0f);
+                                nm.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
+                                nm.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
+                            }
+                            Debug.Log($"[YARGCHAR] {outName}: material {src.name} cull={nm.GetFloat("_Cull")}");
                             // An untextured near-black material is an outline shell. URP/Lit
                             // gives it a specular sheen that shows as pale lines along edges
                             // (Alastor's fingers), so strip the shine.
                             if (baseMap == null && col.maxColorComponent < 0.1f)
                             {
+                                // The shell is a slightly larger copy of the body, so it shadows the body.
+                                if (Environment.GetEnvironmentVariable("YARG_SHELL_NO_SHADOW") == "1")
+                                    nm.SetShaderPassEnabled("ShadowCaster", false);
                                 nm.SetFloat("_Smoothness", 0f);
                                 nm.SetFloat("_Metallic", 0f);
                                 nm.SetFloat("_SpecularHighlights", 0f);

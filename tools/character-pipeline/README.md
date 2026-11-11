@@ -865,6 +865,19 @@ the download. Keep those intermediates somewhere durable — a build that only e
 scratchpad takes two thirds of the regression set with it when the session ends. Alcina is the one
 that rebuilds from her own archive, and she is also the one that covers the texture picker.
 
+## Material and face switches
+
+Set in the environment of the step named. All are off unless set, so no other character changes.
+
+| Switch | Step | Does |
+|---|---|---|
+| `VRM_DROP_MATERIAL_FACES="Mat1;Mat2"` | build | deletes every face using a named material and the vertices only they used. A material is not always just what its name suggests: Alastor's black `Material.001` is the outline hull AND half his clothes. Measure before dropping, and expect `-Force` on the install |
+| `VRM_FLIP_FACES="Mesh:z<0.9;Mesh2:z<0.15"` | build | reverses the winding and the split normals of every face of the named mesh below that height (metres). For clothing modelled inside-out behind an outline hull. Check with the share of faces pointing away from the local body axis |
+| `YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001"` | export | draws the named materials double-sided. The source `Standard` material has no cull property, so the glTF `doubleSided` flag is lost on import and single-sided sheets (hair fringe, ears, eye planes) vanish from behind |
+| `YARG_NO_SHINE_MATERIALS="Body.001;..."` or `*` | export | smoothness, metallic, specular and environment reflections off. Partly overridden for materials with a metallic map (the exporter sets `_Metallic` 1 afterwards) |
+| `YARG_SHELL_NO_SHADOW=1` | export | an untextured near-black material stops casting shadows. Made no visible difference on Alastor |
+| `YARG_SHADOWS=1` | hand render | soft shadows on the render light |
+
 ## Known per-model arguments
 
 | Character | rig | height | notes |
@@ -879,7 +892,7 @@ that rebuilds from her own archive, and she is also the one that covers the text
 | Junio Sonic | sonic | 1.00 | `VRM_DROP_SOLIDIFY=1`, exclude `^Dots` |
 | B1 Battle Droid | b1 | 1.93 | four of five meshes are empty placeholders |
 | Thanos | advskel | 2.40 | source is a kneeling pose; head emission must be zeroed |
-| Alastor | mixamo | 1.95 | exclude `^(Cube\|Microph)` — detached mic inflates the bounds |
+| Alastor | mixamo | 1.95 | exclude `^(Cube\|Microph)` — detached mic inflates the bounds **As installed 2026-11-10:** build with `VRM_VISEME_GAIN=2.2 VRM_DROP_MATERIAL_FACES="Material.001" VRM_FLIP_FACES="BodyOutline.001:z<0.9;BodyOutline.002:z<0.15"`, export with `YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001" YARG_NO_SHINE_MATERIALS="Body.001;Head.001;Eyes.001"` and `-Force` (21,415 triangles against 40,124 on purpose). Without the cull setting his mask shows through his fringe; without the drop-and-flip his coat, pants and boots look inside-out in game. He has no outline now. See `docs/character-models.md` |
 | Jessica Rabbit | rigify_plain | 1.80 | exclude `^(BezierCurve\|Cylinder\|Cube)` |
 | Clone troopers | mixamo | 1.83 | |
 | Jinx | ue4 | 1.68 | braids and bangs already in the rig |

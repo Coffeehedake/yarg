@@ -3383,6 +3383,78 @@ if (not os.environ.get("VRM_NO_TPOSE")) and (
     lo, hi = bounds()
     size = hi - lo
 
+# ---------------------------------------------------------------- drop material faces
+# VRM_DROP_MATERIAL_FACES="Material.001;..." deletes every face that uses a named material, and
+# the vertices only they used. For a toon outline shell: an untextured, slightly larger copy of the
+# body that is meant to be drawn inside-out. The game's renderer has screen-space ambient occlusion,
+# soft shadows and per-pixel lights that a plain editor render does not, and a second layer hugging
+# the body is the first suspect when a coat reads as inside-out only in game.
+_DROPMAT = [x.strip() for x in os.environ.get("VRM_DROP_MATERIAL_FACES", "").split(";") if x.strip()]
+if _DROPMAT:
+    import bmesh
+    for _o in meshes:
+        _bm = bmesh.new()
+        _bm.from_mesh(_o.data)
+        _kill = [f for f in _bm.faces
+                 if f.material_index < len(_o.material_slots)
+                 and _o.material_slots[f.material_index].material
+                 and _o.material_slots[f.material_index].material.name in _DROPMAT]
+        if _kill:
+            _n0 = len(_bm.faces)
+            bmesh.ops.delete(_bm, geom=_kill, context='FACES')
+            bmesh.ops.delete(_bm, geom=[v for v in _bm.verts if not v.link_faces], context='VERTS')
+            _bm.to_mesh(_o.data)
+            _o.data.update()
+            print("  dropped %d of %d faces using %s on '%s'" % (len(_kill), _n0, _DROPMAT, _o.name))
+        _bm.free()
+
+# ---------------------------------------------------------------- flip faces
+# VRM_FLIP_FACES="MeshName:z<0.9;Other:z<0.3" reverses the winding of every face of the named
+# mesh whose centre sits below the given height (metres, after scaling), and flips its split
+# normals with it. For a part modelled inside-out: the outline-hull workflow leaves clothing
+# wound the wrong way and hides it behind the hull, so the moment the hull is dropped, or the
+# renderer culls back faces, the part draws its far interior instead of its outside.
+_FLIP = []
+for _part in [x for x in os.environ.get("VRM_FLIP_FACES", "").split(";") if x.strip()]:
+    _mn, _, _cond = _part.partition(":")
+    _FLIP.append((_mn.strip(), float(_cond.strip().replace("z<", ""))))
+if _FLIP:
+    import bmesh
+    for _o in meshes:
+        for _mn, _zmax in _FLIP:
+            if _o.name != _mn:
+                continue
+            _me = _o.data
+            _mw = _o.matrix_world
+            _hadc = _me.has_custom_normals
+            _cn = [v.vector.copy() for v in _me.corner_normals] if _hadc else None
+            _flip_poly = set(p.index for p in _me.polygons if (_mw @ p.center).z < _zmax)
+            if _hadc:
+                _new = list(_cn)
+                for _p in _me.polygons:
+                    if _p.index in _flip_poly:
+                        for _li in _p.loop_indices:
+                            _new[_li] = -_new[_li]
+            _bm = bmesh.new()
+            _bm.from_mesh(_me)
+            _bm.faces.ensure_lookup_table()
+            bmesh.ops.reverse_faces(_bm, faces=[_bm.faces[i] for i in _flip_poly])
+            _bm.to_mesh(_me)
+            _bm.free()
+            if _hadc:
+                # reverse_faces reverses each flipped face's loop order, so remap the negated
+                # normals the same way: loop k of a flipped face is now its old loop (n-1-k) shifted.
+                _out = list(_new)
+                for _p in _me.polygons:
+                    if _p.index in _flip_poly:
+                        _ls = list(_p.loop_indices)
+                        _n = len(_ls)
+                        for _k, _li in enumerate(_ls):
+                            _out[_li] = _new[_ls[(_n - _k) % _n]]
+                _me.normals_split_custom_set(_out)
+            _me.update()
+            print("  flipped %d of %d faces of '%s' below z=%.2f" % (len(_flip_poly), len(_me.polygons), _o.name, _zmax))
+
 # ---------------------------------------------------------------- hair rig
 # Spring bones need bones. A character whose hair is skinned straight to the
 # head bone - Character Creator and stock Mixamo rigs both do this - has nothing

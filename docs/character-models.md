@@ -1050,6 +1050,77 @@ along every finger. The exporter now gives any untextured near-black material no
 metallic, specular highlights or environment reflections. Rendered before and after: the double pale
 lines become a solid black edge. One thin pale line per finger gap remains, unexplained.
 
+## Alastor in game: what the renderer does that the editor does not
+
+2026-11-10. After the finger strips were fixed, Alastor still looked wrong in game (character-select
+screenshots; no close-ups are possible, so everything below was measured on the files and judged by
+eye in game). Three separate faults, found one at a time.
+
+**1. His mask showed through his fringe.** The hair, ears and mask are one mesh on one bone and one
+material (`Head.001`), so this is not skinning. The VRM marks every one of his materials
+`doubleSided`, which is how a single-sided sheet stays visible from both sides. The exporter rebuilds
+each material as a fresh URP/Lit, which culls back faces, and the source materials are `Standard`,
+which has no cull property to read -- the flag is lost on import and cannot be recovered from the
+imported material (a first attempt that tried read `source cull -1` for all four). So it is a named
+list: `YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001"` draws those double-sided. Seen in game: the fringe
+now covers the mask and the eyes have their brows. Double-sided is not free: the lighting on back
+faces changed, which is the next fault.
+
+**2. A cool purple tint and a blown-out face.** URP/Lit's default smoothness and environment
+reflections read as a sky tint on a flat toon character. `YARG_NO_SHINE_MATERIALS="Body.001;Head.001;
+Eyes.001"` (or `*` for every material) sets smoothness, metallic, specular highlights and
+environment reflections to zero. Alastor's hair and ears are red again in game. Heels, Gwen Stacy and
+Ariel were also installed no-shine (`*`) to compare; the editor shows the difference much less than
+the game does, so the editor is not a guide to how bad the shine looks. Ariel's aquamarine hairline
+was already like that before the shine was removed: it is not a regression. **Known bug:** the
+exporter sets `_Metallic` to 1 for any material with a metallic map AFTER this switch runs, so for
+those materials the switch is only partly applied.
+
+**3. The coat, pants and boots looked inside-out.** Vertex normals agree with the face winding (0% of
+faces against it, mean dot 0.94) and the winding is identical in the source model and every build, so
+nothing was flipped by the pipeline. What the measurement shows is that the clothing was MODELLED
+inside-out. Measured as the share of faces whose normal points away from the local body axis, in the
+mesh `BodyOutline.001`: legs and boots 12%, the coat skirt 0%, the red cuffs 0%, the first shoe
+faces 1%, the second set of shoe faces (`BodyOutline.002`) 16%. This is the toon outline workflow:
+the clothes are wound inwards and a black hull (`Material.001`) is drawn over them. **That black
+material is not just an outline.** Over his body it is about half of the faces of `BodyOutline.002`,
+and the lower legs of that mesh are 100% black material and the shoes 52%. Dropping it by name leaves
+the clothes bare and, with them still inside-out, hollow: the first try at that (installed without
+flipping anything) turned the boots into open tubes and broke more than the boots.
+
+The fix is two build options, used together: `VRM_DROP_MATERIAL_FACES="Material.001"` deletes the
+hull, and `VRM_FLIP_FACES="BodyOutline.001:z<0.9;BodyOutline.002:z<0.15"` reverses the winding AND
+the split normals of everything below those heights. Measured afterwards: legs and boots 12 -> 88%,
+skirt 0 -> 100%, cuffs 0 -> 100%, first shoe faces 1 -> 99%, second shoe faces 16 -> 84% (the rest
+are probably interior surfaces). Triangles 40,124 -> 21,415, so the install guard needs `-Force`.
+**In game, after the legs and cuffs were flipped, the pants were fixed; after the shoes were added
+too, it looks right.** Not flipped: the collar (10% outward) and the torso and coat top (about 40%).
+He loses his black outline.
+
+**What was tried and did not matter.** Each was measured, in the editor, before it was believed:
+culling the black material's back faces (renders identical); letting the black hull cast shadows or
+not, with soft shadows on (nearly identical, no dark patches either way); making every material
+double-sided (clipping fixed, tint made worse); and stripping the shine from the black material
+alone (fixed the pale lines along his fingers, nothing on the coat).
+
+**What the game does that the editor cannot show.** The character scripts do not touch materials or
+shaders, so the game draws the bundle's materials exactly as built. The High profile adds
+screen-space ambient occlusion (depth normals, intensity 0.5, radius 0.25), a 4096 soft shadow map
+with four cascades, per-pixel additional lights with shadows and 4x MSAA. None of that is in a
+plain editor render, which is why the coat looked fine in every render and wrong in game. When
+something is inside-out only in game, measure the winding of the geometry; do not expect to see it.
+
+**Three process notes.** (1) An experiment that DELETES data has to be measured against what it
+deletes: "drop the outline shell" was installed over a working character on the belief that the
+material was an outline, when the same material is half his clothes. (2) A switch that reads a
+property the source shader does not have fails silently (`-1`); log what it read. (3) The renderer's
+`YARG_SHADOWS=1` set `QualitySettings.shadowDistance`, and Unity SAVED it into
+`ProjectSettings/QualitySettings.asset` (40 -> 20). It is restored after each render now; check
+`git status` for that file before committing.
+
+Still open on Alastor: one thin pale line per finger gap, the collar, the torso and coat top, and
+his eye UVs (a source-model fault, not fixable here).
+
 ## Spring bones need bones
 
 Hair, a skirt or a cape stays rigid however well the character animates, because Unity's humanoid

@@ -162,10 +162,19 @@ public static class YargCharHandRender
             }
         }
 
+        float oldShadowDistance = -1f;   // restored at the end: Unity saves it into ProjectSettings
         var lightGo = new GameObject("__renderlight");
         var light = lightGo.AddComponent<Light>();
         light.type = LightType.Directional;
         light.intensity = 1.4f;
+        // The game lights with shadows and a plain editor light does not, so a shell or
+        // inner layer that shadows its own body only shows up in game. YARG_SHADOWS=1 turns them on.
+        if (System.Environment.GetEnvironmentVariable("YARG_SHADOWS") == "1")
+        {
+            light.shadows = LightShadows.Soft;
+            oldShadowDistance = QualitySettings.shadowDistance;
+            QualitySettings.shadowDistance = 20f;
+        }
         lightGo.transform.rotation = Quaternion.Euler(40f, 150f, 0f);
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
         RenderSettings.ambientLight = new Color(0.55f, 0.55f, 0.6f);
@@ -250,6 +259,7 @@ public static class YargCharHandRender
         Object.DestroyImmediate(rt);
         Object.DestroyImmediate(camGo);
         Object.DestroyImmediate(lightGo);
+        if (oldShadowDistance >= 0f) QualitySettings.shadowDistance = oldShadowDistance;
         foreach (var go in baked) Object.DestroyImmediate(go);
         foreach (var smr in hidden) smr.enabled = true;
     }
