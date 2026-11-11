@@ -1202,6 +1202,39 @@ property the source shader does not have fails silently (`-1`); log what it read
 Still open on Alastor: one thin pale line per finger gap, the collar, the torso and coat top, and
 his eye UVs (a source-model fault, not fixable here).
 
+## Rendering on the game's own podium, without the game and without touching the repo
+
+2026-11-11. Every fault on Alastor that only showed in game (a purple tint, a coat that read inside-out)
+was invisible in the plain editor renders, because the game lights the character with its own scene and
+its High render profile. So: render the real thing. `tools/character-pipeline/YargSceneShot.cs` opens the
+game's real `CharacterSelect.unity`, instantiates the real podium prefab (found through the
+`DisplayManager`'s serialized `_displayPrefab`) in the "selected" slot, loads a `.yargchar` with
+`AssetBundle.LoadFromFile` and the same `CHARACTER_PREFAB_PATH` lookup the game uses, steps the animator,
+bakes each skinned mesh (an editor pass does not re-skin), and renders through the scene's own camera
+with the High quality level selected.
+
+**It runs in a scratch copy of the project, never in the real one.** Copy the project tree WITHOUT `.git`
+(`robocopy <project> C:\dev\_unity-scratch\<project> /E /XD <project>\.git`; `Library` included, so there is
+no full reimport; about 9 GB for YARG), drop the script into `Assets/<anything>/Editor/` THERE, and run
+Unity hidden: `-batchmode` (no `-nographics`, the render needs a GPU context) with
+`-executeMethod YargSceneShot.Run -yargchars "<file>|<Name>;..." -shotDir <out>`. At below-normal priority
+it takes about two minutes for two characters and creates no window (the main window handle was sampled
+during the run and was never set). The real project stays free to open in Unity, which only allows one
+instance per project, and nothing written there can leak into the repo: an earlier render once saved a
+shadow distance into `ProjectSettings/QualitySettings.asset`.
+
+**Validated against the game, on builds that had been seen in it.** The build that showed a purple tint in
+game renders with the purple-grey hair, pale face with dark eye ovals, glossy patchy coat and shiny jointed
+legs. The build where the jacket skirt still read inverted renders with the dark maroon hair, red eyes,
+darker patchy skirt panels and jagged hem. That is what makes the method trustworthy for troubleshooting;
+check a new setup the same way before relying on it.
+
+Known differences: the ring colour animates with time, so its hue depends on when the frame is taken; the
+game poses the character with its own idle animation, here the animator is stepped by hand; and the script
+does not run the game's `DisplayManager`, so the spotlight keeps its scene values (warm white, intensity 20)
+and not the gold the game uses for the SELECTED character. Not required for these comparisons, but it
+would matter for judging colour on a selected character.
+
 ## Spring bones need bones
 
 Hair, a skirt or a cape stays rigid however well the character animates, because Unity's humanoid

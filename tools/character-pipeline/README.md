@@ -650,6 +650,7 @@ right.
   to T, and it throws the fingers out as long strips when the animation plays. It prints
   `FINGERFIT: n of m finger bones more than 5 cm from their mesh` -- expect 0
 - `facing_check.py <vrm> [min_faces]` — also prints VOLUME lines: the exact signed-volume test for closed pieces (negative = the whole piece is inside-out) and a winding-conflict share per material. Which way each mesh/material's faces point, measured away from the nearest point of the bone that drives them. Textured clothing far under 50% is inside-out; thin sheets, hair cards and teeth read 45-60% and are fine; a rig where one bone drives everything (Sonic) cannot be judged
+- `YargSceneShot.cs` — renders a `.yargchar` on the game's REAL character-select podium with the game's own camera and High render profile, the only render that has shown what the game shows (purple tint, inside-out clothing). **Copy it into a scratch copy of the project only, never into the real one**; run hidden with `-batchmode` and `-executeMethod YargSceneShot.Run -yargchars "<file>|<Name>" -shotDir <out>`. See `docs/character-models.md`
 - `bind_check.py <vrm>` — pose versus rest for every bone, rotation AND position. Reads clean when
   pose and rest agree even if both are wrong against the mesh, so it does not replace `bone_fit.py`
 - `YargCharHandRender.cs` — renders both hands INSIDE Unity, at rest and in the animated pose
