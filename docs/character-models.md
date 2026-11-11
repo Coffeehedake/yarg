@@ -1920,6 +1920,56 @@ It is a real defect and it is fixed, but it was never the reason her eyes were w
 the hypothesis before shipping it is what kept that from being written down as the answer.
 
 
+## Posing is the only check that can see a detached part
+
+The podium browser covers textures, colliders, proportions and the spring sim. It cannot cover
+this class of bug at all, and the reason is in *Spring bones need bones* above: **at rest a bone
+nothing drives and a bone that is driven are identical.** A part hanging on a dead bone renders
+perfectly on the podium and hangs in space the moment the character moves.
+
+`tools/character-pipeline/pose_check.py` is the test that can see it. It reads the humanoid bone
+map out of the file, rotates eight of those bones, and then **measures** rather than renders:
+every mesh is evaluated at rest and again posed, and each vertex's displacement is compared.
+
+Measure, not look, because a posed *picture* misleads exactly the way the podium does — and
+measure **per vertex**, not per mesh, because the documented cases are a belt and a pair of eyes
+that live inside a mesh which does move. A per-mesh maximum calls those healthy.
+
+The detector is verified in both directions, because one that has never been seen to fire has not
+been verified:
+
+- `POSE_CONTROL=<mesh>` unbinds a mesh from the armature before posing. Lola's hair then reports
+  `max=0.0000  <-- WHOLE MESH DID NOT MOVE`, and the moved count drops from 4 to 3.
+- `POSE_STATIC_EPS=0.05` raises the static threshold until the partial branch has to fire. Judy's
+  `Cloth` mesh then reports `26.9% static (2453 verts), z 0.28..0.49` — the hip and pelvis
+  vertices that genuinely sit near the pivots. At the real 1 mm threshold it reports nothing.
+- If *nothing* moves the run prints `CONTROL FAILED` and says so, rather than reporting a clean
+  sweep.
+
+**Measured 2026-11-11, and the table in the pipeline README is stale.** Every character listed
+there as hanging off an undriven bone now poses clean — every mesh moves, and no mesh has a
+static region above 1 mm:
+
+| character | result | does it describe the INSTALLED bundle? |
+|---|---|---|
+| Ariel, Heels | clean | **yes** — built and installed from these exact VRMs this session |
+| Lola Bunny | clean | yes — the install was written minutes after the VRM |
+| Judy Hopps | clean | yes — same |
+| Doom Slayer, Jinx | clean | yes — same |
+| Gadget Hackwrench | clean | **no** — the VRM is NEWER than the installed bundle |
+| Joker | clean | unknown — no VRM in the collider set to tie to it |
+| Sonic | clean | **unknown, and not determinable** — see below |
+
+Sonic is the honest gap. Five candidate `.vrm` files exist and all five carry **10,259 verts** and
+the same texture names, because what went wrong with him was the *rig*, not the geometry — "wrong
+rig family breaks skinning while preserving every triangle". Reading the installed bundle does not
+settle it either: UnityPy reports `verts=0` for a `.yargchar`, which is a limit of the reader, not
+a measurement. So his pose result cannot be attributed to what is installed. His podium shot can,
+because that is rendered from the installed bundle, and it is correct.
+
+Timestamps are the weakest evidence in that table and are marked as such on purpose: `Copy-Item`
+preserves `LastWriteTime`, which this project has already been caught by once.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:

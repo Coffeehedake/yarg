@@ -391,6 +391,16 @@ Nothing counts it. The mesh is present, the skin is present, every vertex carrie
 the humanoid map is complete, the renders look right because at rest a dead bone and a live one
 are identical. Measured:
 
+> **Re-measured 2026-11-11 with `pose_check.py`, and this table is now STALE.** Posing the
+> humanoid bones and measuring per-vertex displacement, every character below comes back
+> clean — every mesh moves and no mesh has a static region above 1 mm. The detector is
+> verified in both directions (`POSE_CONTROL` unbinds a mesh and it is flagged;
+> `POSE_STATIC_EPS=0.05` makes the partial branch fire on Judy's hip vertices), so the zero
+> is a real zero and not a probe that never ran. Two caveats: the Gadget VRM tested is newer
+> than his installed bundle, and Sonic cannot be tied to an installed bundle at all — all
+> five of his candidate VRMs carry identical geometry, since his failure was the rig.
+> See *Posing is the only check that can see a detached part* in `docs/character-models.md`.
+
 | character | what hangs off a bone nothing drives |
 |---|---|
 | Lola Bunny | **31% of her body mesh** — `fml_un_C_TopHead`, `fml_un_C_BotHead`, eyelid, tooth and brow joints. Her head floats above her neck |
