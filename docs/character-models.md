@@ -2218,6 +2218,48 @@ missing component (she has `VRMCharacter`, same script set as Judy, who works), 
 Settling it needs the game rebuilt and run with logging around `LoadAnimationDefaults`, which is
 the same rebuild the Gordon and Heels lipsync question is already waiting on.
 
+## A .yargchar can be opened and edited in the editor. It cannot be written back.
+
+"No source located" has been treated as terminal for three characters, and that is too strong —
+a `.yargchar` **is** a Unity AssetBundle, and the podium shot harness already loads one every time
+it runs. So the obvious repair route is: open the bundle, edit the prefab, export it again. Half of
+that works.
+
+**Opening and editing works.** Measured on Kasane Teto, whose bundle is the one of 66 with no
+controller:
+
+```
+[REPAIR] assets in bundle: 2
+[REPAIR] prefab asset: assets/_character.prefab
+[REPAIR] BEFORE: animator=True controller=NULL avatar=human
+[REPAIR] AFTER : controller=DefaultController
+```
+
+`AssetBundle.LoadFromFile` returns `_character.prefab`, it instantiates like any GameObject, and
+its `Animator` is editable. That also confirms the missing controller through Unity itself rather
+than only through UnityPy.
+
+**Writing it back does not.** `BackgroundHelper.Export` reported success and exited 0, and the file
+it wrote is **2,552 bytes against the original's 6,357,076**. Reading both back:
+
+| | original | re-exported |
+|---|---|---|
+| GameObject | 149 | **0** |
+| Mesh | 20 | **0** |
+| Material / Texture2D | 7 / 3 | **0 / 0** |
+| Avatar | 1 | **0** |
+| contents | the character | `AssetBundle` + `TextAsset`, nothing else |
+
+An empty shell. The cause is structural: the bundle builder packs assets from the **AssetDatabase**,
+and a prefab instantiated from a *loaded bundle* references runtime objects that have no asset path.
+Nothing is on disk for it to pack, so it packs nothing — and reports success doing it.
+
+**So the route is not available as it stands.** Repairing a sourceless character would mean
+serialising those runtime objects back into project assets first — meshes, materials, textures and
+the avatar — which is a different and much larger job than "edit it in the editor". Worth knowing
+before someone spends an afternoon on the obvious version, and worth noting that the file size was
+the only thing that gave it away: exit code 0, a file present, and the log line saying OK.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
