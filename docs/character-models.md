@@ -2085,7 +2085,7 @@ should be straight, which is the elbow and the knee.
 
 | character | reading | verdict |
 |---|---|---|
-| **The Mandalorian** | ankle **45.9 / 72.3, Δ26.4** and wrist Δ10.1 | **real** — 20× the population p90, and visible: his left boot is pointed and hangs over the podium edge while his right sits flat |
+| **The Mandalorian** | ankle **45.9 / 72.3, Δ26.4** and wrist Δ10.1 | **his authored stance** — see below. Visible (left boot pointed over the podium edge, right flat) but carried in from the source, not introduced here |
 | Alcina Dimitrescu | wrist 28.7 / 12.7, Δ16.0 | **expected** — her static pose *is* her shape, and the pipeline deliberately "relaxes the left hand, 61.3 vs 0.0 deg" |
 | Kasane Teto | elbow 15.4/15.4, knee 8.9/8.9 | symmetric; she is the one that does not animate at all and stands in her T-pose |
 | Adachi Rei | knee 6.6/6.6 | symmetric, mild |
@@ -2094,11 +2094,41 @@ should be straight, which is the elbow and the knee.
 | B1 Battle Droid, Mannequin, Steve, Shadow | no finger bones mapped | no wrist row; worth knowing rather than reading as a pass |
 | B1 Battle Droid, Mannequin, Peacemaker, Steve, Vigilante | no toe bones mapped | no ankle row |
 
-**The Mandalorian is the one real find, and it is not trivially fixable.** A symmetric build exists
-— `rollout/out/The Mandalorian.vrm` measures ankle Δ1.96 — but it shares **0.0%** of its bone names
-with the installed bundle, so it is a different rig, not a newer version of the same one. He has
-already been broken once by an unverified rebuild, coming back upside-down from a stale VRM, so
-swapping him on the strength of one measurement is exactly the move this document warns against.
+### The Mandalorian's ankle is his stance, and the installed build is the best one there is
+
+The sweep's one striking outlier turned out to be authored, and the investigation is worth keeping
+because every intuition along the way was wrong.
+
+**A symmetric build appeared to exist.** `rollout/out/The Mandalorian.vrm` measures ankle Δ1.96
+against the installed Δ26.4, carries the same ten textures and the same 28,748 triangles, and has
+the 4-spring cape rig. It is also **upside down** — head at z −1.355 below hips at −0.829. It is
+the stale VRM from the incident where he came back inverted, and installing it on the strength of
+one good-looking number is precisely the move that broke him before.
+
+**The other candidate is worse, not better.** `Mandalorian.vrm` is upright, same geometry, and has
+*straighter* wrists (0.00 against 19.8/29.9) and a better ankle (Δ9.27). It also has **0 spring
+bones** — no cape rig at all, the thing the recipe works hardest to get — and **28 humanoid bones
+against the installed 52**. Swapping to it would trade a 26° ankle for a static cape and half the
+animation mapping.
+
+**And a rebuild would not help, because the asymmetry is in the source.** In the Mixamo re-rig
+`mando-mx.blend` the feet mirror correctly in X and Z and differ in Y by **7.3 cm**:
+
+| | LeftToeBase | RightToeBase |
+|---|---|---|
+| X | 0.2212 | −0.2096 — mirrored |
+| Z | 0.0614 | 0.0603 — matches |
+| **Y** | **−0.1623** | **−0.0897** |
+
+His left foot is further forward and more extended than his right in the source model's own pose.
+That is a relaxed standing stance, the same class as Jessica Rabbit's pointed feet (7.3° against a
+population median of 62.6 — heels) and Alcina's pose-as-shape. The pipeline did not introduce it
+and cannot remove it without editing the rest pose by hand, which would change the skinned mesh's
+rest relationship for a cosmetic gain.
+
+**So nothing was changed.** The installed Mandalorian is the best build that exists: upright,
+caped, 52 humanoid bones, no detached parts, and correct on the podium. The sweep's job was to
+find outliers, and it did; this one's explanation is "that is how he stands".
 
 ## Open questions
 
