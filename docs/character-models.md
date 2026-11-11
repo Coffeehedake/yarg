@@ -1158,8 +1158,8 @@ whatever their winding.
 
 **The eyes were inverted and nobody could see it.** `Eyes.001` is two open sheets of 89 faces and all
 89 pointed back into the head (0% facing the front), hidden by the double-sided material and below
-every size threshold used so far (the 100-150 face minimums). Oriented: 99% facing the front. Built, not
-yet installed.
+every size threshold used so far (the 100-150 face minimums). Oriented: 99% facing the front. Installed
+2026-11-11 together with the small-piece fix below; the in-game result is not recorded yet.
 
 **What the small pieces showed (79 of Alastor's 103 pieces are under 100 faces).** 17 look wrong: about
 15 lone single-triangle pieces at z 0.53 pointing inward (at about the height of the torn coat hem, so
@@ -1169,6 +1169,14 @@ missed them by construction: it skips a material with fewer than 40 faces on a m
 piece under 3 faces, and joins only the faces of the materials it was told to orient, so a small shell
 touching anything else can look open and be judged by the unreliable bone vote. Also in the file: an
 80-face untextured `Icosphere` spanning z -0.90..0.90 that has not been explained.
+
+**Fixed in the build, with one exception.** `VRM_ORIENT_CONSISTENT` now has no size floor, judges a piece of
+any size down to a single triangle, and joins faces across EVERY material of the mesh (only pieces that contain a
+face of a named material are oriented), with a nearest-neighbour weld at 0.1 mm instead of rounding. Small pieces that
+look wrong: 17 -> 1. The one left is a closed solid about 3 x 3 x 2 cm at z 1.55, next to the eyes: inside-out in the
+original, left exactly as it was by the pass that fixed its neighbours (including the 64-face piece beside it). In the
+build it appears as fragments of 8, 12 and 24 faces rather than one closed piece, and a wider weld did not join them;
+the cause is not found. `VRM_ORIENT_DEBUG=1` prints every small piece's closed share, volume, vote and decision.
 
 **What was tried and did not matter.** Each was measured, in the editor, before it was believed:
 culling the black material's back faces (renders identical); letting the black hull cast shadows or

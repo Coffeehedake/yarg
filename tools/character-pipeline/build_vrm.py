@@ -3542,21 +3542,42 @@ if os.environ.get("VRM_ORIENT_CONSISTENT", "").strip():
         _mw = _o.matrix_world
         _n3 = _mw.to_3x3()
         _gn = {g.index: g.name for g in _o.vertex_groups}
-        _polys = [p for p in _me.polygons
-                  if p.material_index < len(_o.material_slots)
-                  and _o.material_slots[p.material_index].material
-                  and _o.material_slots[p.material_index].material.name in _names]
-        if len(_polys) < 40:
+        # EVERY face of the mesh takes part in the connectivity, so a small shell that touches faces
+        # of another material is judged as the closed piece it is, not as an open sheet. Only pieces
+        # that contain a face of a NAMED material are oriented.
+        _polys = list(_me.polygons)
+        _listed = set(p.index for p in _polys
+                      if p.material_index < len(_o.material_slots)
+                      and _o.material_slots[p.material_index].material
+                      and _o.material_slots[p.material_index].material.name in _names)
+        if not _listed:
             continue
-        # weld by position so UV seams do not cut a piece in two
-        _wid = {}
-        _weld = {}
-        for _p in _polys:
-            for _vi in _p.vertices:
-                if _vi not in _weld:
-                    _co = _me.vertices[_vi].co
-                    _k = (round(_co.x * 1e4), round(_co.y * 1e4), round(_co.z * 1e4))
-                    _weld[_vi] = _wid.setdefault(_k, len(_wid))
+        # Weld by position so UV seams do not cut a piece in two. NOT by rounding: two vertices that
+        # should coincide can straddle a rounding boundary after the build's scaling, and a shell then
+        # splits at the seam into fragments that each look open and are judged separately (a closed
+        # 30-face solid on Alastor's head came out as an 8-face and a 12-face piece, flipped piecemeal).
+        # A nearest-neighbour weld has no boundary to straddle. The tolerance is 0.1 mm: the same shell was
+        # still in fragments at 0.02 mm, and the exported file joins it at 0.1 mm.
+        from mathutils import kdtree as _kdt
+        _used = sorted(set(v for p in _polys for v in p.vertices))
+        _kd = _kdt.KDTree(len(_used))
+        for _i, _v in enumerate(_used):
+            _kd.insert(_me.vertices[_v].co, _i)
+        _kd.balance()
+        _par = list(range(len(_used)))
+
+        def _find(_a):
+            while _par[_a] != _a:
+                _par[_a] = _par[_par[_a]]
+                _a = _par[_a]
+            return _a
+
+        for _i, _v in enumerate(_used):
+            for _co2, _j, _d in _kd.find_range(_me.vertices[_v].co, 1e-4):
+                _ra, _rb = _find(_i), _find(_j)
+                if _ra != _rb:
+                    _par[_ra] = _rb
+        _weld = {_v: _find(_i) for _i, _v in enumerate(_used)}
         _edges = _c2.defaultdict(list)          # welded edge -> [(face index, direction)]
         for _p in _polys:
             _vs = [_weld[v] for v in _p.vertices]
@@ -3626,17 +3647,27 @@ if os.environ.get("VRM_ORIENT_CONSISTENT", "").strip():
             _cid = _comp[_p.index]
             _cv = (_mw @ _p.center) - _cen[_cid][0] / _cen[_cid][1]
             _vol[_cid] += _p.area * _cv.dot((_n3 @ _p.normal).normalized() * _state[_p.index]) / 3.0
+        _wanted = set(_comp[i] for i in _listed)
         _flipcomp = set()
-        for _cid in set(_comp.values()):
+        for _cid in _wanted:
             _closed = _ecount[_cid][1] > 0 and _ecount[_cid][0] / _ecount[_cid][1] >= 0.95
             _n, _k = _out.get(_cid, (0, 0))
             if _closed:
                 if _vol[_cid] < 0:
                     _flipcomp.add(_cid)
-            elif _n >= 3 and _k / _n < 0.5:
+            elif _n >= 1 and _k / _n < 0.5:     # any size: a single triangle can be inside-out
                 _flipcomp.add(_cid)
+        if os.environ.get("VRM_ORIENT_DEBUG"):
+            _cnt = _c2.Counter(_comp[p.index] for p in _polys)
+            for _cid in sorted(_wanted):
+                if _cnt[_cid] <= 40:
+                    _zz = [(_mw @ p.center).z for p in _polys if _comp[p.index] == _cid]
+                    print("  ORIENT_DEBUG '%s' piece %d: %d faces z %.2f..%.2f closed %.2f vol %+.6f vote %s -> %s" % (
+                        _o.name, _cid, _cnt[_cid], min(_zz), max(_zz), (_ecount[_cid][0] / max(1, _ecount[_cid][1])), _vol[_cid],
+                        _out.get(_cid, 'none'), 'FLIP' if _cid in _flipcomp else 'keep'))
         _fp = set(p.index for p in _polys
-                  if (_state[p.index] == -1) != (_comp[p.index] in _flipcomp))
+                  if _comp[p.index] in _wanted
+                  and (_state[p.index] == -1) != (_comp[p.index] in _flipcomp))
         if _fp:
             _flip_faces(_o, _fp)
             print("  made %d pieces of '%s' consistent: flipped %d of %d faces (%d pieces turned outward)"
