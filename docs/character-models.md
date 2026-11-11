@@ -2130,6 +2130,45 @@ rest relationship for a cosmetic gain.
 caped, 52 humanoid bones, no detached parts, and correct on the podium. The sweep's job was to
 find outliers, and it did; this one's explanation is "that is how he stands".
 
+## What is in the bundle: animation, and which fingers the game can actually move
+
+A render shows the mesh. It cannot show whether the character has anything to *play*, or which
+bones the game is able to drive. Both are readable from the installed `.yargchar`, and
+`tools/character-pipeline/bundle_audit.py` reads them across all 66.
+
+**Animation.** A character with no `AnimatorController` and no `AnimationClip` stands in its bind
+pose forever, however good the rig is. Measured: **Kasane Teto is the only one of the 66**, with
+`clips=0 ctrl=0` against 5 or 6 clips and 1 controller for everyone else. That confirms what the
+pipeline README already recorded, and now by measurement rather than by inspection of one file.
+
+**Finger coverage.** Unity retargets through the humanoid map, so a finger bone that is not in
+that map is never driven, whatever the animation does. Across the 66:
+
+| mapped finger bones | characters |
+|---|---|
+| 30 (all five, both hands) | 48 |
+| 24 | 6 |
+| 28 / 22 / 18 / 12 | 1 each |
+| 6 (index only) | Sonic, Yui Suzukaze |
+| **0** | B1 Battle Droid, Mannequin, Steve, **Shadow the Hedgehog** |
+
+**Shadow corrects a documented claim.** The pipeline README says his "fingers do not move" because
+of "finger bones that are mapped but not weighted". They are **not mapped at all** — zero finger
+bones in his humanoid map, and only 21 humanoid bones in total against a typical 52. The symptom
+was right and the stated cause was wrong.
+
+**And the "closed fists" complaints are not what they look like.** Judy Hopps maps 18 finger bones
+— index, little and thumb, with **no middle and no ring** — and Miku maps 22, missing ring entirely
+and carrying middle at only 4 of 6. That correlation is tempting. But rendering their hands settles
+it: **both rest poses are open, flat hands with the fingers extended**, not fists. So this is not a
+rest-pose defect. What *is* true, and worth recording in its place, is that the unmapped fingers
+can never be moved by the game — during a performance Judy's middle and ring will stay straight
+while her index and little curl.
+
+Judy's mapped chains are named `*_fused`, which is the deliberate fifth-finger fusing step, so some
+of that reduction is by design rather than by accident. Telling the two apart needs the recipe, not
+the count — which is why the count alone was not treated as the answer.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
