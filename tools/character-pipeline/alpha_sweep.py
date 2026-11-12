@@ -30,7 +30,7 @@ import os
 import struct
 import sys
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 def load(path):
@@ -47,16 +47,80 @@ def load(path):
     return g, bins
 
 
-def classify(img):
-    """clear / solid fractions of the alpha channel, on a 96x96 sample."""
+CT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2),
+      5125: ("I", 4), 5126: ("f", 4)}
+NC = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}
+UVRES = 256
+
+
+def classify(img, mask=None):
+    """clear / solid fractions of the alpha channel.
+
+    With `mask`, only the texels the mesh actually samples are counted. See
+    `uv_mask` for why that is the number worth having.
+    """
     if img.mode not in ("RGBA", "LA", "PA"):
         return None
-    a = img.convert("RGBA").split()[3].resize((96, 96), Image.NEAREST)
+    a = img.convert("RGBA").split()[3].resize((UVRES, UVRES), Image.NEAREST)
     px = list(a.getdata())  # noqa: deprecated in Pillow 14, still correct here
+    if mask is not None:
+        mp = list(mask.getdata())
+        px = [v for v, m in zip(px, mp) if m]
+        if len(px) < 64:
+            return None
     n = float(len(px))
+    if n < 1:
+        return None
     clear = sum(1 for v in px if v < 5) / n
     solid = sum(1 for v in px if v > 250) / n
     return clear, solid
+
+
+def uv_mask(g, bins, mat_index):
+    """Which texels does this material's geometry actually land on?
+
+    An atlas is mostly empty space between its UV islands, and that empty
+    space is usually transparent. Measured over the WHOLE image, a perfectly
+    ordinary body atlas therefore looks like a cutout -- which is how this
+    sweep came to flag Gadget Hackwrench's `Body` map on three materials and
+    Jinx's merged diffuse, none of which is a defect. The mesh never samples
+    the gaps.
+
+    So rasterise the material's own UV triangles and measure only inside them.
+    What remains is transparency the geometry will really show.
+    """
+    def read(i):
+        a = g["accessors"][i]
+        bv = g["bufferViews"][a["bufferView"]]
+        base = bv.get("byteOffset", 0) + a.get("byteOffset", 0)
+        f, sz = CT[a["componentType"]]
+        n = NC[a["type"]]
+        stride = bv.get("byteStride") or sz * n
+        return [struct.unpack_from("<" + f * n, bins, base + k * stride)
+                for k in range(a["count"])]
+
+    mask = Image.new("L", (UVRES, UVRES), 0)
+    dr = ImageDraw.Draw(mask)
+    drawn = 0
+    for m in g.get("meshes", []):
+        for pr in m.get("primitives", []):
+            if pr.get("material") != mat_index:
+                continue
+            at = pr.get("attributes", {})
+            if "TEXCOORD_0" not in at or "indices" not in pr:
+                continue
+            uv = read(at["TEXCOORD_0"])
+            idx = [i[0] for i in read(pr["indices"])]
+            step = max(1, len(idx) // (3 * 20000))      # cap the work
+            for t in range(0, len(idx) - 2, 3 * step):
+                try:
+                    pts = [(uv[idx[t + k]][0] * UVRES,
+                            uv[idx[t + k]][1] * UVRES) for k in range(3)]
+                except IndexError:
+                    continue
+                dr.polygon(pts, fill=255)
+                drawn += 1
+    return mask if drawn else None
 
 
 def report(path):
@@ -66,31 +130,41 @@ def report(path):
     texs = [t.get("source") for t in g.get("textures", [])]
     cache = {}
 
-    def decode(ti):
-        if ti in cache:
-            return cache[ti]
+    def decode(ti, mask):
+        """Alpha stats for texture `ti`, measured under `mask`.
+
+        Not cached on `ti` alone: two materials can share one image and sample
+        completely different parts of it, which is the whole point of an atlas.
+        """
+        key = (ti, id(mask))
+        if key in cache:
+            return cache[key]
         src = texs[ti] if ti is not None and ti < len(texs) else None
         if src is None:
-            cache[ti] = (None, "?")
-            return cache[ti]
+            cache[key] = (None, "?")
+            return cache[key]
         im = imgs[src]
         try:
             bv = g["bufferViews"][im["bufferView"]]
             o = bv.get("byteOffset", 0)
             d = Image.open(io.BytesIO(bins[o:o + bv["byteLength"]]))
-            cache[ti] = (classify(d), im.get("name", "img%d" % src))
+            cache[key] = (classify(d, mask), im.get("name", "img%d" % src))
         except Exception:                                        # noqa: BLE001
-            cache[ti] = (None, im.get("name", "img%d" % src))
-        return cache[ti]
+            cache[key] = (None, im.get("name", "img%d" % src))
+        return cache[key]
 
     hits = []
-    for m in g.get("materials", []):
+    for mi, m in enumerate(g.get("materials", [])):
         if m.get("alphaMode", "OPAQUE") != "OPAQUE":
             continue
         bt = m.get("pbrMetallicRoughness", {}).get("baseColorTexture", {})
         if "index" not in bt:
             continue
-        res, iname = decode(bt["index"])
+        try:
+            mask = uv_mask(g, bins, mi)
+        except Exception:                                        # noqa: BLE001
+            mask = None
+        res, iname = decode(bt["index"], mask)
         if not res:
             continue
         clear, solid = res

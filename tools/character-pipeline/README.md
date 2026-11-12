@@ -618,6 +618,42 @@ Still open on him, and not touched: his irises render pale, which looks like his
 landing on the iris disc in `eye-iris-green.tga` — the same family as Alastor's UV fault, and not
 fixable from the pipeline.
 
+### The rest of the list was false positives, and fixing that is the useful part
+
+Six characters were left after the eyes. **A render of each, as installed, showed every one of them
+to be correct.** Killer Clown's red and blue eyes, Yoda's eyes and his fine white hair strands,
+Doom Slayer's helmet — all fine. Nothing was changed on any of them.
+
+The reason they were flagged is worth having, because it is a property of the instrument rather
+than of the characters: **an atlas is mostly empty space between its UV islands, and that empty
+space is usually transparent.** Measured over the whole image, a perfectly ordinary body atlas
+looks exactly like a cutout. That is what put Gadget Hackwrench's `Body` map on the list three
+times, and Jinx's merged diffuse, and Killer Clown's sheet of eye decals.
+
+`alpha_sweep.py` now rasterises each material's own UV triangles and measures the alpha **only
+where that material's geometry actually lands.** Two materials sharing one atlas get different
+numbers, which is the point of an atlas.
+
+| | whole image | under its own UVs |
+|---|---|---|
+| Killer Clown | 1 material | **clean** |
+| Doom Slayer | 2 materials | **clean** |
+| The Rock | 1 material | **clean** |
+| Gadget Hackwrench | 4 materials | 1 material |
+| Jinx's merged diffuse | 24.4% clear | 6.6% clear |
+| **Sayuri, pre-fix (control)** | 7 materials | **7 materials** |
+
+Across the set that is **24 materials on 10 characters down to 13 on 6**, with the control
+unmoved — and the three it dropped to clean are the three a render had already cleared, which is
+the agreement worth having between an instrument and an eye. It also dropped The Rock's `eye_ov`
+on its own, independently of the render that had already acquitted it.
+
+What is left is now all known: Gordon's specular masks and his suit (100.0% clear under its own
+UVs — the suit's geometry lands entirely on transparent alpha, so honouring it would erase him),
+Peach's crown and hair, Prix's wrong-atlas trap, Yoda's two, and Gadget's goggles, whose `.vrm` is
+not the build that is installed. **The sweep has been run to ground; there is no untried candidate
+left on it.**
+
 ### `alpha_sweep.py`'s other hits, and which of them to believe
 
 With both tiers, **24 materials across 10 characters**. Sayuri is done; the rest, with what the
@@ -949,8 +985,12 @@ right.
   real transparency, in **two tiers**: `mask` passes the same test `build_vrm.py` uses to decide a
   cutout, and `soft` is a feathered alpha that wants BLEND, or a cutoff chosen for it, rather than
   nothing at all. The second tier exists because the first version reported only `mask` and
-  therefore missed Sayuri's eyelashes — see below. It prints candidates and fixes nothing on
-  purpose: an alpha that looks like a mask is not always meant as one
+  therefore missed Sayuri's eyelashes. The alpha is measured **only under each material's own UV
+  triangles**, because the empty space between an atlas's islands is transparent and would
+  otherwise make every ordinary body atlas look like a cutout. Both refinements are written up
+  below. It prints candidates and fixes nothing on purpose: an alpha that looks like a mask is not
+  always meant as one, and roughly half of its hits have turned out to be specular masks, atlas
+  padding, or already correct
 - `alpha_check.py` / `mat_check.py` / `spring_scan.py` / `uv_test.py` / `tex_stats.py` — material,
   alpha, spring and texture inspection straight out of the exported file
 
