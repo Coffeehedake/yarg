@@ -3071,6 +3071,49 @@ Exact angles of 90° and 180° on bones whose roll is arbitrary — eyes, teeth,
 are the signature of a convention difference rather than a re-pose. A re-pose does not land on
 round numbers.
 
+## Alice Ivy had a black disc over each eye, and it was a 5% film shipped at 100%
+
+Reported from a render on 2026-11-12, after the alpha rebuild: the whites of her eyes were
+black. The first thing to settle was whether the archive was like that. **It was not** — the
+source `.fbx` rendered straight out of Blender has ordinary eyes, white sclera, grey-green
+irises.
+
+Her `Custom_Eye` mesh carries four materials: `Eye_Left` and `Eye_Right`, which are the eyeballs
+and are correctly textured, and `EyeMoisture_Left` and `EyeMoisture_Right`, a wet-film shell that
+sits in front of them. In the source that film is **black, `blend_method=HASHED`, alpha 0.051,
+with no texture at all** — a 5% sheen. It shipped as `baseColorFactor [0, 0, 0, 1]`: the same
+black at full opacity, which is a solid disc. Her real eyes were there the whole time, behind it.
+
+**The lever already existed and is opt-in for a reason that does not apply here.**
+`VRM_VALUE_ALPHA=1` carries a transparency stated as a VALUE across, and it is off by default
+because it made Heels worse: her `Std_Cornea_L/R` are `HASHED` at **alpha 0.553 with a textured
+base**, and honouring that washed her iris out against the sclera behind it. Alice's is the
+opposite shape — **0.051, no texture, pure black** — and the difference between "55% transparent
+over a texture that is doing work" and "95% transparent over nothing" is the whole decision.
+
+Scanned before turning the switch on, because it is global to a character: on Alice it changes
+those two materials and **nothing else**. Every other material of hers either has an image wired
+into Alpha or sits at 1.000. That check is worth running for any character before enabling it,
+and the same scan over the other four sources on disk says Alice is the only one affected —
+Ariel and Alcina state no value transparency at all, Heels has the documented cornea pair, and
+Sayuri's `Eye_Shadows` states alpha 0.000 but has `Eyelashes_Opacity.png` deliberately pinned
+over it.
+
+### Two things this says about the sweeps
+
+**It is older than the work that exposed it.** The black discs are identical in the before and
+after renders of the alpha rebuild, so neither that nor the collider fix caused it. It had been
+shipping since she was built, through every automated check in the project.
+
+**No alpha sweep could have found it.** `alpha_sweep_installed.py` keys on a material's base
+MAP, and this material has none — it is a bare colour factor, so there is no texture to measure
+and the material is simply invisible to the sweep. The general version, "an opaque untextured
+material with a dark base colour is a solid slab of that colour", was run over all 30 characters
+and flags five, of which four are false: Pomni's and Jessica Rabbit's flat-colour materials are
+flat on purpose, which this document already records. **The heuristic cannot settle it; only the
+source can.** That is why the first move here was to render the archive rather than to reason
+about the bundle.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
