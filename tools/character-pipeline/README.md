@@ -530,6 +530,54 @@ Ignore `[VRM Add-on:ERROR] Unexpected alpha clip input node type` on this charac
 them, all emitted during the FBX import before the builder touches a material, from alpha-clip
 inputs the Character Creator export left wired to nothing. Peach and Heels produce none.
 
+### Alcina: the lashes were real, and they are the least of what is wrong with her
+
+**Her eyelashes and hair are cutouts as of 2026-11-12, and she is still a white statue.** Both
+halves of that matter.
+
+The sweep's two hits were right. `CILIOS` is Portuguese for eyelashes and `CABELOO_preto_1` is a
+hair-card atlas, and both shipped OPAQUE: her lashes drew as **two thick black slabs over her
+eyes**. Rebuilt with `VRM_CUTOUT_MATERIALS="Material.005;Material.006"` they are lash strands and
+her eyes are visible. 350,162 triangles unchanged, same 12 meshes, 13 materials and 2 chains.
+
+Getting there needed **two more holes in the cutout gate** closed, both the same shape as the
+`_base_authored` one above — the gate kept refusing the provenances that are hardest to argue with:
+
+- **A `VRM_TEX` override set neither `base_from` nor `_base_authored`.** An operator naming the map
+  by hand is the strongest signal there is, and it was invisible. Alcina's hair is pinned that way.
+- **The probe measured a BLURRED COPY of the alpha.** It did `image.copy()`, `scale(96, 96)` and
+  read that — and Blender's scale is a *filtered* resize, so it averages. Averaging is the one
+  operation guaranteed to destroy the property being tested: a two-valued mask blurred to 96×96
+  stops being two-valued, and the finer and sparser the mask the worse it gets. Eyelashes and hair
+  cards are exactly that. Measured on `CILIOS`: **0.875 at full resolution, which passes, and 0.790
+  after the resize, which fails.** Her hair atlas survived only because it is denser (0.930 against
+  0.830). The probe now reads the full-resolution alpha through numpy.
+
+  This is also why `alpha_sweep.py` and the builder could disagree: the sweep samples with NEAREST,
+  which preserves extremes, and the builder averaged. Two instruments, the same written rule,
+  different answers.
+
+**Now the part the alpha fix does not touch.** Alcina renders as an untextured white figure, and
+that is her archive rather than the build: **every colour map in it is a grey noise field.**
+`(null)_Base_Color`, `Material.014_Base_Color` and `None_Base_Color` are all noise, and they are
+what her body, dress, hat and train use. The only real images in the folder are
+`CABELOO_preto_1`, `CILIOS` and `smoke.png`. The crosshatch relief across her cheek and jaw is
+`(null)_Normal_OpenGL`, another noise field, used as her face's normal map. Her appearance in
+`Alcina102.blend` must come from material node setups that no glTF export can carry; recovering it
+means baking those to textures in Blender, which is a different job from anything the pipeline
+does today.
+
+**And at 2.9 m her head is above the character-select camera.** `YargSceneShot` uses
+`Camera.main` — the scene's own camera, not a fitted one — so the podium shot crops her at the
+shoulders, and that is the game's framing rather than the harness's. Her height is canon and must
+not be changed, so the lash fix is correct and invisible where players pick her. Worth knowing
+before spending anything more on her face.
+
+One change in the rebuild that is **not** from this work: `Material` (her neck, `Body1.002`) now
+takes `Material.014_Base_Color` where the installed build took `Material`. Both are grey noise and
+the renders are identical, and the control build made before today's two edits already shows it —
+so it came from a pipeline change between her 11-09 build and now, not from these.
+
 ### `alpha_sweep.py`'s other hits, and which of them to believe
 
 With both tiers, **24 materials across 10 characters**. Sayuri is done; the rest, with what the
@@ -538,8 +586,7 @@ finding:
 
 | character | material ← map | alpha | reading |
 |---|---|---|---|
-| Alcina | `Material.006` ← `CILIOS` | 87.1% clear | **likely real.** `CILIOS` is Portuguese for eyelashes, and Sayuri's lashes were the worst fault on her |
-| Alcina | `Material.005` ← `CABELOO_preto_1` | 88.7% clear | hair cards — plausible, but close to the 90% cap where a mask erases the mesh |
+| ~~Alcina~~ | `Material.006` ← `CILIOS`, `Material.005` ← `CABELOO_preto_1` | 87.1% / 88.7% clear | **DONE 2026-11-12.** Both real; see above |
 | The Rock | `Material #30` ← `eye_ov` | 1.2% clear, 84.8% solid | an eye overlay. `build_vrm`'s own comments record a cornea that "shipped alphaMode OPAQUE and became a solid grey disc over the eye" |
 | Gordon Freeman | `eye_r`, `eye_l` ← `eye-iris-green.tga`, `lens` | 7.5% / 0.0% clear | same shape: eyes and a lens |
 | Killer Clown | `eyes` ← `eyes_base_color` | 95.3% clear | over the cap; a mask would erase them |
@@ -1116,7 +1163,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Vegeta / Spider-Man PS | mixamo | 1.64 / 1.75 | |
 | Mannequin | simple | 1.75 | |
 | Sonic (HD) | mixamo | 1.00 | model arrives UNRIGGED — auto-rig it on mixamo.com first, then `VRM_RIGID="island:0=Head"`. Its T-pose is in the clip, not the rest skeleton |
-| Alcina Dimitrescu | rigify_plain | 2.90 | 9'6" is correct and her static pose is her SHAPE — never reset it to rest. exclude `^NurbsPath` (the cigarette holder skewers her hand), `VRM_TEX="Material.005=CABELOO_preto_1.png,Material.019=(null)_Base_Color.png"`. The floating hat was the unrigged-mesh rescue resizing her whole rig by 0.5568 to fit one stray dress train; it is fixed |
+| Alcina Dimitrescu | rigify_plain | 2.90 | 9'6" is correct and her static pose is her SHAPE — never reset it to rest. exclude `^NurbsPath` (the cigarette holder skewers her hand), `VRM_TEX="Material.005=CABELOO_preto_1.png,Material.019=(null)_Base_Color.png"`. The floating hat was the unrigged-mesh rescue resizing her whole rig by 0.5568 to fit one stray dress train; it is fixed. **As installed 2026-11-12:** add `VRM_BREASTRIG=1` and `VRM_CUTOUT_MATERIALS="Material.005;Material.006"` — her hair and eyelashes, which shipped opaque and put two black slabs over her eyes. Build from `Alcina102.blend`, 350,162 triangles. Her colour maps are all noise fields and she renders white; that is the archive, not the build, and at 2.9 m her head is above the character-select camera |
 | Yui Suzukaze | mixamo | 1.60 | recovered from her own .yargchar, re-rigged; needs the VRM_TEX map from the submesh headers |
 | Lola Bunny | multiversus | 1.75 | exclude `^Icosphere` |
 | Mickey Mouse | mixamo | 1.10 | archive is called `talking.zip` |

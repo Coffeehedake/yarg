@@ -5833,6 +5833,15 @@ for mat in bpy.data.materials:
             nt.links.new(t.outputs["Color"], bsdf.inputs[slot])
             if kind == "base":
                 base_tex = t
+                # An operator naming the map in VRM_TEX is the STRONGEST
+                # provenance there is -- stronger than the author's own wiring,
+                # which is itself stronger than any name match. This line was
+                # missing, so the cutout gate below, which tests `base_from`,
+                # treated a hand-pinned map as having no provenance at all and
+                # refused to look at its alpha. Alcina's hair is pinned that
+                # way and was one of the two materials that fault was found on.
+                base_from = "override"
+                _base_authored = True
             wired.append((kind, "override:" + os.path.basename(_ov)))
             continue
         keep = already_good(bsdf, slot)
@@ -6093,15 +6102,32 @@ for mat in bpy.data.materials:
             and "Alpha" in bsdf.inputs and base_tex.image
             and base_tex.image.channels == 4):
         try:
-            _probe = base_tex.image.copy()
-            _probe.scale(96, 96)
-            _buf = [0.0] * (96 * 96 * 4)
-            _probe.pixels.foreach_get(_buf)
-            _a = _buf[3::4]
-            _n = float(len(_a))
-            _clear = sum(1 for _v in _a if _v < 0.02) / _n
-            _solid = sum(1 for _v in _a if _v > 0.98) / _n
-            bpy.data.images.remove(_probe)
+            # Read the alpha at FULL RESOLUTION. This used to copy the image,
+            # `scale(96, 96)` it and measure that -- and Blender's scale is a
+            # filtered resize, which AVERAGES. Averaging is the one operation
+            # guaranteed to destroy the property the test is looking for: a
+            # two-valued mask blurred down to 96x96 stops being two-valued, and
+            # the finer and sparser the mask the worse it gets. Eyelashes and
+            # hair cards are exactly that.
+            #
+            # Measured on Alcina Dimitrescu's `CILIOS` eyelash map: 87.1% clear
+            # / 0.4% solid at full resolution, which passes, and 79.0% / 0.0%
+            # after the averaging resize, which fails. The test rejected her
+            # lashes because of its own instrument, and they shipped as two
+            # black slabs over her eyes. Her hair atlas survived (0.930 against
+            # 0.830) only because it is denser.
+            #
+            # numpy is used for the same reason it is used three times above --
+            # a 1024x1024 RGBA image is 4.2 million floats, and a Python list
+            # of those costs more than a hundred megabytes.
+            import numpy as _np
+            _im = base_tex.image
+            _w, _h = _im.size
+            _arr = _np.empty(_w * _h * 4, dtype=_np.float32)
+            _im.pixels.foreach_get(_arr)
+            _a = _arr[3::4]
+            _clear = float((_a < 0.02).mean())
+            _solid = float((_a > 0.98).mean())
             if 0.05 <= _clear <= 0.90 and (_clear + _solid) >= 0.80:
                 nt.links.new(base_tex.outputs["Alpha"], bsdf.inputs["Alpha"])
                 cut = True
