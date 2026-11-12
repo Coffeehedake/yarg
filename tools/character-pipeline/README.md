@@ -478,12 +478,38 @@ Both cloth checks now skip the anchor when measuring that distance, for the same
 rooted on a spine is inside the torso capsule by design, and reporting it would bury the case the
 number exists to catch — a *simulated* joint inside a collider, which is ejected on frame one.
 
-**It makes the already-shipped colliders bigger**, which is the intended direction and was measured
-before being believed. Re-fitting four of them: Jinx is byte-identical, Chibi Rem's spine goes
-0.091 → 0.103, Gadget's 0.127 → 0.193, and **Peach's hip capsule 0.055 → 0.103** — it had been
-halved by her own skirt anchors. Across all of them no simulated joint ends up inside a collider,
-closest approach +0.002 m. Those nine have *not* been reinstalled with the larger colliders; that
-is a second pass worth doing and is not done.
+### The second pass, and the clear that still was not clearing
+
+Every character fitted before that change is carrying colliders that its own cloth had crushed,
+so all ten were re-fitted. **The clearest case is Batman**: twelve cape chains are anchored on his
+pelvis, every one of those anchors sits on the pelvis capsule's axis, and between them they had
+shrunk it from 0.112 to **0.048** — his cape is the one thing that needs a pelvis to collide with,
+and his cape is what deleted it.
+
+| character | biggest gain | |
+|---|---|---|
+| Batman | `fml_un_C_pelvis_att` | **+63.7 mm**, 0.048 → 0.112 |
+| Peach | `_03_-_HipN` | **+48.2 mm**, 0.055 → 0.103 |
+| Link | `Pelvis` | +22.0 mm, 0.106 → 0.128 |
+| Sayuri | `CC_Base_Head` | +20.0 mm, 0.081 → 0.101 |
+| Chibi Rem | `DEF-spine` | +11.3 mm |
+| Alcina | `spine` | +8.0 mm — but her only chains are chest chains, so her colliders attach to nothing and reinstalling her changes nothing observable. Left alone |
+| Gwen Stacy | `Hips` | +3.1 mm |
+| Jinx, Power Girl, Prix | — | **unchanged** (under 2 mm): nothing that constrained them was an anchor |
+
+Six reinstalled, each verified: triangles identical, round trip lost nothing, **no simulated joint
+inside any collider** anywhere in the set, closest approach +0.001 m, and four podium-rendered.
+
+**The re-fit found one more defect in the clear, and only the SECOND re-fit could have.** The
+first version removed colliders by matching the group's stored `collider_uuid`. A round trip
+through the exporter and back does not preserve every uuid: on Peach, six of her ten were named by
+her group and four were not, so four survived, ten fresh ones were added, and the file came out
+with **fourteen colliders** — the doubling this clear exists to prevent, wearing a different hat.
+Nothing in the first pass could have shown it, because nothing had been fitted twice.
+
+It now sweeps up any collider that no *remaining* group still references, which does not care how
+the uuid bookkeeping came out and keeps anything an author's own group still points at. All ten
+then cleared 10 and produced 10.
 
 ### Chest chains are unguarded on purpose
 

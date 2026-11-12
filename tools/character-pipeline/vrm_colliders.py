@@ -89,10 +89,27 @@ def fit(arm, ext, MAP, bone_names, log=print):
                     sp.collider_groups.remove(i)
         for i in reversed(ours):
             sb.collider_groups.remove(i)
+        # Then sweep up anything no REMAINING group still references.
+        #
+        # Matching on the group's stored `collider_uuid` alone is not enough:
+        # a round trip through the exporter and back does not preserve every
+        # uuid, so on Peach six of her ten were named by her group and four
+        # were not. Those four survived the clear, ten fresh ones were added,
+        # and the file came out with fourteen -- the doubling this clear exists
+        # to prevent, wearing a different hat. An orphan sweep does not care
+        # how the bookkeeping came out, and a collider an author's own group
+        # still points at is kept by construction.
+        live = set()
+        for grp in sb.collider_groups:
+            for r in grp.colliders:
+                live.add(getattr(r, "collider_uuid", ""))
+        gone = 0
         for i in reversed(range(len(sb.colliders))):
-            if getattr(sb.colliders[i], "uuid", "") in dead:
+            u = getattr(sb.colliders[i], "uuid", "")
+            if u in dead or u not in live:
                 sb.colliders.remove(i)
-        log("colliders: cleared %d from a previous fit" % len(dead))
+                gone += 1
+        log("colliders: cleared %d from a previous fit" % gone)
 
     sprung = set()
     for sp in sb.springs:
