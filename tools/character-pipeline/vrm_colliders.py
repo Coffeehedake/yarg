@@ -31,6 +31,15 @@ from mathutils import Vector
 # them out of the body they belong to.
 CHEST = r"(breast|bust|pectoral|boob)"
 
+# The limbs, parent -> child, one capsule per bone. See the LIMBS block in
+# fit() for why these exist at all.
+LIMBS = [
+    ("left_upper_arm", "left_lower_arm"), ("left_lower_arm", "left_hand"),
+    ("right_upper_arm", "right_lower_arm"), ("right_lower_arm", "right_hand"),
+    ("left_upper_leg", "left_lower_leg"), ("left_lower_leg", "left_foot"),
+    ("right_upper_leg", "right_lower_leg"), ("right_lower_leg", "right_foot"),
+]
+
 # Err SMALL. A collider a little too small lets hair sink slightly into the
 # body; one a little too big holds it visibly off the head, which reads as
 # broken rather than as imperfect. The median distance is the deliberate
@@ -53,6 +62,37 @@ def fit(arm, ext, MAP, bone_names, log=print):
     group made by this function is replaced rather than added to.
     """
     sb = ext.spring_bone1
+
+    # Clear out anything a PREVIOUS run of this function left behind.
+    #
+    # The docstring above used to say this already happened -- "safe to call
+    # twice: an existing group made by this function is replaced rather than
+    # added to" -- and it did not. There was no removal code at all, so a
+    # second call would have doubled every collider. Nothing had ever called it
+    # twice, so the claim was never tested, and it read as a guarantee.
+    # Re-fitting the 18 characters with unguarded chains is the first thing
+    # that needs it.
+    ours = [i for i, grp in enumerate(sb.collider_groups)
+            if getattr(grp, "uuid", "") == "colgrp_body"
+            or (getattr(grp, "vrm_name", "") or "") == "Body"]
+    if ours:
+        dead = set()
+        uuids = set()
+        for i in ours:
+            uuids.add(getattr(sb.collider_groups[i], "uuid", ""))
+            for r in sb.collider_groups[i].colliders:
+                dead.add(r.collider_uuid)
+        for sp in sb.springs:
+            for i in reversed(range(len(sp.collider_groups))):
+                ref = getattr(sp.collider_groups[i], "collider_group_uuid", "")
+                if ref in uuids:
+                    sp.collider_groups.remove(i)
+        for i in reversed(ours):
+            sb.collider_groups.remove(i)
+        for i in reversed(range(len(sb.colliders))):
+            if getattr(sb.colliders[i], "uuid", "") in dead:
+                sb.colliders.remove(i)
+        log("colliders: cleared %d from a previous fit" % len(dead))
 
     sprung = set()
     for sp in sb.springs:
@@ -208,6 +248,48 @@ def fit(arm, ext, MAP, bone_names, log=print):
                             d.append((rel - axn * t).length)
                     add(chain[0], "Capsule", base + axn * t_lo, _pct(d, 0.5),
                         base + axn * t_hi)
+
+    # LIMBS -- the arms and legs, one capsule per bone.
+    #
+    # A spring joint is deflected by a collider and by nothing else: the body's
+    # own geometry is invisible to the simulation. With a head sphere and a
+    # torso capsule and nothing else, a skirt hanging around the thighs has
+    # nothing to push it aside, so the legs walk straight through it. That is
+    # Peach's "dress so reactive her legs clip through", and it is not a spring
+    # parameter at all -- her skirt chains are stiffer and more damped than her
+    # hair's (0.85/0.80 against 0.60/0.45).
+    #
+    # Measured across the 65 installed characters with `cloth_collide_installed
+    # .py`: 107 of 422 spring chains sit nearest a part that carries no
+    # collider. The downloaded VRoid bundles in the same folder are the
+    # reference, and they are not ours -- Harq Alkahana, Inforder Trogen and
+    # both Hatsune Mikus each carry 28 colliders across arms, legs and torso,
+    # and all three come back with ZERO unguarded chains. Two colliders was
+    # never enough; it only looked enough because nothing counted.
+    #
+    # The axis is the BONE, not the geometry. Capsules drawn between bone heads
+    # meet at the elbow and the knee with no gap, which two independently
+    # geometry-clipped capsules would not -- and a gap at the knee is exactly
+    # where a hem would slip through.
+    #
+    # The clearance guard in add() does the rest: a limb whose own cloth rests
+    # inside the flesh radius (Jinx's braids, 0.061 against a 0.083 thigh) gets
+    # a capsule shrunk to clear it rather than one that ejects it.
+    if os.environ.get("VRM_LIMB_COLLIDERS", "1") != "0":
+        for pk, ck in LIMBS:
+            pb, cb = MAP.get(pk), MAP.get(ck)
+            if pb not in bone_names or cb not in bone_names:
+                continue
+            own = subtree(pb) - subtree(cb) - sprung
+            lv = verts_on(own)
+            if len(lv) < 16:
+                continue
+            a = arm.data.bones[pb].head_local
+            b = arm.data.bones[cb].head_local
+            if (b - a).length < 1e-4:
+                continue
+            add(pb, "Capsule", a,
+                _pct([_seg_dist(v, a, b) for v in lv], 0.5), b)
 
     if not cols:
         log("colliders: none could be measured on this rig")

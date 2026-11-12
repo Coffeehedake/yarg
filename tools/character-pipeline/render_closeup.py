@@ -58,5 +58,27 @@ bpy.context.scene.world = w
 sc = bpy.context.scene
 sc.render.resolution_x, sc.render.resolution_y = 700, 700
 sc.render.filepath = OUT
+
+# RENDER_HIDE=<substring> keeps the named meshes out of the render, which is
+# how a part that draws over another gets NAMED instead of guessed at. Peach's
+# face is a stack of six overlapping expression meshes from a Smash rip, and
+# hiding them one at a time is what identified the plate across her brow as
+# `Peach_Blink_VoiceA_VIS_O_OBJ_` rather than the eyes or the face itself.
+_hide = _os.environ.get("RENDER_HIDE", "")
+if _hide:
+    for _o in bpy.data.objects:
+        if _o.type == "MESH" and _hide.lower() in _o.name.lower():
+            _o.hide_render = True
+            print("hidden from the render: %s" % _o.name)
+
+# RENDER_ONLY is the other half of the same question, and it is the one that
+# settles a stack of overlapping parts: hiding a mesh tells you what was BEHIND
+# it, which is a different fact from what the mesh itself draws.
+_only = _os.environ.get("RENDER_ONLY", "")
+if _only:
+    for _o in bpy.data.objects:
+        if _o.type == "MESH" and _only.lower() not in _o.name.lower():
+            _o.hide_render = True
+
 bpy.ops.render.render(write_still=True)
 print("wrote", OUT)

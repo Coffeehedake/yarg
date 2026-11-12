@@ -61,7 +61,13 @@ holds gear that belongs on the character (the mesh pattern is not optional — a
 weighted to the hand bone); `VRM_BREASTRIG=1` builds chest bones for a rig that has none and weights the bust onto
 them (`check` measures and prints without changing anything, which is how it was written);
 `VRM_BREAST_SPRING=0` stops chest bones being sprung and `VRM_BREAST_PARAMS="stiffness,drag,gravity"`
-changes the feel; `VRM_SAVE_BLEND=<path>` saves the pre-export scene (the single most useful
+changes the feel; `VRM_CUTOUT_INFER=1` infers a cutout from a base map's own alpha and
+`VRM_CUTOUT_MATERIALS="a;b;c"` does the same for named materials only, when the inference is right
+about some of a character's materials and wrong about others; `VRM_MTOON_ALL=1` puts every material
+on the MToon shading model, which is what a character needs when a cutout shares a continuous
+surface with an opaque material (otherwise only the cutouts are MToon and the seam shows);
+`VRM_LIMB_COLLIDERS=0` goes back to a head sphere and a torso capsule alone;
+`VRM_SAVE_BLEND=<path>` saves the pre-export scene (the single most useful
 debugging aid — renders of it tell you whether a fault is yours or the exporter's),
 `VRM_NO_TPOSE=1`, `VRM_DROP_SOLIDIFY=1` (inverted-hull outlines), `HAIR_ANCHOR` / `HAIR_SEGS` /
 `HAIR_STRANDS` for the hair rigger.
@@ -369,16 +375,134 @@ not rebuilt, so the other installed builds are unaffected.
 | Lola Bunny | head floats detached above the neck | a part following a bone that does not follow the body — the same shape as Judy's belt and the static hair |
 | Judy Hopps | belt detached, arms and legs crossed | the crossing is the mirrored rig above; the belt is the detached-part case |
 | Gordon Freeman | every texture misplaced except his head | **measured and fixed by a rebuild.** His installed bundle carries `gordon_d` — his FACE map — duplicated five times, on his eyes, his HEV suit and his suit mesh, with no `onefreeman` and no eye texture in the bundle at all. His head was right because `gordon_d` is the one place that map belongs |
-| Miku | dress does not move with her | **measured: 23.7% of her body, 985 vertices including the skirt, hangs on `Bip01 Pelvis`, which nothing drives.** Not loose cloth at all -- her skirt is short and segmented and only ever needed to follow the hips |
+| Miku | dress does not move with her | **ALREADY FIXED, re-measured 2026-11-11.** It was 23.7% of her body, 985 vertices including the skirt, on `Bip01 Pelvis` -- a bone above the humanoid root, which nothing drives. The undriven-weight batch moved that weight down onto `Bip01 Spine`, which IS her mapped `hips`, and the installed bundle was exported from the fixed VRM two minutes later. The control is the old build: `drivers.py` reports 24.0% undriven on `Miku.vrm` of 11-08 and 0% on every build from 11-09 19:54 on, so the zero is a real zero. `pose_check.py` moves all 3,958 of her vertices with no static region, and the posed render shows the skirt following the hips. Nothing to do |
 | Alastor | no eyes; something wrong with the hair | **neither, and not fixable from here.** His materials and textures are correct and the maps are in the built file: `aleyes.png` plainly contains a pink iris with a black pupil. His eye geometry's UVs do not land on it — the eyes render as flat pink ovals and the pupil sits as a stray mark BESIDE the left eye. A source-model UV fault; it needs hand UV work, not a pipeline rule |
 | Elite Terrorist | right hand's fingers crunched | one hand posed, the other not -- the asymmetry the finger-relax check looks for |
 | Batman | every texture misplaced | **does not reproduce.** He has exactly one base colour map, so no pairing can be wrong; his rebuild is identical to the installed build to the triangle (18,818) and renders correctly — grey suit, black cowl and cape, bat symbol, gold belt. His metal/rough both take the ORM atlas, which is what glTF wants (G rough, B metal). Needs re-checking in game before more is spent on it |
 | Gadget Hackwrench | eyeballs and teeth do not move; some hair static | measured: her eyes are bone-parented to `MCH-eye.L/R`, which the export drops because they do not deform, so the weight landed on an invented bone at the root |
 | Joker | a pistol orbiting him; parts of the suit unrigged | **both fixed.** The pistol is 262 verts on a bone called `Gun_joker`, inside his one mesh with his one material: `VRM_DROP_ISLAND="Joker=Gun_joker"`. The suit was the orphan-bone case |
-| Peach | eyes missing; dress springs so reactive her legs clip through it | the eye atlas again, and the other end of the cloth problem: hers IS rigged and is too lively. Cloth needs its own parameters, gentler than hair and separate from chest |
+| Peach | eyes missing; dress springs so reactive her legs clip through it | **BOTH FIXED 2026-11-11, and neither was what the report implied.** The eyes are the alpha fault: her eye is a STACK of meshes from a Smash rip -- `Peach_eye` is a blank white sclera with no iris, `Peach_Blink_Ottotto` is the iris and `Peach_Blink_VoiceA` is the eyelid-and-lash plate that fills a rectangular hole in `Peach_faceN` -- and all three shipped `OPAQUE`, so the top layer drew as a solid plate. The skirt is NOT too reactive: her skirt chains are stiffer and more damped than her hair's (0.85/0.80 against 0.60/0.45). They are UNGUARDED -- eight of her nine chains hang around her thighs and she had two colliders, both on her torso. See below |
 | Link | eye textures misplaced; still holding the master sword and shield | **both fixed.** His rig has bones named `Sword` and `Shield`, so `VRM_DROP_ISLAND="LinkEquipment=Sword+Shield"` takes 41 islands and leaves `Fourreau`, his scabbard, on his back. His eye material `Material.003` was taking the body atlas while `Eye.png` sat unused beside it |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and ~~finger bones that are mapped but not weighted~~ **corrected 2026-11-11 by `bundle_audit.py`: he has ZERO finger bones in his humanoid map**, and 21 humanoid bones in total against a typical 52. The symptom was right, the stated cause was wrong |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
+
+### Two colliders was never enough, and nothing counted
+
+Peach's "dress so reactive her legs clip through it" is not a spring-parameter fault. A VRM spring
+joint is deflected by one thing: a collider attached to its own chain. **The body's geometry is
+invisible to the simulation.** `vrm_colliders.fit` placed a head sphere and a torso capsule and
+nothing else, so a skirt hanging around the thighs had nothing to push it aside and the legs
+walked straight through it. Her skirt chains are *stiffer* than her hair's.
+
+`cloth_collide_installed.py` counts it across all 65. Before this round:
+
+> **107 of 422 spring chains, across 18 characters, sat nearest a body part carrying no collider.**
+
+The reference is in the same folder and is not ours. The downloaded VRoid bundles —
+**Harq Alkahana, Inforder Trogen and both Hatsune Mikus — each carry 28 colliders** across arms,
+legs and torso, and all four come back with zero unguarded chains. Adachi Rei carries 16. Two was
+never a reasonable number; it only looked like one because nothing counted.
+
+`vrm_colliders.fit` now adds a capsule per arm and leg bone — upper arm, forearm, thigh, shin,
+eight more, ten in all. Three things made it safe to do:
+
+- **The axis is the BONE, not the geometry.** Capsules drawn between bone heads meet at the elbow
+  and the knee with no gap. Two independently geometry-clipped capsules would leave one, and a gap
+  at the knee is exactly where a hem slips through.
+- **The radius is the median distance of the flesh that bone carries**, the same rule the torso
+  capsule already used, so it works from Yoda to Alcina without a hardcoded number.
+- **The existing clearance guard does the rest.** A collider that CONTAINS a spring joint ejects it
+  on frame one — the fault that ballooned Gadget's hair. Measured before writing any code: on
+  Peach, Power Girl, Chibi Rem and Batman every limb had room (her thigh wants 0.061 and her
+  nearest skirt joint sits at 0.114), and only Jinx clashed, her braids at 0.061 against an 0.083
+  thigh. The guard shrinks that capsule to clear them. After the rollout, **no joint on any of the
+  nine rebuilt characters is inside any collider**.
+
+**`fit` did not do what its own docstring said.** It claimed "safe to call twice: an existing group
+made by this function is replaced rather than added to". There was no removal code at all, so a
+second call would have doubled every collider. Nothing had ever called it twice, so the claim was
+never tested and read as a guarantee. Re-fitting is the first thing that needed it; it now clears
+its own previous group, and `add_colliders.py VRM_RECOLLIDE=1` re-fits a built VRM in place.
+
+Nine characters fixed and installed — Peach, Batman, Chibi Rem, Gwen Stacy, Jinx, Link, Power Girl,
+Prix, Sayuri — each verified three ways: the round trip lost nothing (triangles, meshes, materials,
+images and springs all unchanged), the installed bundle is identical to its backup on every counted
+object type except three collider gizmo transforms, and five were podium-rendered. **97 → 58
+unguarded chains.**
+
+What is left, and why each is left:
+
+| character | chains | why not fixed |
+|---|---|---|
+| Kaiser Aufhänger (36), Adachi Rei (2) | 38 | downloaded bundles, not built here. Kaiser's own author covered his arms and torso and not his legs |
+| Aiko, Scott Hall, Shadow, Xenomorph | 16 | **zero colliders** — the original collider rollout never reached them, and no `.vrm` for any of them survives on this machine. Xenomorph's source FBX is still here, so he could be rebuilt; the other three cannot be |
+| Gadget Hackwrench, Pomni | 4 | they have a `.vrm`, but `identify_build.py` says it is **not what is installed** (57 and 5 rotation mismatches). Installing it would swap the character, which is the trap this project has already been caught by twice |
+
+### Chest chains are unguarded on purpose
+
+Chest springs sit ON the torso, so handing them the torso capsule would push them out of the body
+they belong to. `vrm_colliders.CHEST` skips them and both cloth checks now skip them too — without
+that, the sweep reported Alcina Dimitrescu's `breast.L` and `breast.R` as faults, which is true and
+is not a defect. A check that flags a decision as a fault teaches the reader to skim its output.
+
+### The alpha gate refused the one provenance nobody could argue with
+
+`VRM_CUTOUT_INFER=1` infers a cutout from a base map's own alpha, but only for a map the material
+can claim — authored in the file, matched by mesh stem, or matched by name. Peach printed *nothing*
+under it. Every one of her maps is packed inside the `.fbx`, and when the source material already
+has an image wired into Base Color, `already_good` keeps it and sets `_base_authored` — but never
+sets `base_from`, which stays `None`. So the strongest provenance there is, the author's own
+wiring, was the one case the gate excluded. Her iris and eyelash layers shipped opaque over her
+eyes because of it.
+
+Fixed, and then immediately shown to need a narrower lever. With the gate repaired, the global
+inference took seven of Peach's materials, and two of them were wrong: her crown's alpha is an
+**outline**, so masking it carved the jewel out of its setting and left a wire ring. "77.4% solid"
+says nothing about *which* 77.4%. `VRM_CUTOUT_MATERIALS="a;b;c"` asks for the same inference on
+named materials only, which is what a character needs when the sweep is right about some of its
+materials and wrong about others.
+
+### A cutout changes the SHADING MODEL, and on a big surface that shows
+
+MToon is enabled only for materials that need a cutout, deliberately — swapping a whole character's
+shading model is a much larger change than the defect warrants. The cost is that the character ends
+up with two shading models, MToon on its cutouts and standard PBR on everything else. On hair
+cards, eyelashes and tear lines nobody notices.
+
+On Peach it landed on half her face. `Peach_faceN` carries a rectangular hole that
+`Peach_Blink_VoiceA` fills, and the moment the filling plate became a cutout it turned unlit while
+the face around it stayed lit — a tan plate on a cream face with a hard polygon seam across her
+brow. The eyes were fixed and the face was worse, and **only a render showed it**; every count said
+the build was identical.
+
+`VRM_MTOON_ALL=1` puts the whole character on one shading model, which is the answer when a cutout
+shares a continuous surface with an opaque material. It is opt-in, because for most characters the
+swap is the larger change. Peach is built with it, and her podium render has irises, an even face,
+her crown jewel and a scalloped lace hem.
+
+`RENDER_HIDE=<substring>` and `RENDER_ONLY=<substring>` in `render_closeup.py` are what named the
+plate. Hiding a mesh tells you what was *behind* it; rendering it alone tells you what it *draws*,
+and only the second answered the question — her face is six overlapping expression meshes from a
+Smash rip and reasoning about the stack produced two wrong answers before the renders settled it.
+
+### `alpha_sweep.py` found six more, and four of them need a judgement call
+
+The same signature across every `.vrm` still on this machine — a material shipping OPAQUE over an
+alpha that is shaped like a cutout mask. **12 materials across 6 characters**, and the sweep
+deliberately only prints:
+
+| character | material | alpha | reading |
+|---|---|---|---|
+| Sayuri | `Lace` ← `Lace_Diffuse` | 26.4% clear | **almost certainly real.** The material is named lace, the texture is named lace, and lace that ships solid is a slab |
+| Alcina Dimitrescu | `Material.006` ← `CILIOS` | 87.1% clear | **almost certainly real.** `CILIOS` is Portuguese for eyelashes |
+| Alcina Dimitrescu | `Material.005` ← `CABELOO_preto_1` | 88.7% clear | hair cards, mostly-empty atlas — plausible, but close to the 90% cap where a mask erases the mesh |
+| Doom Slayer | `doomslayer_hair` | 88.9% clear, **0.0% solid** | a mask with no fully-opaque pixel is a gradient, not a cutout. A 0.5 cutoff could erase nearly all of it |
+| Gadget Hackwrench | `Body`, on three materials | 31.5% clear | the body atlas. Masking a body map punches holes in a body |
+| Jinx | `12_meshes_Merge_Diffuse` | 24.4% clear | a merged diffuse; the clear region is likely unused atlas space, not intended holes |
+
+Pomni is why this prints instead of acting: her eyes carry a two-valued alpha that is not a cutout
+at all, and inferring one made them see-through in game while every render and count said she was
+fine.
 
 ### One cause under six of the reports: a bone nothing drives
 
@@ -673,6 +797,18 @@ right.
   pose shows a skinning fault, and only because it bakes each skinned mesh first
 - `meshbb.py <blend>` — per-mesh vertex count, world size and materials; how to tell which
   numbered mesh is the eyes before pinning a texture to its material
+- `cloth_collide.py <vrm|dir>` / `cloth_collide_installed.py <yargchar|dir>` — for every spring
+  chain, which humanoid part its joints hug and whether that part carries any collider. A chain
+  whose part has none is **UNGUARDED**: the limb passes through the cloth, because a VRM spring
+  joint is deflected by a collider and by nothing else. `CLOTH_VERBOSE=1` prints the clean chains
+  too, `CLOTH_CONTROL=1` empties the collider list so every chain must flag. The installed version
+  reads `Vrm10Instance.SpringBone.Springs`, `VRM10SpringBoneJoint` and `VRM10SpringBoneCollider`
+  out of the bundle, which is the only way to cover the 35 characters with no `.vrm` left here —
+  and the two agree to the millimetre on all nine of Peach's chains
+- `alpha_sweep.py <vrm|dir>` — materials shipping `alphaMode: OPAQUE` over a base map whose alpha
+  is a cutout-shaped mask, using the same thresholds `build_vrm.py` uses to decide one. It prints
+  candidates and fixes nothing on purpose: an alpha that looks like a mask is not always meant as
+  one, and the list below says which of its hits are real
 - `alpha_check.py` / `mat_check.py` / `spring_scan.py` / `uv_test.py` / `tex_stats.py` — material,
   alpha, spring and texture inspection straight out of the exported file
 
@@ -940,7 +1076,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Mario | mariojnt | 1.55 | |
 | Link (OoT) | linkoot | 1.65 | `VRM_TEX="Hair=Link_Link_BaseColor.png"` |
 | Gadget Hackwrench | rigify_def | 1.30 | exclude `^(WGT-\|smd_bone_vis)`, hairrig `^Hair$` |
-| Peach | smash | 1.70 | her forearms are stretched in the SOURCE rip, not by the build |
+| Peach | smash | 1.70 | her forearms are stretched in the SOURCE rip, not by the build. **As installed 2026-11-11:** build from `source/model.fbx` with `VRM_CUTOUT_MATERIALS="_1.004;_4.003;_5.008;_5.012;_5.013" VRM_MTOON_ALL=1` — the iris, eyelash-plate and dress-lace materials, and one shading model so the plate does not read as a patch on her face. NOT `_6`/`_6.002`: the crown's alpha is an outline and masking it carves the jewel out. Reproduces the installed character exactly at 11,602 triangles, 16 meshes, 16 materials, 10 images, 9 springs, 173 nodes |
 | Harley Quinn | mixamo | 1.70 | build from the USDZ (names transferred from the .fbx) — the .zip has no colour map and the two have different UVs |
 | The Mandalorian | mixamo | 1.83 | glTF; BOTH its skeletons are collapsed, so re-rig via Mixamo. Exclude `^(grogu\|.*CRADLE\|.*JetPack\|.*RIFLE\|Icosphere)` — the pack also contains Grogu, his cradle and a rifle |
 | Power Girl | mixamo | 1.80 | Injustice 2 rip, 417 bones, builds clean. Materials are called `mesh0`/`mesh1`, so pin them: `VRM_TEX="mesh0=Supergirl_A_Body_Color.png,mesh0.001=Supergirl_A_FACE_30hz_Color.png,mesh0.002=Supergirl_A_Cape_Color.png,mesh1=Supergirl_A__EyesMouth_Color.png,mesh2=Supergirl_A_Hair_Color.png"`. Her hair alpha has to be pinned too, for the same reason — add `,mesh2=Supergirl_A_Hair_Alpha.png:alpha`. She is the ONLY model of the 109 archives here whose opacity map does not name its own material, so she is the only one the narrowed alpha pick leaves without one |

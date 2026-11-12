@@ -26,7 +26,18 @@ import bpy
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vrm_colliders  # noqa: E402
 
-HUMAN_KEYS = ("hips", "spine", "chest", "upper_chest", "neck", "head")
+HUMAN_KEYS = (
+    "hips", "spine", "chest", "upper_chest", "neck", "head",
+    # The limbs too, since vrm_colliders now fits a capsule per arm and leg
+    # bone. Leaving them out here made the retrofit path silently place only
+    # the head sphere and the torso capsule, which is the fault it exists to
+    # repair -- a MAP missing a key is indistinguishable from a rig missing
+    # the bone.
+    "left_upper_arm", "left_lower_arm", "left_hand",
+    "right_upper_arm", "right_lower_arm", "right_hand",
+    "left_upper_leg", "left_lower_leg", "left_foot",
+    "right_upper_leg", "right_lower_leg", "right_foot",
+)
 
 
 def census(path):
@@ -55,10 +66,14 @@ def main():
     src, dst = argv[0], argv[1]
 
     before = census(src)
-    if before["colliders"]:
-        # Built by build_vrm.py, which already ran the same fitting. Adding a
-        # second group here would double every collider.
-        print("%s already has %d collider(s) -- left alone"
+    if before["colliders"] and not os.environ.get("VRM_RECOLLIDE"):
+        # Built by build_vrm.py, which already ran the same fitting.
+        # VRM_RECOLLIDE=1 re-fits anyway, which is how a character built
+        # before the limb capsules existed gets them without its source file:
+        # vrm_colliders.fit now clears its own previous group first, so the
+        # re-fit replaces rather than doubles.
+        print("%s already has %d collider(s) -- left alone "
+              "(VRM_RECOLLIDE=1 to re-fit)"
               % (os.path.basename(src), before["colliders"]))
         sys.exit(2)
 

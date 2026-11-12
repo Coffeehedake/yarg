@@ -6066,9 +6066,30 @@ for mat in bpy.data.materials:
     # cutout at all: inferred one and her eyes went see-through in game,
     # showing the inside of her head. The renders and every count said she was
     # fine. VRM_CUTOUT_INFER=1 asks for it.
-    if (os.environ.get("VRM_CUTOUT_INFER")
+    # `_base_authored` as well as `base_from`, and leaving it out was a hole in
+    # exactly the strongest case. When the source material already had an image
+    # wired into Base Color, `already_good` keeps it and sets `_base_authored`
+    # -- but it never sets `base_from`, which stays None. So the one provenance
+    # nobody could argue with, the author's own wiring, was the one the gate
+    # refused. Peach is the character that showed it: every one of her maps is
+    # packed in the .fbx, so VRM_CUTOUT_INFER=1 printed nothing at all and her
+    # iris and eyelash layers shipped OPAQUE over her eyes.
+    #
+    # VRM_CUTOUT_MATERIALS="a;b;c" asks for the same inference on NAMED
+    # materials only, which is what a character needs when the sweep is right
+    # about some of its materials and wrong about others. Peach again: the
+    # alpha on her iris, eyelash and eyelid maps is a clean two-valued mask and
+    # the inference is exactly right, while the alpha on her crown is an
+    # OUTLINE -- taking it as a cutout carved the jewel out of the setting and
+    # left a wire ring. "77.4% solid" said nothing about which 77.4%.
+    _cut_names = [s.strip() for s in
+                  os.environ.get("VRM_CUTOUT_MATERIALS", "").split(";")
+                  if s.strip()]
+    _cut_want = (mat.name in _cut_names if _cut_names
+                 else bool(os.environ.get("VRM_CUTOUT_INFER")))
+    if (_cut_want
             and not cut and base_tex is not None
-            and base_from in ("authored", "stem", "name")
+            and (_base_authored or base_from in ("authored", "stem", "name"))
             and "Alpha" in bsdf.inputs and base_tex.image
             and base_tex.image.channels == 4):
         try:
@@ -6084,9 +6105,11 @@ for mat in bpy.data.materials:
             if 0.05 <= _clear <= 0.90 and (_clear + _solid) >= 0.80:
                 nt.links.new(base_tex.outputs["Alpha"], bsdf.inputs["Alpha"])
                 cut = True
-                print("    cutout from the base map's own alpha (%.1f%% clear, "
-                      "%.1f%% solid, matched by %s)"
-                      % (100.0 * _clear, 100.0 * _solid, base_from))
+                print("    %s: cutout from the base map's own alpha (%.1f%% "
+                      "clear, %.1f%% solid, matched by %s)"
+                      % (mat.name, 100.0 * _clear, 100.0 * _solid,
+                         base_from or ("the author's own wiring"
+                                       if _base_authored else "?")))
         except Exception as _e:
             print("    (could not read the base map's alpha: %s)" % _e)
 
@@ -6192,7 +6215,22 @@ for mat in bpy.data.materials:
         # Turned on only for the materials that NEED a cutout. Enabling MToon
         # across a whole character swaps its shading model, which is a much
         # larger change than this defect warrants.
-        if cut or blend:
+        #
+        # It has a cost, and it is worth naming because it is invisible until
+        # it lands on a big surface: a character ends up with TWO shading
+        # models, MToon on its cutouts and standard PBR on everything else.
+        # Hair cards, eyelashes and tear lines are small enough that nobody
+        # notices. Peach's face is not -- hers is split across meshes, with
+        # `Peach_faceN` carrying a rectangular hole that `Peach_Blink_VoiceA`
+        # fills, and the moment the filling plate became a cutout it turned
+        # unlit while the face around it stayed lit. A tan plate on a cream
+        # face, with a hard polygon seam straight across her brow.
+        #
+        # VRM_MTOON_ALL=1 puts the whole character on one shading model, which
+        # is the answer when a cutout shares a continuous surface with an
+        # opaque material. It is opt-in because for most characters the
+        # swap is the larger change.
+        if cut or blend or os.environ.get("VRM_MTOON_ALL"):
             mt.enabled = True
         mt.alpha_mode = "BLEND" if blend else ("MASK" if cut else "OPAQUE")
         mt.alpha_cutoff = 0.5

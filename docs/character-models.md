@@ -1583,6 +1583,50 @@ reads as broken rather than imperfect. `VRM_COLLIDER_SCALE` moves both without a
 Chest chains are deliberately left out of the group: they sit *on* the torso, so handing them the
 torso capsule would push them out of the body they belong to.
 
+### Two was not enough, and nothing counted it (2026-11-11)
+
+*The section above described the whole collider set until this date. It is now the first half of
+it, and the paragraph that said "two colliders per character" was a statement of what the code
+did, never a measurement that two sufficed.*
+
+A head and a torso leave **the arms and legs with nothing on them**. A skirt hanging around the
+thighs is then unguarded: the leg sweeps through it, because the body's geometry is invisible to
+the spring simulation and only a collider can stand in for it. Peach's in-game report was "dress
+springs so reactive her legs clip through it", and her skirt chains turn out to be *stiffer* and
+more damped than her hair's — 0.85/0.80 against 0.60/0.45. Reactivity was never the problem.
+
+`tools/character-pipeline/cloth_collide_installed.py` measures it over the installed bundles:
+for each spring chain, which humanoid part its joints sit nearest, and whether that part carries
+any collider. **107 of 422 chains across 18 of the 65 characters** came back unguarded.
+
+The benchmark is in the same folder and was authored by somebody else. The downloaded VRoid
+bundles — Harq Alkahana, Inforder Trogen, both Hatsune Mikus — carry **28 colliders** each across
+arms, legs and torso, and every one of them reports zero unguarded chains. Adachi Rei carries 16.
+
+`vrm_colliders.fit` now also places a capsule per arm and leg bone: upper arm, forearm, thigh and
+shin, both sides, ten colliders in all. Two details carried over from the torso capsule and one
+is new:
+
+- the radius is still the **median** distance of the flesh that bone carries, so it scales with
+  the character;
+- the clearance guard still applies, and it is what makes this safe — measured before any code was
+  written, every limb on Peach, Power Girl, Chibi Rem and Batman had room (Peach's thigh wants
+  0.061 and her nearest skirt joint is at 0.114), and only Jinx clashed, her braids at 0.061
+  against an 0.083 thigh. Her thigh capsule is shrunk to clear them;
+- the axis is the **bone**, not the geometry. Capsules drawn between bone heads meet at the elbow
+  and the knee with no gap. Two independently geometry-clipped capsules would leave one, and a gap
+  at the knee is where a hem slips through.
+
+Nine characters were refitted and reinstalled (Peach, Batman, Chibi Rem, Gwen Stacy, Jinx, Link,
+Power Girl, Prix, Sayuri), taking the count to **58 of 391**. What remains is two third-party
+bundles, four characters whose `.vrm` no longer exists here, and two whose `.vrm` is measurably
+not the build that is installed.
+
+One thing found on the way: `fit` had always claimed in its docstring to replace an existing
+group rather than add to it, and there was no removal code at all. A second call would have
+doubled every collider. Nothing had called it twice, so the claim sat there untested and reading
+as a guarantee.
+
 ## A collider must never contain a joint it is attached to
 
 The first collider build was worse than no colliders, and the reason is the one thing the VRM
