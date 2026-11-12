@@ -2933,8 +2933,24 @@ in different places — holds for the hands even though it does not hold for the
 defect was never "fitting is wrong"; it was "fitting the shoulder is wrong", and one bad joint in
 a four-joint chain discredited the whole method.
 
-**Nothing was installed.** The scale-only build fixes the silhouette and breaks the hands, which
-is not a trade worth making, and `The Rock.pregorilla.yargchar` holds the build that was live.
+### Resolved: scale, then fit everything except the shoulder
+
+All three built, exported and rendered on the podium:
+
+| build | shoulders | hands | verdict |
+|---|---|---|---|
+| installed since 11-11 | 0.548 | intact | gorilla arms |
+| scale only | 0.276 | **fingers stretched past his knees** | worse |
+| **scale + corrected fit** | **0.295** | **intact** | **installed 2026-11-12** |
+
+The third fixes both: his arms hang at his sides instead of splaying out, and his fists are
+fists. Everything else is unchanged — 6 clips, 1 controller, 52 humanoid bones, 30 fingers, 21
+meshes, 1.960 m — and his wrist angle improves from 24.9/25.1 to 1.9/0.9. `The
+Rock.pregorilla.yargchar` is the backup.
+
+So the final recipe is **`scale_rig.py`, then `fit_joints.py` with the shoulder excluded**, and
+the two earlier conclusions were each half right: the fit was never the problem and the shoulder
+always was, and the scale was never optional and was never in a script.
 
 ## Open questions
 
