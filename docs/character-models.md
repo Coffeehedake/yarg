@@ -3794,6 +3794,12 @@ an archive that was already extracted, Shadow from one in Downloads, and Aiko fr
 was on disk the whole time. The note was written once and never re-checked, and each re-check
 cost about ten minutes.
 
+Installed, she reports **4 chains, 9 colliders, 0 unguarded** — 3,345,402 bytes before,
+3,362,683 after. Across the whole set that is **51 unguarded chains over 6 characters when this
+started, 38 over 2 now**, and the two left are **Kaiser Aufhänger** (36) and **Adachi Rei** (2),
+both downloaded bundles with no source and no `.vrm` anywhere, so fixing either means
+synthesising collider objects inside somebody else's bundle.
+
 ### The path bug that hid it, three times in one session
 
 Looking for her `.vrm` meant walking the scratchpads from Python. Three times today a Windows
