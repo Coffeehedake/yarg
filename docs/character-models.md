@@ -3666,9 +3666,26 @@ operation from anything here.
 0), **Steve** (15, 0), **Sonic** (28, 6 — index only) and **Yui Suzukaze** (28, 6). All but Yui
 have an archive in Downloads and a recorded recipe.
 
-Two of them are probably correct as they are: **Steve is Minecraft Steve**, whose hands are
-blocks, and the Mannequin is a featureless artist's dummy. Mapping fingers onto a hand that has
-none is not a fix. The other three are worth a rebuild and have not had one.
+**Three of the five have no finger bones to map, so the flag is right and the defect is not
+real.** Counted straight out of the bundles:
+
+| | bones | that look like fingers | mapped |
+|---|---|---|---|
+| **Shadow** (before the rebuild) | 189 | **66** | **0** |
+| Sonic | 35 | 8 | 6 |
+| Yui Suzukaze | 55 | 8 | 6 |
+| B1 Battle Droid | 25 | **0** | 0 |
+| Mannequin | 17 | **0** | 0 |
+| Steve | 18 | **0** | 0 |
+
+B1, the Mannequin and Steve have no fingers in the rig at all — Minecraft Steve's hands are
+blocks and a mannequin is a featureless dummy — so `NO FINGERS MAPPED` is a correct description
+of them and not something a rebuild can change. Sonic and Yui have eight finger bones and six
+mapped, a gap of one chain per hand, and Yui has no source.
+
+**Shadow was the only real one**, with 66 finger bones and none of them mapped, and he is fixed.
+That is also what makes the number trustworthy: the same count that says he had a defect says the
+other three do not.
 
 ## Open questions
 
