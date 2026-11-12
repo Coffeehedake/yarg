@@ -3812,6 +3812,43 @@ A zero from a tool that cannot see its input is indistinguishable from a zero th
 something, which is the lesson this document already has under a different name. **Pass Windows
 paths to Windows Python.**
 
+## The lipsync question is closed: every `.vrm` of every installed character has been read
+
+Three sweeps, 77 files, and the answer did not move:
+
+| | | |
+|---|---|---|
+| `withcols` | 30 | 22 zero-key, 8 mappable — **7 already installed at 5/5** |
+| `rollout/out` | 33 | 30 zero-key, 2 "mappable" that are blink-only files, 1 other |
+| everything else | 14 | **14 zero-key** — Aiko, Mannequin, Mario, Peacemaker, Pepsiman, Scott Hall, Shadow, Shaggy Rogers, Shrek, Sophia, Steve, Thanos, Vegeta, Vigilante |
+
+**Not one character can gain lipsync that has not got it.** 13 of 65 bind all five visemes and
+the other 52 have no mouth shape keys in any file on this machine. The limit is in the models.
+
+### The third sweep took four attempts, and all four failures were the same bug wearing a hat
+
+Each one produced a plausible-looking result rather than an error:
+
+| | what broke | what it looked like |
+|---|---|---|
+| 1 | `sed`-edited script wrote logs to a directory nothing created | `33 files examined`, every row `keys=?` |
+| 2 | Windows Python given an MSYS `/c/...` path wrote the file list where bash could not see it | **`0 file(s) examined`** |
+| 3 | the list carried Windows backslashes, so `basename` could not strip and Blender got a mangled path | `Error: Please select a file`, 14 rows `UNREADABLE` |
+| 4 | Python's text mode turned every `
+` into `
+`, so each path ended in a carriage return | identical to 3, and the fix for 3 did not touch it |
+
+The fifth attempt built the list **in bash**, so nothing crossed the Windows/MSYS boundary at
+all, and read all 14 first time.
+
+Three of those four are the same root cause — a path handed between a Windows program and an
+MSYS shell — and the CRLF one is quirk 9 of this machine's own notes, written down after a
+credential rotation failed for exactly that reason. **The thing worth keeping is not the bug but
+its signature: every single failure reported a clean-looking zero.** `0 file(s) examined` and
+`33 files examined, 0 mappable` are one keystroke apart in the output and opposite in meaning,
+and the only reason any of them was caught is that these sweeps print a row per file and a tally
+that counts what it could not read.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
