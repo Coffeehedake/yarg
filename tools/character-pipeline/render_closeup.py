@@ -80,5 +80,26 @@ if _only:
         if _o.type == "MESH" and _only.lower() not in _o.name.lower():
             _o.hide_render = True
 
+# RENDER_KEY="Face/A=1.0,Face/ClosedTeeth=0.5" drives shape keys before the
+# render. Choosing a viseme mapping means looking at each candidate shape at
+# full weight, and the only framing that reliably finds a face is the one this
+# script already does -- framing on the head BONE. Four attempts at framing a
+# mouth from the shape key's own displacement landed on Pomni's eyes instead,
+# because her mouth keys move the eye region more than they move her lips.
+for _spec in [x for x in _os.environ.get("RENDER_KEY", "").split(",") if x.strip()]:
+    _ref, _, _val = _spec.partition("=")
+    _mn, _, _kn = _ref.partition("/")
+    _ob = bpy.data.objects.get(_mn.strip())
+    if _ob is None or not _ob.data.shape_keys:
+        raise SystemExit("ABORT: RENDER_KEY names mesh %r, which has no shape "
+                         "keys here" % _mn.strip())
+    _kb = _ob.data.shape_keys.key_blocks.get(_kn.strip())
+    if _kb is None:
+        raise SystemExit("ABORT: RENDER_KEY names key %r on %r; it has %s"
+                         % (_kn.strip(), _mn.strip(),
+                            [k.name for k in _ob.data.shape_keys.key_blocks]))
+    _kb.value = float(_val or 1.0)
+    print("shape key %s/%s = %.2f" % (_mn.strip(), _kn.strip(), _kb.value))
+
 bpy.ops.render.render(write_still=True)
 print("wrote", OUT)

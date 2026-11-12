@@ -276,12 +276,15 @@ them one.
 That table is about sources. `viseme_audit.py` reads the bundles the game loads, which is the only
 version that can be wrong, and the two disagree:
 
-> **65 installed: 11 with all five visemes, 1 partial, 53 with none; 10 can blink.**
+> **65 installed: 13 with all five visemes, 0 partial, 52 with none; 10 can blink.**
+>
+> *(It was 11/1/53 when first measured, with Gordon Freeman broken and Pomni at 1/5. Both are
+> fixed below.)*
 
 | | |
 |---|---|
 | **11 at 5/5** | Alastor, Alice Ivy, Chibi Rem, Doom Slayer, Gordon Freeman, Heels — and the five downloaded bundles (Adachi Rei, Harq Alkahana, Inforder Trogen, both Hatsune Mikus), which carry 70-odd expressions each including a full `*_hi`/`*_lo` phoneme set |
-| **1 partial** | **Pomni, at 1/5** — only `aa`. The table above said 5/5 and that was wrong: her `ClosedTeeth` matches none of the anchored patterns and her recipe row has no `VRM_VISEME` to pin it. Every build of her on this machine is 1/5. She is mappable by hand the way Gordon is, and that is not done |
+| ~~1 partial~~ | **Pomni was 1/5 and is now 5/5** — mapped by hand on 2026-11-12, see below. The table above claimed 5/5 all along and was wrong until then |
 | **53 with none** | 35 have no mouth shape keys and never can; the rest are characters whose source has them but whose installed build predates the viseme work |
 | **Alastor and Doom Slayer** | 5/5 bound but `blink=NO` — they have a mouth and no eyelids |
 
@@ -303,6 +306,49 @@ The map was recovered from the bundle that still had it rather than guessed, by 
 `morphTargetBinds` back — node, target index and weight — and it is now in his row. The general
 rule: **an env var that a character cannot be rebuilt without belongs in the recipe table the
 moment it is used**, and `viseme_audit.py` is the check that catches it when it is not.
+
+### Pomni, mapped by hand: 1/5 to 5/5
+
+Her face carries `A`, `ClosedTeeth`, `ClosedTeethVariation` and `OpenNoTeeth` — real mouth shapes
+named for an artist, and only `A` is guessable, which is why she sat at one viseme. Rendering each
+at weight 1.0 is the only way to choose between them, and it settles it immediately:
+
+| shape | what it actually is | mapped to |
+|---|---|---|
+| `A` | wide open, upper teeth and tongue | `aa` @1.0 |
+| `ClosedTeeth` | lips retracted over a full row of teeth — a grin | `ee` @1.0, `ih` @0.7 |
+| `OpenNoTeeth` | a rounded oval, no teeth | `oh` @1.0, `ou` @0.6 |
+
+```
+VRM_VISEME="aa=Face/A,ee=Face/ClosedTeeth,ih=Face/ClosedTeeth@0.7,oh=Face/OpenNoTeeth,ou=Face/OpenNoTeeth@0.6"
+```
+
+Her `VRM_VISEME_GAIN=3.0` now applies to two shapes that had never been exaggerated, so both were
+checked at weight 1.0 **front and side** as the gain note above insists: no tearing, lips stay on
+the face, nothing shows through into her head. 32,764 triangles, 16 meshes and 6 spring chains
+unchanged; morph targets 21 → 27; she also picks up the eight limb colliders she had been excluded
+from, so 2 → 10.
+
+**`RENDER_KEY="Face/A=1.0"` in `render_closeup.py` is what made that possible**, and it exists
+because four attempts at framing a camera on her mouth from the shape key's own displacement all
+landed on her eyes — her mouth keys move the eye region more than they move her lips. Framing on
+the head BONE, which that script already did, works first time.
+
+### `identify_build.py` was wrong about Pomni, and it cost her two rounds
+
+Her rebuild reported `rotation-mismatch=5` against her installed bundle, at `Arm.L`, `Arm.R`,
+`Eye.L`, `Leg.L` and `Leg.R`, and on that basis she was excluded from the collider rollout twice
+as "the `.vrm` is not what is installed". **It was an artefact.** A glTF node name is not unique
+and a VRM routinely reuses one: those five are the names of her MESHES as well as her bones. The
+mesh node sits at the origin with an identity rotation, the bone carries the real transform, and
+whichever was written last won the dictionary. Every real bone matched to four decimal places.
+
+The comparison now drops a name that identifies more than one node — from the value comparison
+only, because dropping it from the name overlap as well pushed her score from 92.5% to 87.1% and
+under the threshold, turning one wrong verdict into a different wrong verdict. Verified in four
+directions: Pomni now MATCHes, Jinx still MATCHes, Gadget Hackwrench still differs at 57 rotations
+(hers is a real re-pose, not a naming artefact, so excluding her was correct), and a deliberately
+wrong pairing still reports nothing in common.
 
 ### viseme_fit.py -- proposing a mapping for a model that does not follow a convention
 
@@ -1329,7 +1375,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Character | rig | height | notes |
 |---|---|---|---|
 | Prix | mixamo | 1.70 | shape keys must be dropped, else she builds at 0.42 m |
-| Pomni | pomni | 1.70 | exclude `^Circle`; `VRM_VISEME_GAIN=3.0` (4.4 turns her upper lip inside out); `VRM_BLINK_BAKE="EyelidSup.L=1,0.55,0,0;EyelidInf.L=1,-0.5,0,0;EyelidSup.R=1,0.5,0,0;EyelidInf.R=1,-0.5,0,0"` and `VRM_BLINK_LASH="^Lashes"` (lash ticks lie on the closed seam, 4 mm in front of the lid, keeping 40% of their height) -- her blink is four eyelid BONES (peak at frame 30 of `Animation`), not a shape key; her `Lashes/Closed` key only moves two lash ticks and leaves the eyes open. The bake applies Solidify+Subsurf to the lid meshes, writes the closed pose as a `Blink` key and binds it. Rendered at weight 1.0: dark lids with a slit, matching her Sketchfab blink. Her iris `Big`/`Small` keys ride on YARG's own facial events: `VRM_EXPR="Wide_eyed=Eye.L/Big;Squint=Eye.L/Small"` makes them custom expressions named for lipsync event types, which `VRMCharacter.TryGetExpressionKey(string)` sets by name -- `Big` fills the eye with iris, `Small` shrinks it to a pinpoint (rendered, both eyes). The chart generator emits `Squint` but not `Wide_eyed` |
+| Pomni | pomni | 1.70 | exclude `^Circle`; `VRM_VISEME_GAIN=3.0` (4.4 turns her upper lip inside out); `VRM_BLINK_BAKE="EyelidSup.L=1,0.55,0,0;EyelidInf.L=1,-0.5,0,0;EyelidSup.R=1,0.5,0,0;EyelidInf.R=1,-0.5,0,0"` and `VRM_BLINK_LASH="^Lashes"` (lash ticks lie on the closed seam, 4 mm in front of the lid, keeping 40% of their height) -- her blink is four eyelid BONES (peak at frame 30 of `Animation`), not a shape key; her `Lashes/Closed` key only moves two lash ticks and leaves the eyes open. The bake applies Solidify+Subsurf to the lid meshes, writes the closed pose as a `Blink` key and binds it. Rendered at weight 1.0: dark lids with a slit, matching her Sketchfab blink. Her iris `Big`/`Small` keys ride on YARG's own facial events: `VRM_EXPR="Wide_eyed=Eye.L/Big;Squint=Eye.L/Small"` makes them custom expressions named for lipsync event types, which `VRMCharacter.TryGetExpressionKey(string)` sets by name -- `Big` fills the eye with iris, `Small` shrinks it to a pinpoint (rendered, both eyes). The chart generator emits `Squint` but not `Wide_eyed`. **Added 2026-11-12, and she cannot be rebuilt without it:** `VRM_VISEME="aa=Face/A,ee=Face/ClosedTeeth,ih=Face/ClosedTeeth@0.7,oh=Face/OpenNoTeeth,ou=Face/OpenNoTeeth@0.6"` — her mouth shapes are named for an artist and only `A` is guessable, so without this she builds at 1/5 visemes. 32,764 triangles, 16 meshes, 27 morph targets, 5/5 bound |
 | Sayuri / Aiko | cc_base / mixamo | 1.70 | hairrig `^Hair$` — no hair bones of their own. **Sayuri as installed 2026-11-11:** add `VRM_BREASTRIG=1` (the recovered ARGV is the original build and omits it — without it the rebuild comes back with 4 spring chains against her 6) and `VRM_TEX="Eye_Shadows=Eyelashes_Opacity.png:alpha"` (she has one `Eyelashes_Opacity.png` and two materials that need it; the picker gives it to the one whose name matches). Her model is `source/Sayuri dans.fbx`, its texture paths point at `C:\Temp\CharacterCreator4Temp\` on someone else's machine and the builder relocates all 8 of them. 91,632 triangles |
 | Aiko | mixamo | 1.70 | exclude `^Girl2\.[0-9]` — one girl, 15 Mixamo clips |
 | Batman | multiversus | 1.88 | run `prep_batman.py` first: two half-characters on two armatures |

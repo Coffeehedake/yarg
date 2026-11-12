@@ -79,15 +79,39 @@ def vrm_rig(path):
         if ty == 0x4E4F534A:
             g = json.loads(d[off + 8:off + 8 + ln].decode("utf-8"))
         off += 8 + ln + ((4 - ln % 4) % 4)
-    pos, rot = {}, {}
+    # Compare only names that identify ONE node.
+    #
+    # A glTF node name is not unique, and a VRM routinely reuses one: Pomni's
+    # meshes are called `Arm.L`, `Leg.L`, `Eye.L` and so are her bones. The
+    # mesh node sits at the origin with an identity rotation while the bone
+    # carries the real transform, so whichever happened to be written last won
+    # the dictionary -- and this reported her rebuild as differing from her
+    # installed bundle at exactly those five names, with every real bone
+    # identical to four decimal places. On that reading she was excluded from
+    # the collider rollout twice as "the .vrm is not what is installed".
+    #
+    # An ambiguous name cannot be compared, so it is dropped and counted
+    # rather than guessed at.
+    pos, rot, dupe = {}, {}, set()
     for n in g["nodes"]:
         nm = n.get("name", "?")
         t = n.get("translation", [0, 0, 0])
         q = n.get("rotation", [0, 0, 0, 1])
-        pos[nm] = round(math.sqrt(sum(x * x for x in t)), 4)
+        v = round(math.sqrt(sum(x * x for x in t)), 4)
         w = min(1.0, max(-1.0, abs(q[3])))
-        rot[nm] = math.degrees(2 * math.acos(w))
-    return pos, rot
+        r = math.degrees(2 * math.acos(w))
+        if nm in pos and (pos[nm] != v or abs(rot[nm] - r) > 1e-6):
+            dupe.add(nm)
+        pos[nm], rot[nm] = v, r
+    if dupe:
+        print("  (%d name(s) are both a mesh and a bone here, so their VALUES "
+              "are not compared: %s)"
+              % (len(dupe), ", ".join(sorted(dupe)[:6])))
+    # The names stay in `pos` so they still count toward the name overlap --
+    # they ARE shared names, and dropping them outright pushed Pomni's score
+    # from 92.5% to 87.1% and under the threshold, turning one wrong verdict
+    # into another. Only the value comparison skips them.
+    return pos, rot, dupe
 
 
 def main():
@@ -96,15 +120,16 @@ def main():
     for p in sys.argv[2:]:
         if not os.path.exists(p):
             continue
-        vp, vr = vrm_rig(p)
+        vp, vr, dupe = vrm_rig(p)
         shared = set(inst_pos) & set(vp)
         jac = 100.0 * len(shared) / max(len(set(inst_pos) | set(vp)), 1)
-        lbad = [n for n in shared if abs(vp[n] - inst_pos[n]) > 0.0005]
-        rbad = [n for n in shared if abs(vr[n] - inst_rot.get(n, 0.0)) > 1.0]
+        cmpable = shared - dupe
+        lbad = [n for n in cmpable if abs(vp[n] - inst_pos[n]) > 0.0005]
+        rbad = [n for n in cmpable if abs(vr[n] - inst_rot.get(n, 0.0)) > 1.0]
         # A mismatch count over an EMPTY intersection is zero for the wrong
         # reason, and "0 mismatches" next to "0.0% names" is exactly the kind
         # of zero that reads as a pass. Say when there was nothing to compare.
-        if not shared:
+        if not cmpable:
             print("  %-30s names=%5.1f%%  nothing in common -- not the same rig"
                   % (os.path.basename(p)[:30], jac))
             continue
@@ -112,7 +137,7 @@ def main():
                    else "differs")
         print("  %-30s names=%5.1f%%  compared=%-3d length-mismatch=%-3d "
               "rotation-mismatch=%-3d  %s"
-              % (os.path.basename(p)[:30], jac, len(shared), len(lbad),
+              % (os.path.basename(p)[:30], jac, len(cmpable), len(lbad),
                  len(rbad), verdict))
         if rbad and len(rbad) <= 6:
             print("        rotations differ at: %s" % sorted(rbad))
