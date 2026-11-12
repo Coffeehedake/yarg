@@ -3529,6 +3529,58 @@ Whether the result is better is a judgement about how the character should look,
 with a right answer — which is exactly what the sweep's own warning says. The triage is the
 deliverable: 44 unknowns reduced to 14, with reasons, and three of them reachable.
 
+## Honouring the alpha ruins all three, and the histogram could not have told me
+
+The triage left 14 bimodal candidates, three of them on characters that still have a `.vrm` and
+are therefore fixable at all: **Gadget Hackwrench, Jinx and Peach.** All three were tried.
+
+### First, a better number — which turned out not to help
+
+`alpha_sweep_installed.py` measures the WHOLE texture. An atlas has unused regions and unused
+regions are usually clear, so a shared atlas can read "32% clear" while every clear pixel lies
+outside any UV island. `uv_alpha.py` samples the alpha at the material's **own vertex UVs**
+instead, which is the set of texels the geometry can actually reach.
+
+It did not let the candidates off. Measured under their own UVs:
+
+| | | |
+|---|---|---|
+| Gadget `Body` | **34.0%** clear, 1.7% mid | *higher* than the texture-wide 31.6% |
+| Gadget `Hair` | **25.0%** clear, 1.9% mid | bimodal, and 25% is exactly what hair cards look like |
+| Gadget `Jumpsuit` | **64.4%** clear, 0.8% mid | |
+| Jinx | **28.4%** clear, 11.8% mid | one material across eyes, teeth and body |
+| Peach `_6` / `_6.002` | **73.1%** / **82.7%** clear | crown and a hands mesh |
+
+Gadget's `Hair` was the best candidate anyone could ask for: a hair material, bimodal, 25%
+clear, under 2% mid-tones. Every number said opacity map.
+
+### Then the renders, which settle it
+
+**Gadget's hair comes out full of holes.** Honouring `Body` and `Jumpsuit` as well shreds her —
+chunks missing from her face, torso and legs. **Jinx is destroyed**: her face disappears and her
+body is cut to ribbons. **Peach changes by literally zero pixels** — 0 of 700,000 above a
+threshold of 8, because the two materials sit on stacked Smash-rip expression meshes that are not
+visible from the front anyway.
+
+So: **two catastrophic, one no-op, none installed.**
+
+### The result worth keeping is the negative one
+
+`alpha_sweep_installed.py` has always carried this warning:
+
+> *An alpha channel in a game rip is as likely to be a specular mask as an opacity map; confirm
+> with a render before changing anything.*
+
+That was advice. It is now **measured**: the best statistical case available — bimodal, 25%
+clear, under 2% mid, on a material literally called `Hair` — was wrong. **The histogram cannot
+distinguish an opacity map from a specular mask, and no refinement of it will.** The triage in
+the previous section narrows what is worth rendering; it does not decide anything, and the
+remaining 11 candidates on characters with no `.vrm` can be left alone without regret, because
+there is no reason to think any of them is different.
+
+Both tools are kept — `uv_alpha.py` for the narrowing and `honour_alpha.py` for the five-minute
+test — so the next candidate is settled by a render rather than by an argument.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:

@@ -1309,6 +1309,13 @@ right.
 - `collider_group_check.py <dir|vrm...>` — does every collider reach the group that guards the
   chains? The builder's log is not an answer: it said "10 in one group" for three characters
   whose exported group held six. Exits non-zero on an orphan, so it works in a pre-commit check
+- `uv_alpha.py <vrm...>` — what would ACTUALLY disappear if a material honoured its
+  texture's alpha? Samples the alpha at the material's own vertex UVs, not across the
+  whole atlas, because an atlas's unused regions are clear and lie outside every UV island
+- `honour_alpha.py <in.vrm> <out.vrm>` (via `blender --background --python`, with
+  `HONOUR="Material"`) — wire a base texture's existing alpha into Alpha and switch the
+  material off OPAQUE. Exists to be TRIED AND REJECTED in five minutes: on 2026-11-12 it
+  was, on all three reachable UNUSED candidates — two catastrophic, one a no-op
 - `eye_shell_sweep.py <dir|yargchar|vrm ...>` — is an opaque shell parked in front of
   anybody's eyes? Three characters shipped that way and all three were found by accident.
   Reads BOTH forms and needs to: a bundle renames every material to `<Character>_<n>`, so
