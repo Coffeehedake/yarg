@@ -3203,17 +3203,73 @@ bundle, the same four the `.vrm` check found, and matching the documented signat
 clean character reports all ten of its colliders orphaned. A check that has never been seen to
 fail has not been verified.
 
-### A by-product worth recording: three characters with long hair have no hair chains
+### A by-product worth recording: three characters with long hair had no hair chains
 
 The sweep surfaced it because all three report "every chain here is a chest chain": **Alice Ivy,
-Jessica Rabbit and Alcina Dimitrescu** each carry exactly two spring chains, both chest, and no
-hair chain at all. All three have long hair. That is a different fault class from this one and is
-not fixed here, but it is a standing rule of this project that long hair gets spring bones, so it
-is recorded rather than left in a terminal.
+Jessica Rabbit and Alcina Dimitrescu** each carried exactly two spring chains, both chest, and no
+hair chain at all, while all three have long hair. Two of the three are fixed; the third turned
+out not to be rebuildable at all.
+
+## Two of the three got their hair chains, and the third cannot be rebuilt from her own recipe
+
+Each build below is that character's own recorded recipe byte for byte, with **one** thing added
+— the hair-rig argument in positional 10 — so anything that came out different is attributable.
+
+| | Hair pattern | What the hair is | Result |
+|---|---|---|---|
+| **Alice Ivy** | `Hair` | mesh `HS_SBH_Hair_G9_Shape`, 30,717 verts, hanging to z=1.394 under a head bone at 1.533, skinned to the head | 4 × 4-joint `HairSpring`, **25,713 verts weighted**, 149 bones compared with **0 length and 0 rotation mismatches** |
+| **Alcina Dimitrescu** | `Material.005` | its own 160,985-vert mesh with **no vertex groups at all** | 4 × 4-joint `HairSpring`, **125,849 verts weighted**, 80 bones compared with **0 length and 0 rotation mismatches** |
+| **Jessica Rabbit** | `^hair` (already in her recipe) | mesh `hair1.001`, 50,440 verts, material `hair 1` | builds, but see below — **not installed** |
+
+Both installed builds come back from the installed-bundle sweep as `all grouped **and used**`,
+where before they read `referenced by no chain`. Alcina's entry in the collider table — "her
+colliders attach to nothing and reinstalling her changes nothing observable" — was that, and it
+is now resolved: the colliders she was fitted with in the morning have something to push against.
+
+**What a render can and cannot settle here.** A rest-pose render shows the rigging did not tear
+or explode the mesh, and all three look intact. It says **nothing** about how the hair will
+swing, because springs only act at runtime. The measurement that stands in for it is
+`weight_check.py`: the new bones carry real weight on real vertices, at a maximum combined weight
+of 1.000. The swing itself needs the game.
+
+### Jessica Rabbit cannot be rebuilt from her own recipe
+
+Two things in her row were wrong, and the second is the one that stopped the work.
+
+**Her source is the `.blend`, not the GLB.** Her recipe's exclude is
+`^(BezierCurve|Cylinder|Cube)` — and `BezierCurve`, `Cube` and `Cylinder` are mesh names in
+`source/JR - Copy.blend` inside her zip, while every mesh in `jessica_rabbit.glb` is `Object_NN`.
+Her hair material is `hair 1` with a space in the `.blend` and `hair_1` in the GLB, which glTF
+renamed. The GLB build aborts outright: *implausibly narrow, 0.1397 m wide for 1.8000 m tall*.
+The row said she was built from the GLB; the exclude pattern had been sitting in the same row
+disagreeing with it.
+
+**And "matches the installed character exactly" was never true of the rig.** It was checked on
+triangles and meshes, which do match. `identify_build.py` against her installed bundle reports
+**128 length mismatches and 58 rotation mismatches out of 161 compared bones**. A rotation is
+scale-invariant, so a height difference cannot account for 58 of them — and her documented 3.7%
+height error would explain the lengths, which is exactly the trap: the plausible half of the
+story accounts for the lengths and leaves the rotations unexplained.
+
+The control is what settles it. A **hair-free** build from the same `.blend` with the hair rig
+and the skirt group removed reports the **same 128 and the same 58**. So nothing added today
+caused any of it: her installed bundle came from something this recipe does not describe.
+
+She is therefore left exactly as she is. Installing the rebuild would give her hair and
+incidentally fix her height, at the cost of replacing her rig with one whose provenance is
+unknown — on a character whose history includes shipping **in profile** because her facing was
+read off crossed feet. That is not a trade to make silently, and not one to make on a build that
+cannot be checked in the game today.
 
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
+
+- **What built the installed Jessica Rabbit?** Her recorded recipe reproduces her triangles and
+  her meshes and not her rig — 128 bone lengths and 58 rotations differ, measured against a
+  hair-free control, so it is provenance and not anything added since. Until that is answered she
+  cannot be given hair chains or have her 3.7% height error corrected without replacing her rig
+  with one nobody can account for. The `.usdz` in the same download set has not been tried.
 
 - **Scale and height — the build side is now measured, the PODIUM side is not.** Nothing
   normalises the model, and as of 2026-11-12 every installed character has been measured out of
