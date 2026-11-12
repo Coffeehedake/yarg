@@ -813,6 +813,11 @@ Measured across all 66 installed characters: **not one has a morph bind on any o
 expressions.** The presets are all present and all empty. So every character that ships an
 eye-closing shape key has had a blink available and unwired the whole time.
 
+*(That was the state before the viseme work. Re-measured from the bundles on 2026-11-12 with
+`viseme_audit.py`: **13 of 65 now have all five visemes bound and 10 can blink.** The 52 with
+none are mostly characters with no mouth shape keys at all — see* Who can lipsync at all *in the
+tooling README for the per-character list.)*
+
 The matching has to be narrow, because a wrong bind is a face that collapses every time the
 game blinks:
 
@@ -1778,6 +1783,12 @@ Match viseme names **anchored**. A loose `mouth` match would catch the seventy-o
 `Mouth_Smile` / `Mouth_Pucker` / `Mouth_Blow` shapes sitting directly beside the visemes on a CC
 body, and bind a vowel to a smirk.
 
+**And anchored matching means some characters will never match, so they must be mapped by hand
+and the map must go in the recipe table.** Gordon Freeman's keys are FACS action units and
+Pomni's are artist names; neither matches anything, both were mapped with `VRM_VISEME=`, and in
+Gordon's case the map was lost on the next rebuild because nobody had written it down. See
+*A hand-written mapping that is not in the recipe table will be lost*.
+
 ## A character with no shape keys cannot lipsync, and nothing can fix that
 
 Batman has **zero morph targets**. So does Jessica Rabbit, and most of the roster. The 18 preset
@@ -2356,6 +2367,125 @@ Verified end to end: geometry unchanged at 44,359 triangles across 21 meshes, up
 symmetric, posed displacement down from **2.36 m to 0.93 m** (Ariel 0.79), and the podium render
 shows properly formed hands where there were spikes.
 
+## An alpha channel in a game rip is as likely to be a specular mask as an opacity map
+
+Added 2026-11-12, after sweeping every built `.vrm` for materials shipping `alphaMode: OPAQUE`
+over a base map that carries real transparency. Roughly half the hits were not defects, and the
+ways they were not are the useful part.
+
+Gordon Freeman is the whole lesson in one character. He is a Half-Life 2 model and carries three
+alpha channels of three different kinds:
+
+| map | alpha | what it is |
+|---|---|---|
+| `lens` | median 63/255, **no extremes at all** | opacity. A uniformly semi-transparent pane, which is what a lens is |
+| `eye-iris-green.tga` | median 113/255, black **exactly on the iris disc** | a specular mask. Honouring it makes his irises invisible |
+| `onefreeman` | mean **0.1/255** | a specular mask. Honouring it erases his entire HEV suit |
+
+Source engine stores an environment-map mask in the base texture's alpha as a matter of course,
+and the histogram cannot tell you which kind you have. What can: **ask what the texture is FOR,
+and whether honouring its alpha would erase that.** An alpha that is black precisely where the
+subject is, is not an opacity map.
+
+Three more shapes worth recognising, all met the same day:
+
+- **An outline, not a silhouette.** Peach's crown map is 67.3% clear and reads as a clean cutout.
+  Its opaque part is the *outline* of the jewel, so masking it carved the jewel out of the setting
+  and left a wire ring. "77.4% solid" says nothing about *which* 77.4%.
+- **Atlas padding.** An atlas is mostly empty space between its UV islands and that space is
+  usually transparent, so measured over the whole image an ordinary body atlas looks exactly like
+  a cutout. Measuring only inside the material's own UV triangles took the sweep from 24 hits on
+  10 characters to 13 on 6, and the three it dropped to clean were three a render had already
+  cleared.
+- **Feathered, not two-valued.** The rule `build_vrm` uses to decide a *cutout* demands a mostly
+  two-valued alpha, which eyelashes, hair cards and soft decals are not. Sayuri's lash map is
+  46.7% clear and 0.3% solid and failed that test — while her lashes were two opaque black slabs
+  over her eyes. "Is this a clean mask?" and "does this material ignore real transparency?" are
+  different questions and only the second one is the defect.
+
+### Three provenance holes, all in the same direction
+
+The cutout inference only trusts a map whose provenance it recognises, and it was refusing the
+three strongest:
+
+- a texture the **author** wired into the material (`already_good` sets `_base_authored` and never
+  set `base_from`, which the gate tested);
+- a texture an **operator** pinned with `VRM_TEX` (the override branch set neither);
+- and the probe itself measured a **blurred copy** — `image.copy()`, `scale(96, 96)`, which is a
+  *filtered* resize, so it averaged. Averaging destroys the exact property being tested. Alcina's
+  eyelash map measures 0.875 at full resolution, which passes, and 0.790 after the resize, which
+  fails; her lashes shipped as black slabs because of it. The finer and sparser the mask, the
+  worse it gets, and eyelashes and hair cards are precisely that.
+
+### Enabling a cutout changes the SHADING MODEL, and on a big surface that shows
+
+MToon is turned on only for materials that need transparency, so a character ends up with two
+shading models. On hair cards and tear lines nobody notices. Peach's face is split across meshes
+with `Peach_faceN` carrying a rectangular hole that another mesh fills, and the moment the filling
+plate became a cutout it turned unlit while the face around it stayed lit — a tan plate on a cream
+face with a hard polygon seam across her brow. `VRM_MTOON_ALL=1` puts the whole character on one
+model, which is the answer when a cutout shares a continuous surface with an opaque material.
+
+**Only a render showed it.** Every count was identical.
+
+## A hand-written mapping that is not in the recipe table will be lost
+
+Gordon Freeman's shape keys are FACS action units — `AU26ZR+AU26ZL`, `AU12R+AU12L`,
+`AU18R+AU18L.001` — and they match none of the anchored viseme patterns, so his five bound visemes
+came from a `VRM_VISEME=` map written by hand that his recipe row never recorded. Rebuilding him
+from the documented recipe on 2026-11-12 dropped all 32 of his shape keys and bound nothing, and
+**every count a census checks stayed identical**: 7,169 triangles, 4 meshes, 7 materials, 6 images.
+
+The map was recovered from the bundle that still had it, by reading its `morphTargetBinds` back —
+node, target index and weight — rather than reconstructed from the AU numbers.
+
+Two rules out of it. **An env var a character cannot be rebuilt without belongs in the recipe
+table the moment it is used.** And a census of triangles and meshes does not cover expressions:
+`viseme_audit.py` reads `VRM10Expression` out of the bundle and reports which have real
+`MorphTargetBindings`, because every VRM declares all 18 presets whether or not anything is wired
+to them — a file always *looks* lipsync-capable. Measured over the installed set: **13 of 65 have
+all five visemes, 52 have none, 10 can blink.** Of the 52, most have no mouth shape keys at all
+and never can.
+
+## A node name is not unique, and `identify_build` believed it was
+
+`identify_build.py` compares the installed bundle's rig against a candidate `.vrm` by bone name.
+A glTF node name is not unique and a VRM routinely reuses one: Pomni's meshes are called `Arm.L`,
+`Leg.L`, `Eye.L` and so are her bones. The mesh node sits at the origin with an identity rotation,
+the bone carries the real transform, and whichever was written last won the dictionary.
+
+It therefore reported her rebuild as differing from her installed bundle at exactly those five
+names, with every real bone identical to four decimal places — and on that reading she was
+excluded from the collider rollout **twice**, as "the `.vrm` is not what is installed".
+
+An ambiguous name is now dropped from the value comparison and counted. It is *not* dropped from
+the name-overlap score: doing both pushed her from 92.5% to 87.1% and under the threshold, which
+replaced one wrong verdict with another. The fix is verified in four directions — Pomni matches,
+a known-good character still matches, Gadget Hackwrench still differs at 57 rotations because
+hers is a real re-pose, and a deliberately wrong pairing still reports nothing in common.
+
+The general shape, and it is the fourth instance of it in this document: **a comparison that
+cannot name what it compared will quietly compare the wrong thing.**
+
+## Choosing a viseme needs a render, and the framing must come from the skeleton
+
+Pomni's mouth shapes are named `A`, `ClosedTeeth`, `ClosedTeethVariation` and `OpenNoTeeth` —
+artist names that say nothing about which vowel they suit, which is why she sat at one bound
+viseme while this document claimed five. Rendering each at weight 1.0 settles it in one look:
+`A` is a wide open mouth with teeth and tongue, `ClosedTeeth` is lips retracted over a full row of
+teeth, `OpenNoTeeth` is a rounded oval. That gives `aa`, `ee`/`ih` and `oh`/`ou`.
+
+Worth recording how *not* to frame that render. Four attempts at pointing a camera at her mouth
+using the shape key's own displacement — the full moved band, then the most-displaced quartile,
+then an explicit z window — all landed on her **eyes**, because her mouth keys move the eye region
+more than they move her lips. Framing on the head BONE, which `render_closeup.py` already did for
+every other close-up, worked first time. `RENDER_KEY="Face/A=1.0"` drives the key and reuses that
+framing.
+
+And a gain applied to a shape that has never carried one must be checked at full weight **front
+and side** before shipping, per *Exaggerate the mouth, or nobody sees it*: doubling a shape key
+can tear geometry, and the front view hides a lip flip.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
@@ -2384,3 +2514,18 @@ Not answered by the code, and worth measuring before authoring anything expensiv
   *animation* — and keep that animation, per *The skeleton must be a T-pose facing -Y*.
 - **Whether a non-`Vocals` type loads from a file at all**, or only from a venue.
 - **What a missing viseme does** — silent fallback, or a visible mouth stuck shut.
+- **Whether a bundled AnimatorController is ever used, and what is really wrong with Teto.**
+  Both need the game rebuilt and run with logging around `LoadAnimationDefaults`; the reading of
+  the source is written up above and filed upstream as YARC-Official/YARG#1769, and neither is
+  settled without that run. This is the one thing on this list that blocks other work.
+- **Prix's eye textures**, and her hair, which must be left alone: the only hair map in her folder
+  is a different model's atlas reached by the loose fallback, so honouring its alpha leaves her
+  bald. The fault is the texture's provenance, not its channel.
+- **Alcina's colour maps.** Every base-colour map in her archive is a grey noise field, so she
+  renders as a white statue; her appearance lives in her `.blend`'s material nodes, which no glTF
+  export carries. Recovering it means baking those to textures, which nothing here does. Her head
+  is also above the character-select camera at 2.9 m, and her height is canon.
+- **Three characters with zero colliders and no surviving `.vrm`** — Aiko, Scott Hall, Shadow the
+  Hedgehog. Nothing can re-fit them without re-acquiring the source.
+- **Gadget Hackwrench's installed build is not any `.vrm` here** (57 rotation mismatches, a real
+  re-pose), so her two unguarded chains and her goggles cannot be touched until that is resolved.

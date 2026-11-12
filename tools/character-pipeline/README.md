@@ -9,6 +9,12 @@ in this repository — only the scripts that make them.
 The reasoning behind almost every line is written up in `docs/character-models.md`. Read that
 first; this file is only how to *run* it.
 
+> **The installed set is 65, and was 66 until 2026-11-11.** Kasane Teto was removed: she stands
+> in her T-pose and never animates, she is a downloaded bundle with no source so there is nothing
+> to re-export, and her cause is still not known — see her row below. Both documents carry
+> measurements taken while she was installed, and those say **66** on purpose. A count of 66 is a
+> statement about when it was measured, not a stale 65; anything measured after that date says 65.
+
 ## The two steps
 
 **1. Model → VRM** (Blender 4.5, with the VRM add-on installed in the user profile — do **not**
@@ -112,7 +118,7 @@ had simply never been looked at.
 |---|---|---|
 | The Rock | limbs stretched into metre-long spikes | **FIXED 2026-11-11.** His skeleton spanned 4.47 m against a 1.96 m mesh, bones 1.7 m below the floor. Two stages: scale the rest skeleton about the hips (already correct at 0.573 of height) anchored on feet-on-floor, then `fit_joints.py` to place each limb joint at the boundary of the flesh it separates — needed because legs and arms were wrong by different factors (0.387 vs 0.557), which no single scale expresses. `FINGERFIT` 30/30 at 135.3 cm → **0/30 at 4.1 cm**; posed displacement 2.36 m → 0.93 m; geometry unchanged. Rebuilt, installed and podium-verified |
 | Power Girl, Judy Hopps | legs cross over each other when posed | **left and right are swapped.** Measured across all 66: 258 of 264 limb pairs agree on which side is which, and these two supply all six disagreements |
-| Prix, Pomni | eyes render as solid white; hair reads as a cap | every material in every character exports `alphaMode: OPAQUE` — see below |
+| Prix, Pomni | eyes render as solid white; hair reads as a cap | every material in every character exports `alphaMode: OPAQUE` — see below. **Pomni's eyes are fixed** (her own row, further down). **Prix's are not, and her hair must be left alone**: the only hair map in her folder is a DIFFERENT model's atlas reached by the loose fallback, so honouring its alpha leaves her bald. Her eye textures are still open |
 | Ariel, Heels | lower hair hangs in space while the body moves | the hair rigger leaves part of the hair behind. Chains are correctly parented and every vertex is weighted, so it is neither of the obvious two |
 | Mando | cape folded in on itself, static | the documented cloak case, and the recipe alone was not enough: built with `HAIR_BONE=Spine1` the rigger took the HEM as the attached end, pinned it to his thighs and left the swinging tip at his collar |
 | Jessica Rabbit | dress static while the body moves; sequin texture on her skin | the rigger took one group per build, so her hair and her dress could not both be rigged. `rskin` had already been given its own map |
@@ -263,7 +269,7 @@ shape keys:
 | Heels, Alice Ivy | the Character Creator `V_*` set | 5/5 |
 | Alastor | `a`, `e`, `o`, `U` -- no `i` | 5/5 (ih mirrors ee) |
 | Gordon Freeman | FACS action units: `AU26` jaw, `AU12` lip corners, `AU18` pucker | 5/5 |
-| Pomni | `A`, `ClosedTeeth` -- named for an artist | **1/5, not 5/5** — corrected 2026-11-12 |
+| Pomni | `A`, `ClosedTeeth`, `ClosedTeethVariation`, `OpenNoTeeth` -- named for an artist | 5/5, but only from **2026-11-12**: this table claimed 5/5 while she shipped at 1/5 for weeks, because only `A` is guessable and nothing had checked the built file. Mapped by hand; see below |
 | Doom Slayer | `JawDrop` (`CheekPuff`/`CheekSuck` deliberately NOT used -- puffed cheeks are not a wide mouth) | 5/5, all from `JawDrop` at five weights |
 | Prix | `M_kiss` only, so `ee`/`ih` alone | **skipped on purpose** -- her README row warns her shape keys must be dropped or she builds at 0.42 m |
 | Jessica Rabbit | a DIFFERENT source blend has keys; the GLB she was built from has none | not attempted |
@@ -1110,6 +1116,30 @@ right.
 - `fingerpose.py <model>` — per-chain finger curl, REST vs POSE, both hands. The left/right
   comparison is the measurement: one relaxed hand is the control that says whether the other is
   really clenched
+- `fit_joints.py` — places each limb joint at the midpoint of the weighted-vertex centroids of
+  the two bones meeting there, and carries untouched descendants by their nearest fitted
+  ancestor's displacement. For a rig that is wrong by a **different factor in each limb**, which
+  no single scale expresses. The Rock is the case: legs wanted 0.387 and arms 0.557. Disconnect
+  bones before writing positions, and remember that disconnecting stops children following —
+  the first version left all thirty finger bones behind and `FINGERFIT` came back byte-identical
+- `drivers.py <vrm> [name]` — weight on bones nothing drives, per mesh, as a percentage. Also
+  reports a mesh that is **not skinned at all**, which is worse and was previously passed over in
+  silence
+- `pose_check.py <vrm> <out.png>` — poses eight humanoid bones and measures per-vertex
+  displacement, so a detached part shows up as a static cluster inside a mesh that moved.
+  `POSE_CONTROL=<mesh>` unbinds a mesh as a positive control; `POSE_STATIC_EPS` raises the
+  threshold
+- `limb_check.py <vrm>` / `limb_check_installed.py <yargchar|dir>` — joint-to-joint limb angles
+  from bone HEADS. Do not use bone-axis angles on a VRM: the importer synthesises a tail wherever
+  the hierarchy does not pin one, and an angle measured against a synthetic tail is meaningless —
+  it produced both a phantom 86.8° elbow and a suspiciously exact 90.00° wrist before that was
+  understood
+- `identify_build.py <yargchar> <vrm> [...]` — which `.vrm` produced an installed bundle, by
+  skeleton names, then bone lengths, then rotation angles. The two ruled-out ends are the point:
+  a comparison where nothing fails is not a comparison. Names shared by a mesh and a bone are
+  excluded from the value comparison and reported
+- `bundle_audit.py <yargchar|dir>` — clips, controller, humanoid-bone and finger coverage per
+  bundle. What the game has to work with, as opposed to what the model looks like
 - `bone_fit.py <vrm>` — how far each bone sits from the mesh it carries, in the written file.
   Expect centimetres. A finger bone 20-30 cm out is a mesh left in the A-pose while the skeleton went
   to T, and it throws the fingers out as long strips when the animation plays. It prints
@@ -1148,6 +1178,12 @@ right.
   padding, or already correct
 - `alpha_check.py` / `mat_check.py` / `spring_scan.py` / `uv_test.py` / `tex_stats.py` — material,
   alpha, spring and texture inspection straight out of the exported file
+
+The thirty-odd scripts in this folder that are **not** listed above — `bonecounts.py`,
+`matcol.py`, `meshz.py`, `island_probe.py` and the rest — are one-off probes written to answer a
+single question about a single character, kept because re-deriving one costs more than reading
+it. They are not maintained and none is a check anything depends on. The list above is the set
+worth reaching for; treat anything else here as a worked example.
 
 ## Chest bones, and the three groups of characters
 
@@ -1409,7 +1445,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Ariel | daz | 1.70 | hairrig `Hair`. Recovered from her own `.yargchar`: `lPectoral` and `abdomenUpper` are DAZ names, and the mesh bounds give the height |
 | Killer Clown | mixamo | 1.80 | hairrig `hair`. Her bones are Mixamo's with the prefix stripped (`Hips`, `LeftHandIndex1`, `HeadTop_End`), which the family auto-detects |
 | Heels | cc_base | 1.70 | hairrig `Hair`; the archive holds `source/untitled.zip` with the `.blend` inside. ~~Do not reinstall yet — a rebuild loses her transparency~~ **Resolved 2026-11-11**: that was the missing-alpha bug. A rebuild now keeps all five of her transparent materials and adds two more (`Std_Eye_Occlusion_R`, `Std_Tearline_R`). `High_Heels` and `Underwear_Bottoms` stay opaque, as installed — their "opacity" files are merged diffuses with no alpha channel left |
-| The Rock | mixamo | 1.96 | |
+| The Rock | mixamo | 1.96 | **Needs two corrections after the normal build, and `fit_joints.py` does both** — his source skeleton spans 4.47 m against a 1.96 m mesh with bones 1.7 m below the floor. Scale the rest skeleton about the hips anchored on feet-on-floor (0.3869), then fit each limb joint to the midpoint of the adjacent flesh centroids, because legs and arms are wrong by different factors (0.387 against 0.557) and no single scale expresses that. Check with `bone_fit.py`: expect `FINGERFIT 0 of 30`, which was 30 of 30 at 135.3 cm before. 44,359 triangles, 21 meshes |
 | Mario | mariojnt | 1.55 | |
 | Link (OoT) | linkoot | 1.65 | `VRM_TEX="Hair=Link_Link_BaseColor.png"` |
 | Gadget Hackwrench | rigify_def | 1.30 | exclude `^(WGT-\|smd_bone_vis)`, hairrig `^Hair$` |
