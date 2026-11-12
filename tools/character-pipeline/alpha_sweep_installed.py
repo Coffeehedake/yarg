@@ -22,8 +22,11 @@ THREE THINGS IT REPORTS, and they are different defects
             as a solid slab.
 
   HARDCUT   the material is a CUTOUT and its alpha is a smooth gradient rather
-            than a two-valued mask. A cutout thresholds at _Cutoff, so a soft
-            alpha is not softened, it is BUTCHERED -- everything under the
+            than a two-valued mask -- measured as a share of the INK, the
+            texels that are not fully transparent, because empty space a
+            cutout discards costs nothing. A cutout thresholds at _Cutoff, so
+            a feathered alpha is not softened, it is BUTCHERED: everything
+            under the
             threshold vanishes and everything over it draws at full opacity.
             This is how Gordon Freeman's glasses ship: lens.png runs 0.153 to
             0.624, mean 0.330, against a cutoff of 0.5, so 79.3% of the lens is
@@ -158,26 +161,38 @@ def audit(path):
         flag = ""
         if mode == "opaque" and tr != "flat" and (1.0 - s["solid"]) > MIN:
             flag = "UNUSED"
-        elif mode == "cutout" and tr == "soft":
-            # When the WHOLE texture is under the threshold the material cannot
-            # draw a single texel, and that needs no render to establish -- it
-            # is arithmetic on the cutoff. Say so separately, because "100%
-            # clipped" and "invisible" are the same fact and only one of them
-            # reads as serious.
-            clipped = 100 * float((s["a"] < cut).mean())
+        elif mode == "cutout":
+            # MEASURED AS A SHARE OF THE INK, not of the whole texture, and the
+            # first version did the latter. A cutout's crime is throwing away
+            # the opacity the texture has; empty space it throws away costs
+            # nothing. Judged on the whole image, Alcina's CILIOS eyelash map
+            # reads as a textbook two-valued mask -- 87.3% fully clear, 0.4%
+            # fully solid -- and 67% of the lashes themselves are below the
+            # threshold. Sayuri_9 is the same shape and the tier test missed it
+            # entirely: 95.2% clear, so "mask", while 77.3% of its ink is lost.
+            #
+            # This is the same rule `patch_alpha_blend.py` uses to decide what
+            # to flip, deliberately: a sweep that reports one set and a patcher
+            # that acts on another is two instruments disagreeing in silence.
+            ink = s["a"] >= 0.02
+            lost = (float((s["a"][ink] < cut).mean()) if int(ink.sum())
+                    else 0.0)
             if s["max"] < cut:
+                # The whole texture is under the threshold, so the material
+                # cannot draw one texel. That needs no render -- it is
+                # arithmetic on the cutoff -- and it deserves its own word,
+                # because "99.6% clipped" and "invisible" read very
+                # differently and only one of them is true here.
                 flag = ("INVISIBLE alpha max %.3f < cutoff %.2f"
                         % (s["max"], cut))
-            else:
-                # One decimal, because %.0f printed Heels' eyelashes as
-                # "100% clipped" when the real figure is 99.6 -- and "100%"
-                # is a claim of total invisibility that the INVISIBLE test
-                # above had already, correctly, refused to make. A rounded
-                # number that reads as an absolute is the same mistake as a
-                # count in a comment being read as a measurement.
-                flag = "HARDCUT %.1f%% clipped" % clipped
-        elif mode == "cutout" and tr == "flat":
-            flag = "NOALPHA"
+            elif s["max"] - s["min"] < 0.01:
+                flag = "NOALPHA"
+            elif lost > 0.20:
+                # One decimal: %.0f printed Heels' eyelashes as "100%" when the
+                # figure is 98.7, and a rounded number that reads as an
+                # absolute is the same mistake as taking a count in a comment
+                # for a measurement.
+                flag = "HARDCUT %.1f%% of the ink clipped" % (100 * lost)
         rows.append({"name": tt.get("m_Name", "?"), "shader": sh, "mode": mode,
                      "tier": tr, "flag": flag, "tex": texname,
                      "clear": s["clear"], "solid": s["solid"],
@@ -199,7 +214,7 @@ def main():
         print("ALPHA_CONTROL=1: every material is treated as opaque, so every "
               "material carrying any alpha must flag UNUSED.\n")
 
-    totals = {"UNUSED": 0, "HARDCUT": 0, "NOALPHA": 0}
+    totals = {"UNUSED": 0, "HARDCUT": 0, "INVISIBLE": 0, "NOALPHA": 0}
     hit_chars = set()
     nmat = nmtoon = 0
     for p in files:
@@ -225,9 +240,9 @@ def main():
                          r["flag"] or r.get("note", ""), r.get("tex", "")))
 
     print("\n%d character(s), %d materials (%d MToon, judged separately): "
-          "%d UNUSED, %d HARDCUT, %d NOALPHA across %d character(s)"
+          "%d UNUSED, %d HARDCUT, %d INVISIBLE, %d NOALPHA across %d character(s)"
           % (len(files), nmat, nmtoon, totals["UNUSED"], totals["HARDCUT"],
-             totals["NOALPHA"], len(hit_chars)))
+             totals["INVISIBLE"], totals["NOALPHA"], len(hit_chars)))
     print("Every row is a CANDIDATE. An alpha channel in a game rip is as "
           "likely to be a specular mask as an opacity map; confirm with a "
           "render before changing anything.")

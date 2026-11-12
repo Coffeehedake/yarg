@@ -2641,6 +2641,145 @@ than the `.vrm` sweep's in one specific way: it is **not UV-masked**, so a mater
 atlas can read as alpha-carrying because of a region its geometry never samples. That limitation
 is in the tool's header rather than in a conversation.
 
+## The six characters could not be rebuilt, and the patch that looked right rendered worse
+
+2026-11-12, the same day. With the exporter able to express a blend, the obvious next step was to
+rebuild the six characters whose soft alpha ships as a hard cutout. None of them can be rebuilt
+on this machine, and finding that out took three measurements rather than one.
+
+**Three have nothing to rebuild from.** Sayuri, Alice Ivy and Gordon Freeman have no source
+archive and no `.vrm` here. The archives lived in a session scratchpad that is gone; what
+survives is `%USERPROFILE%\Documents\YARG-Characters\`, which holds 25 `.vrm` files covering
+about 22 of the 65 characters, and none of those three is among them.
+
+**Three have a `.vrm` and all three are OLDER than what is installed.** `identify_build.py`:
+
+| | names | length Δ | rotation Δ | verdict |
+|---|---|---|---|---|
+| Heels | 84.6% | 0 | 0 | differs — 130 installed bones against 110 compared |
+| Ariel | 89.7% | 0 | 0 | differs — same shape |
+| Alcina Dimitrescu | 95.1% | 0 | 0 | **MATCH** |
+
+Zero mismatches with a name overlap below 90% is not a different model; it is **the same rig
+minus some bones**, and the missing ones are the spring bones the 11-11 chest rig added. Exporting
+either would trade a newer fix for an older one.
+
+**And Alcina's MATCH is the instructive one.** Her rig matches and her materials do not: the
+installed build carries the two cutouts her 11-12 rebuild added and the `.vrm` carries none.
+`identify_build.py` compares names, bone lengths and rotation angles, and says so in its own
+header — so a MATCH means *the same skeleton*, not *the same build*. That distinction had never
+been written down anywhere a reader would meet it before relying on the verdict.
+
+### A .yargchar cannot be rebuilt by Unity, but it CAN be rewritten by UnityPy
+
+These are different operations and the project had only measured the first. `BackgroundHelper.
+Export` on a prefab loaded from a bundle writes a 2,552-byte shell, because the bundle builder
+packs from the AssetDatabase and nothing loaded from a bundle has an asset path. UnityPy does not
+build anything — it edits the serialized file and writes it back — so that limit does not apply.
+
+Measured on Gordon Freeman: load, change one material's render state, save, and the result still
+reports `clips=6 ctrl=1 humanoid=52 fingers=30 meshes=4`, 5/5 bound visemes and 1.800 m, with a
+read-back proving the other six materials byte-identical. The file shrinks (7.70 MB to 5.66 MB)
+because the recompression differs, not because anything was lost.
+
+### Every number was right and the render said no
+
+`patch_alpha_blend.py --mode blend` set the full URP transparent state on his lens: `_Surface 1`,
+`_AlphaClip 0`, SrcAlpha / OneMinusSrcAlpha, `_ZWrite 0`, queue 3000, `RenderType Transparent`,
+`_SURFACE_TYPE_TRANSPARENT` added to the keywords — and that keyword *is* in the bundle's own copy
+of URP/Lit, 68 keywords including `_ALPHATEST_ON` and `_ALPHAPREMULTIPLY_ON`. Every check passed.
+
+Rendered on the real podium, **his lens turned into a solid opaque white rectangle covering both
+eyes.** The cutout it replaced is 79.3% clipped, which at least leaves holes to see his eyes
+through. The patch was strictly worse.
+
+The leading explanation is that the *variant* carrying `_SURFACE_TYPE_TRANSPARENT` was never
+compiled into this bundle, because no material used it at build time, and URP's `Alpha()` forces
+`alpha = 1.0` whenever that keyword is not defined — so removing the clip bought nothing. A
+keyword appearing in `m_KeywordNames` does not contradict that: that is the shader's keyword
+table, not its list of compiled variants. This is stated as the leading explanation rather than
+as established, because enumerating the compiled variants means decoding the subprogram blob and
+that was not done.
+
+**So the blend fix only works through a rebuild**, where the shader is compiled with a transparent
+material present. The exporter change is still right and still necessary; it is just not
+retrofittable.
+
+### The podium harness is not deterministic, and the pixel diff nearly fooled me
+
+Before reading the faces I diffed the two renders: 0.623% of pixels differed, with the large
+differences spread over the whole body rather than the glasses. That looked like evidence the
+patch had changed something global.
+
+It was not. Rendering **the same file twice** under two names gives 0.593% differing pixels, max
+difference 410 against the comparison's 643 — the same magnitude. The harness jitters that much
+run to run, so a pixel diff cannot support any claim smaller than that, and the bounding box I
+had read as "the change is everywhere" was describing noise.
+
+What the control *did* establish is that the lens is stable: the same file rendered twice shows
+the identical see-through lens both times, in first and second position. So the white pane is the
+patch and not the harness. **The qualitative read survived the control that the quantitative one
+failed** — which is the opposite of the usual order, and worth remembering before reaching for a
+diff because it produces a number.
+
+### Lowering the cutoff is the fix that works on a bundle, and it needs a render each
+
+A cutout's threshold is a plain float the already-compiled `_ALPHATEST_ON` path reads, so moving
+it depends on no shader variant and cannot fail the way the blend did. It cannot produce a
+feathered edge — the result is still a hard cut — but for an eyelash losing 98.7% of itself at
+0.5, a hard-edged lash is the difference between a lash and nothing.
+
+Rendered on Heels, who is the worst case:
+
+| `--keep` | lash `_Cutoff` | rendered result |
+|---|---|---|
+| installed | 0.500 | no eyelashes at all; hair sparse |
+| 0.90 | 0.039 | lashes return, and the faint fringe draws at FULL opacity — a heavy red-brown rim around each eye. Worse than nothing |
+| 0.45 | 0.165 | a fine dark lash line on both eyes, no rim. Her hair at 0.157 is fuller too |
+
+**The two good values came from opposite ends and landed in the same place.** Her eyelash wanted
+`--keep 0.45` and her two hair materials wanted `0.90`, and those are 0.165 and 0.157. A share of
+the ink is the right way to *discover* a value; the value itself then travels between materials
+better than the share does, which is why `--cutoff-to` exists.
+
+**And an absolute cutoff needs a floor, or it becomes the defect it is undoing.** A flat `0.16`
+suits her lash and her hair and would have **erased her tear line**, whose alpha peaks at 0.047 —
+the tool printed `keeps 0% of the ink` for it, in the same run that printed 90% and 46% for the
+other three. A cutoff is now capped at 90% of the material's own maximum alpha, and the same
+material re-run comes back `0.500 -> 0.042 (keeps 100% of the ink) [capped: its alpha peaks at
+0.047]`. A patch that can reduce a material to nothing is not a repair, and this one was one run
+away from proving it the hard way.
+
+### All six rendered at 0.16, and the verdict is different for every one of them
+
+This is the part that could not have been predicted from the numbers. Every one of these
+materials is the same kind of defect, measured the same way, repaired with the same value — and
+the outcome ranges from "fixes a glaring fault" to "introduces a worse one".
+
+| character | materials | rendered result | installed? |
+|---|---|---|---|
+| **Alice Ivy** | `AliceIvy_5` eyelash | **solid black bars over both eyes become real lashes.** The biggest single improvement in the set, and it was ranked next to last by clipped-ink share (34%) | **yes** |
+| **Heels** | eyelash, two hair, tear line | lashes appear where there were none; hair noticeably fuller; tear line preserved by the cap | **yes** |
+| **Sayuri** | two eyelash, hair, `Moles` | modest: slightly heavier, better-defined lashes, slightly fuller hair. No regression | **yes** |
+| **Ariel** | eyelash, hair cap, **eye moisture**, **cornea** | **regression — her irises disappear.** `EyeMoisture` at 0.16 draws an opaque white film over the eye, so she looks blank-eyed. Re-run on the lash and hair cap ALONE: irises back, lashes slightly fuller, no regression | **yes**, the two-material version |
+| **Alcina Dimitrescu** | `CILIOS` eyelash | **no visible change at all** — the two renders are byte-identical in size. At 2.9 m her head is above the character-select camera, which this document already records | no |
+| **Gordon Freeman** | `lens` | the cutoff route cannot help a pane: any threshold gives a hard-edged lens. Needs the blend, which needs a rebuild | no |
+
+**The lesson is in the ranking.** Alice Ivy was 11th of 11 by clipped-ink share and produced the
+most visible improvement in the set, because her lash card sits directly over her eyes at a size
+the camera can see. Alcina was 2nd by share and produced nothing, because her head is out of
+frame. **How much of a texture a threshold destroys says nothing about how much of the CHARACTER
+is destroyed** — that depends on where the material sits and whether anything is looking at it.
+The measurement is how you find candidates; it is not a ranking of importance, and treating it
+as one would have installed the regression and skipped the best fix.
+
+Ariel's failure is the same thing from the other side. `EyeMoisture` is a transparent film over
+the eyeball — its alpha is 95.4% mid-range, exactly the signature that says "this wants a blend,
+not a cutout". Giving it a lower cutoff instead makes *more* of a thing draw that should not be
+drawing opaquely at all. **A material that genuinely needs a blend is made worse by a better
+cutoff**, and the sweep cannot tell those apart from the lashes, which need exactly the same
+numbers and want the opposite treatment.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:

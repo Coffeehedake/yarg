@@ -995,12 +995,41 @@ falls out of that is by *characters fixed per change made* rather than by severi
 The reasoning behind each is in `docs/character-models.md`; what follows is the older list,
 which items 1-3 above now sit in front of.
 
-0. **Rebuild the six characters whose soft alpha ships as a hard cutout**, now that the exporter
-   can express a blend at all. `YargCharExporter.cs` used to give `_AlphaClip` to both
-   `TransparentCutout` **and** `Transparent`, so not one of the 396 URP/Lit materials in the 59
-   characters this pipeline built was alpha-blended. That is fixed; the measured damage, and the
-   second half of the fix that is **not** done, are written up in `docs/character-models.md`.
-   Per material, the share of the texture the 0.5 threshold throws away:
+0. ~~Rebuild the six characters whose soft alpha ships as a hard cutout.~~ **Attempted
+   2026-11-12 and NOT POSSIBLE on this machine — none of the six can be rebuilt.** Sayuri, Alice
+   Ivy and Gordon Freeman have no source archive and no `.vrm` here; Heels, Ariel and Alcina have
+   a `.vrm` and all three are OLDER than what is installed (0 length and 0 rotation mismatches
+   against a sub-90% name overlap, which is the same rig *minus* the spring bones the 11-11 chest
+   rig added; Alcina's reads MATCH and still carries none of her 11-12 cutouts). Exporting any of
+   them trades a newer fix for an older one. The exporter fix stands and is correct — it simply
+   cannot reach a character that cannot be rebuilt.
+
+   Two consolation routes were then measured, and only one of them works. **Patching the
+   installed bundle's material to a real blend does NOT work**: every number comes back right and
+   Gordon's lens renders as a solid white pane, worse than the 79%-clipped cutout it replaced.
+   **Lowering `_Cutoff` does work**, because it changes no shader variant — see
+   `patch_alpha_blend.py` and the write-up in `docs/character-models.md`. It cannot give a
+   feathered edge, and it needs a render and a per-material `--keep` each, because one value does
+   not suit both an eyelash and a hair atlas.
+
+   **Four of the six are installed, as of 2026-11-12**, by lowering `_Cutoff` to 0.16 on the
+   materials the threshold was destroying, each one rendered before and after on the podium:
+
+   | character | materials changed | result | backup |
+   |---|---|---|---|
+   | Alice Ivy | `AliceIvy_5` | solid black bars over both eyes become real lashes — the biggest visible gain in the set | `.precutblend` |
+   | Heels | `Heels_5`, `_18`, `_19`, `_13` | lashes appear, hair fuller, tear line kept by the cap (0.042) | `.precutblend` |
+   | Sayuri | `Sayuri_8`, `_9`, `_10`, `_11` | modestly heavier lashes, slightly fuller hair | `.precutblend` |
+   | Ariel | `Ariel_20`, `Ariel_25` **only** | lashes fuller. Her `EyeMoisture` and `Cornea` are deliberately excluded — at 0.16 they draw an opaque white film and **erase her irises** | `.precutblend` |
+   | Alcina Dimitrescu | — | not installed: no visible change, her head is above the select camera at 2.9 m | — |
+   | Gordon Freeman | — | not installed: a lens is a pane, and no cutoff expresses one. Needs the blend, so needs a rebuild | — |
+
+   **Do not rank this work by the clipped-ink number.** Alice Ivy was last of eleven by that
+   measure and produced the most visible improvement; Alcina was second and produced nothing.
+   How much of a texture a threshold destroys says nothing about how much of the *character* it
+   destroys — that depends on where the material sits and whether the camera can see it.
+
+   Per material, the share of the texture the 0.5 threshold threw away before this:
 
    | character | material | texture | clipped |
    |---|---|---|---|
@@ -1272,6 +1301,25 @@ right.
   the raw vertex buffer and aborts if it disagrees with `m_LocalAABB` by a millimetre;
   `--selftest` runs the decision over Peacemaker's real geometry **and** the three shapes that
   made the first version flag a body mesh, and must get all four right
+- `patch_alpha_blend.py <yargchar> --auto --out <new>` — the only repair in this folder that
+  changes an **installed** bundle. UnityPy rewrites the serialized file directly, which is a
+  different operation from Unity's bundle builder and does not have its problem: nothing needs an
+  asset path, because nothing is rebuilt. Two modes, and only one works:
+  - **`--mode cutoff` (the default) works.** It lowers `_Cutoff` on a cutout whose threshold is
+    destroying its own opacity, so the same compiled `_ALPHATEST_ON` path keeps running and only
+    the float it compares against moves. `--keep 0.45` picks the value from the ink; `--cutoff-to
+    0.16` sets it outright, which travels better between materials once a good value is known.
+    Any cutoff is capped at 90% of the material's own peak alpha, because a patch that can reduce
+    a material to nothing is not a repair — Heels' tear line peaks near 0.05 and a flat 0.16
+    would erase it, which the tool caught on its first real run.
+  - **`--mode blend` is measured NOT to work** on an already-built bundle and is kept only so the
+    measurement can be repeated. Every property comes back correct and Gordon Freeman's lens
+    renders as a solid white pane, worse than the 79%-clipped cutout it replaced.
+
+  It re-reads what it wrote and refuses to keep a file unless the targeted materials changed, the
+  untargeted ones provably did not, and the object counts match. **It cannot tell you whether the
+  result looks right** — that needs `YargSceneShot.cs`, and the podium harness jitters ~0.6% of
+  pixels run to run, so compare by looking rather than by diffing
 - `audit_all.py` — runs every installed-side check in one command and writes a dated report. See
   the next section
 - `alpha_check.py` / `mat_check.py` / `spring_scan.py` / `uv_test.py` / `tex_stats.py` — material,
