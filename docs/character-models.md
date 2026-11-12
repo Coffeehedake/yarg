@@ -3210,7 +3210,7 @@ Jessica Rabbit and Alcina Dimitrescu** each carried exactly two spring chains, b
 hair chain at all, while all three have long hair. Two of the three are fixed; the third turned
 out not to be rebuildable at all.
 
-## Two of the three got their hair chains, and the third cannot be rebuilt from her own recipe
+## All three got their hair chains, and the third needed her recipe corrected first
 
 Each build below is that character's own recorded recipe byte for byte, with **one** thing added
 — the hair-rig argument in positional 10 — so anything that came out different is attributable.
@@ -3219,10 +3219,10 @@ Each build below is that character's own recorded recipe byte for byte, with **o
 |---|---|---|---|
 | **Alice Ivy** | `Hair` | mesh `HS_SBH_Hair_G9_Shape`, 30,717 verts, hanging to z=1.394 under a head bone at 1.533, skinned to the head | 4 × 4-joint `HairSpring`, **25,713 verts weighted**, 149 bones compared with **0 length and 0 rotation mismatches** |
 | **Alcina Dimitrescu** | `Material.005` | its own 160,985-vert mesh with **no vertex groups at all** | 4 × 4-joint `HairSpring`, **125,849 verts weighted**, 80 bones compared with **0 length and 0 rotation mismatches** |
-| **Jessica Rabbit** | `^hair` (already in her recipe) | mesh `hair1.001`, 50,440 verts, material `hair 1` | builds, but see below — **not installed** |
+| **Jessica Rabbit** | `^hair` (already in her recipe) | mesh `Object_33`, 50,440 verts, material `hair_1` | 4 × 4-joint `HairSpring` + her 4 skirt chains, **32,227 verts weighted**, 178 bones compared with **0 rotation mismatches** — but only after her recipe was corrected, below |
 
-Both installed builds come back from the installed-bundle sweep as `all grouped **and used**`,
-where before they read `referenced by no chain`. Alcina's entry in the collider table — "her
+All three come back from the installed-bundle sweep as `all grouped **and used**`, where before
+they read `referenced by no chain`. Alcina's entry in the collider table — "her
 colliders attach to nothing and reinstalling her changes nothing observable" — was that, and it
 is now resolved: the colliders she was fitted with in the morning have something to push against.
 
@@ -3232,44 +3232,78 @@ swing, because springs only act at runtime. The measurement that stands in for i
 `weight_check.py`: the new bones carry real weight on real vertices, at a maximum combined weight
 of 1.000. The swing itself needs the game.
 
-### Jessica Rabbit cannot be rebuilt from her own recipe
+### Jessica Rabbit's recipe described a build that was never installed
 
-Two things in her row were wrong, and the second is the one that stopped the work.
+Two values in her row were blend-era, and both were wrong for the character actually installed.
+Finding that out took one measurement that had been available the whole time: **what her
+installed bundle calls its own nodes.**
 
-**Her source is the `.blend`, not the GLB.** Her recipe's exclude is
-`^(BezierCurve|Cylinder|Cube)` — and `BezierCurve`, `Cube` and `Cylinder` are mesh names in
-`source/JR - Copy.blend` inside her zip, while every mesh in `jessica_rabbit.glb` is `Object_NN`.
-Her hair material is `hair 1` with a space in the `.blend` and `hair_1` in the GLB, which glTF
-renamed. The GLB build aborts outright: *implausibly narrow, 0.1397 m wide for 1.8000 m tall*.
-The row said she was built from the GLB; the exclude pattern had been sitting in the same row
-disagreeing with it.
+**Her source is `jessica_rabbit.glb`.** The installed bundle contains `GLTF_created_0_rootJoint`
+and sixteen meshes named `Object_7` through `Object_43`. Those names exist only in the GLB; the
+`.blend` in her zip calls the same meshes `Jessica`, `hair1.001`, `gloves`, `eyes`, `NurbsPath`.
+A names diff against a blend-built control shows nineteen installed-only names and ten
+candidate-only ones, and every one of the nineteen is a GLB name.
 
-**And "matches the installed character exactly" was never true of the rig.** It was checked on
-triangles and meshes, which do match. `identify_build.py` against her installed bundle reports
-**128 length mismatches and 58 rotation mismatches out of 161 compared bones**. A rotation is
-scale-invariant, so a height difference cannot account for 58 of them — and her documented 3.7%
-height error would explain the lengths, which is exactly the trap: the plausible half of the
-story accounts for the lengths and leaves the rotations unexplained.
+> This document asserted the opposite earlier on the same day, from the exclude pattern:
+> `BezierCurve`, `Cube` and `Cylinder` are mesh names in the `.blend` and in no GLB, so the
+> source "must" be the `.blend`. The pattern was read correctly and the inference was still
+> wrong — the exclude is blend-era, like the `VRM_TEX` beside it, and describes a build that was
+> never the installed one. **A recipe row records what somebody typed, not what shipped.** The
+> node names settle it in one command and were never consulted.
 
-The control is what settles it. A **hair-free** build from the same `.blend` with the hair rig
-and the skirt group removed reports the **same 128 and the same 58**. So nothing added today
-caused any of it: her installed bundle came from something this recipe does not describe.
+**The exclude has to be rewritten for GLB names, and without it the build will not run at all.**
+The installed bundle holds 16 of the GLB's 23 meshes. The seven it does not hold are `Icosphere`
+and `Object_12`, `_13`, `_15`, `_17`, `_19`, `_21` — a stray sphere below the feet and the six
+`metal` mic-stand parts, which are also exactly the unrigged ones. They are the same seven
+objects the blend-era exclude drops under their `.blend` names. Left in, they inflate the scene's
+Z by 3.33x before the scale step, and the build refuses to write a file:
+*implausibly narrow (0.1397 m wide for 1.8000 m tall)*. With them excluded the scene measures
+1.8000 m tall and 0.5172 m wide and the build completes.
 
-She is therefore left exactly as she is. Installing the rebuild would give her hair and
-incidentally fix her height, at the cost of replacing her rig with one whose provenance is
-unknown — on a character whose history includes shipping **in profile** because her facing was
-read off crossed feet. That is not a trade to make silently, and not one to make on a build that
-cannot be checked in the game today.
+**`VRM_TEX` is not just stale for her, it is actively destructive.** Her recorded
+`rskin=Skin_makup_0003_Body_multires_sculpt.001_m.jpg` is an atlas built for the `.blend`'s UV
+layout: a set of body islands on a BLACK background. Mapped onto the GLB's UVs, the face samples
+that background, and she comes out with **half her face and the inside of her mouth painted
+solid black**. The installed bundle carries the GLB's own embedded `Image_5` for her skin and
+none of the zip's `Body_resculpt1*` maps, so the correct build passes **no `VRM_TEX` and an empty
+texture directory** — the builder matches files out of that directory by name, and every file in
+her zip belongs to the other UV layout.
+
+### What her recipe actually is, and how close it comes
+
+GLB + the GLB-name exclude + her own `VRM_RIG_MORE` skirt group + hairrig `^hair`, then a round
+trip through `add_colliders.py`. The round trip is not optional and is not cosmetic: the
+installed bundle carries colliders, which only that round trip puts there, and it normalises bone
+rolls on the way through. Before it, 31 bones disagreed on rotation; after it, **zero** — the
+same correction Sayuri needed on the same day, and the same signature.
+
+Against the original installed bundle the corrected rebuild reports **178 of 178 node names
+shared, 0 rotation mismatches, and 177 of 178 bone lengths equal to within half a millimetre.**
+It exports to 15,706,041 bytes against the original's 15,590,635 — the difference being the
+spring bones and colliders it gained.
+
+**The one residual** is `GLTF_created_0_rootJoint`, 0.1971 m in the original against 0.1837 m in
+the rebuild: a 13.4 mm difference on the root and on nothing else, which is consistent with a
+different foot re-seat and is not explained further here.
+
+**Her 1.867 m is not a build defect.** The rebuild targets 1.80 m, verifies 1.8000 m in the scene
+and in the mesh data — and the bundle it exports to measures **1.867 m, exactly as the original
+does**. So the 3.7% excess is introduced somewhere after the `.vrm`, on the Unity side, and a
+rebuild does not change it. The "Jessica Rabbit is 3.7% too tall" row has been looking at the
+wrong end of the pipeline.
 
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
 
-- **What built the installed Jessica Rabbit?** Her recorded recipe reproduces her triangles and
-  her meshes and not her rig — 128 bone lengths and 58 rotations differ, measured against a
-  hair-free control, so it is provenance and not anything added since. Until that is answered she
-  cannot be given hair chains or have her 3.7% height error corrected without replacing her rig
-  with one nobody can account for. The `.usdz` in the same download set has not been tried.
+- **Where does Jessica Rabbit's 3.7% gain its height?** ~~What built the installed Jessica
+  Rabbit~~ is answered — the GLB, see above. What is not is why a `.vrm` that verifies at
+  1.8000 m in both the scene and the mesh data exports to a bundle that measures **1.867 m**,
+  and does so for the original build and the rebuild alike. It is introduced after the `.vrm`,
+  on the Unity side, so it is an exporter question and nothing a rebuild can reach. Nobody has
+  checked whether any other character shares it; `height_check_installed.py` over the set would
+  say, and would also say whether the documented heights it compares against are measuring the
+  same thing.
 
 - **Scale and height — the build side is now measured, the PODIUM side is not.** Nothing
   normalises the model, and as of 2026-11-12 every installed character has been measured out of
