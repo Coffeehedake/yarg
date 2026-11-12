@@ -102,7 +102,7 @@ had simply never been looked at.
 
 | character | what is wrong | what it is |
 |---|---|---|
-| The Rock | limbs stretched into metre-long spikes | his humanoid skeleton is sized for a ~3.5 m figure against a 1.96 m mesh: head bone at 2.77 m, hand bone 1.94 m out. Spider-Man and Chibi Rem measure 1.00 and 1.02 on the same head-to-mesh ratio; he is 1.41 |
+| The Rock | limbs stretched into metre-long spikes | **FIXED 2026-11-11.** His skeleton spanned 4.47 m against a 1.96 m mesh, bones 1.7 m below the floor. Two stages: scale the rest skeleton about the hips (already correct at 0.573 of height) anchored on feet-on-floor, then `fit_joints.py` to place each limb joint at the boundary of the flesh it separates — needed because legs and arms were wrong by different factors (0.387 vs 0.557), which no single scale expresses. `FINGERFIT` 30/30 at 135.3 cm → **0/30 at 4.1 cm**; posed displacement 2.36 m → 0.93 m; geometry unchanged. Rebuilt, installed and podium-verified |
 | Power Girl, Judy Hopps | legs cross over each other when posed | **left and right are swapped.** Measured across all 66: 258 of 264 limb pairs agree on which side is which, and these two supply all six disagreements |
 | Prix, Pomni | eyes render as solid white; hair reads as a cap | every material in every character exports `alphaMode: OPAQUE` — see below |
 | Ariel, Heels | lower hair hangs in space while the body moves | the hair rigger leaves part of the hair behind. Chains are correctly parented and every vertex is weighted, so it is neither of the obvious two |

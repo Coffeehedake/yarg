@@ -2260,6 +2260,58 @@ the avatar — which is a different and much larger job than "edit it in the edi
 before someone spends an afternoon on the obvious version, and worth noting that the file size was
 the only thing that gave it away: exit code 0, a file present, and the log line saying OK.
 
+## A rig can be wrong by a different amount in each limb
+
+The Rock was reported as "limbs stretched into metre-long spikes". The cause is measurable from
+the installed bundle alone: his skeleton spanned **4.47 m** against a **1.96 m** mesh, with bones
+running 1.7 m *below* the floor. Across all 65 installed characters nothing else exceeds 2.50, and
+that one is Alcina, who is canonically 2.9 m.
+
+**Scaling fixed half of it.** The hips were already right — 1.122 on a 1.960 mesh is 0.573, and the
+installed population sits at the same ratio — so scaling the rest skeleton about that point,
+anchored on feet-on-floor, gave a factor of 0.387 and a skeleton of 1.73 m with the head at 1.76
+(ratio 0.897 against a population norm of ~0.89).
+
+**And it could not fix the rest, because the rig is not uniformly wrong.** Measuring each arm bone
+against the centroid of the vertices it actually drives:
+
+| bone | bone mid x | mesh centroid x | gap |
+|---|---|---|---|
+| LeftShoulder | 0.149 | 0.228 | −0.08 |
+| LeftArm | 0.350 | 0.599 | −0.25 |
+| LeftForeArm | 0.611 | 0.869 | −0.26 |
+| LeftHand | 0.789 | 1.066 | −0.28 |
+
+The legs needed 0.387 and the arms about 0.557, so one factor cannot satisfy both: the scale that
+put his feet on the floor left his arms 26 cm short, flipping the error's sign rather than removing
+it. Note this is **not** the A-pose/T-pose mismatch `bone_fit.py` warns about — both mesh and
+skeleton have the arms horizontal at z≈1.5. The arms are simply the wrong length.
+
+`tools/character-pipeline/fit_joints.py` places each limb joint at the boundary between the flesh
+it separates — the midpoint of the weighted-vertex centroids of the two bones meeting there. That
+is expressible per joint, which a scale is not:
+
+| build | finger bones >5 cm from mesh | worst | all bones >5 cm |
+|---|---|---|---|
+| original | 30/30 | **135.3 cm** | 50/51 |
+| scaled only | 30/30 | 27.2 cm | 41/51 |
+| **joint-fitted** | **0/30** | **4.1 cm** | **4/51** |
+| Ariel, for reference | 0/36 | 3.0 cm | 29/151 |
+
+`bone_fit.py` documents "expect 0", and the fitted build is the first Rock to reach it.
+
+**One bug worth keeping.** Connected bones must be disconnected before their positions are
+written, or a child's head is dragged back to its parent's tail. But disconnecting also stops
+children following their parent — so the first fitted build moved the hands and left all thirty
+finger bones exactly where they were, and `FINGERFIT` came back **byte-identical at 27.2 cm**. A
+number that does not move at all is a stronger signal than a number that moves the wrong way: the
+fix now records every bone's original head and carries each untouched descendant by its nearest
+fitted ancestor's displacement.
+
+Verified end to end: geometry unchanged at 44,359 triangles across 21 meshes, upright, limbs
+symmetric, posed displacement down from **2.36 m to 0.93 m** (Ariel 0.79), and the podium render
+shows properly formed hands where there were spikes.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
