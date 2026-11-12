@@ -1288,6 +1288,11 @@ right.
 - `vrm_alpha_modes.py <vrm...>` — what alpha mode each material actually CARRIES. Run it before
   rebuilding for an alpha fault: a material that is `MASK` in the `.vrm` comes out a cutout no
   matter what the exporter can express, and the rebuild will report success doing it
+- `value_alpha_scan.py <source>` (via `blender --background --python`) — which materials state a
+  transparency as a VALUE with no map to carry it? Those are what the builder flattens to opaque
+  unless `VRM_VALUE_ALPHA=1`, and a dark one in front of an eye is a black disc. Run it on the
+  ARCHIVE, not the bundle: no alpha sweep can see a material with no base map. A hit is a
+  candidate, not a defect — read the base colour and what sits behind it
 - `collider_group_check.py <dir|vrm...>` — does every collider reach the group that guards the
   chains? The builder's log is not an answer: it said "10 in one group" for three characters
   whose exported group held six. Exits non-zero on an orphan, so it works in a pre-commit check

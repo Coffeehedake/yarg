@@ -3114,6 +3114,45 @@ flat on purpose, which this document already records. **The heuristic cannot set
 source can.** That is why the first move here was to render the archive rather than to reason
 about the bundle.
 
+### The other four extracted sources were checked, and none of them has it
+
+Alice's fault is a *class*, not a one-off, so the obvious next question is which of the other
+characters carries it. `tools/character-pipeline/value_alpha_scan.py` is that check: it
+reproduces every clause of the builder's `VRM_VALUE_ALPHA` condition except `not cut`, which
+cannot be read from a source file at all — the builder also finds opacity maps by filename and
+through `VRM_TEX`, and neither is visible in the material. So a hit is a **candidate**, not a
+defect.
+
+Run over the five sources that are extracted on disk, with Alice as the positive control:
+
+| Source | Candidates | Verdict |
+|---|---|---|
+| Alice Ivy | **2** of 22 — `EyeMoisture_Left/_Right`, HASHED, alpha 0.051, base `[0,0,0]` | the defect, now fixed |
+| Heels | 2 of 23 — `Std_Cornea_L/R`, HASHED, alpha 0.553, base **textured** | leave alone, and it is already documented why |
+| Sayuri | 1 of 13 — `Eye_Shadows`, HASHED, alpha 0.000, base `[0.8,0.8,0.8]` | `cut` by the map `VRM_TEX` pins over it; never reaches the branch |
+| Alcina Dimitrescu | **0** of 17 | states no value transparency at all |
+| Ariel | **0** of 26 | states no value transparency at all |
+
+The shipped side agrees, and it is the half that decides. Alice's pre-fix build carries the
+signature exactly — `OPAQUE`, `baseColorFactor [0, 0, 0, 1]`, **no base map**. Heels' corneas
+ship `OPAQUE` with `baseColorFactor [1, 1, 1, 1]` and a base map, so the flattening costs her a
+55% see-through and paints nothing: that is a different, milder thing, and honouring the value
+is the measured regression that made her iris vanish. Sayuri's `Eye_Shadows` ships `BLEND` and
+textured, which is correct already. Head renders of all four confirm it: no disc over any eye.
+
+Two cautions on reading the zeroes. **Ariel's 26 of 26 are opaque because her FBX wires no alpha
+maps at all** — every transparency she has is found by the builder from filenames, so the
+value-alpha branch has nothing to act on by construction, not by luck. And **Alcina ships three
+materials at `baseColorFactor [0, 0, 0, 1]` with no base map** (`Material.013`, `Material.007`,
+`Material.022` at 0.119): those are opaque *in the source too*, counted under `alpha>=0.99`.
+Black by design is not a flattened transparency, and the generic "dark untextured opaque"
+heuristic cannot tell the two apart — which is the same reason it returns four false positives
+across the set.
+
+**The other 25 installed characters are unchecked and cannot be checked.** This test reads the
+source archive; theirs are not on disk, and nothing in a `.yargchar` or a `.vrm` distinguishes
+"black on purpose" from "a 5% film flattened to 100%". Re-acquiring a model is the only way.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
