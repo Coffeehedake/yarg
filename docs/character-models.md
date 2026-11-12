@@ -2889,22 +2889,52 @@ back out: hips at 0.5725 of height, factor 0.3978.
 
 **And then the fit turned out not to be needed at all.** Three builds, measured and rendered:
 
-| build | shoulders | reach | upperarm | rendered |
-|---|---|---|---|---|
-| population median | 0.249 | 0.938 | 0.181 | — |
-| **scale only** | **0.276** | **0.931** | 0.160 | **correct** — deltoids, biceps, hands with fingers |
-| scale + corrected fit | 0.295 | 1.272 | 0.344 | arms smeared into thin tapered tubes, hands flattened |
-| installed (fit incl. shoulder) | 0.548 | 1.268 | 0.208 | gorilla arms |
+| build | shoulders | reach | upperarm | forearm | thigh | shin | rendered |
+|---|---|---|---|---|---|---|---|
+| population median | 0.249 | 0.938 | 0.181 | 0.174 | 0.292 | 0.286 | — |
+| **scale only** | **0.276** | **0.931** | 0.160 | 0.167 | 0.294 | 0.276 | **correct** — deltoids, biceps, hands with fingers |
+| scale + corrected fit | 0.295 | 1.272 | 0.344 | 0.145 | 0.315 | 0.224 | arms smeared into thin tapered tubes, hands flattened |
+| installed (fit incl. shoulder) | 0.548 | 1.268 | 0.208 | 0.152 | 0.320 | 0.227 | gorilla arms |
+
+(Ratios are scale-invariant, so the scale-only row is the same before and after `scale_rig.py`;
+what the scale changes is stature, 4.18 m of skeleton down to 1.663 m for a 1.96 m mesh, where
+the old build sat at 1.536.)
 
 The scale alone puts every segment on the population median and leaves the geometry intact. The
 fit, even with the shoulder excluded, moves rest bones out from under the skinned mesh and
 smears the arms — the same "limbs stretched into spikes" symptom the fit was written to cure.
 
-So the claim this whole apparatus rests on — *"the rig is not uniformly wrong; legs and arms are
-off by different factors, so one scale cannot satisfy both"* — **does not survive a rebuild from
-source**. It was measured on a skeleton that had already been scaled by hand to an unrecorded
-factor. One uniform scale about the hips satisfies both, and the evidence for the second stage
-was an artifact of the first stage not being reproducible.
+### That conclusion was wrong, and the podium render is what said so
+
+The paragraph that stood here claimed the second stage was unnecessary — *"one uniform scale
+about the hips satisfies both, and the evidence for the second stage was an artifact of the first
+stage not being reproducible"*. It was written from a **rest-pose render of the VRM**, where the
+scale-only build looks correct, and it is wrong.
+
+Exported and put on the real podium, the scale-only build's **hands are destroyed**: every finger
+stretches into a long curling strip hanging past his knees. That is the original "limbs stretched
+into spikes" fault, surviving in the hands, and it is exactly what `FINGERFIT` measures — 30 of 30
+finger bones more than 5 cm from their mesh, at 135.3 cm, before the fit ever ran.
+
+**Only the animated pose shows a skinning fault.** That sentence is already in this document, two
+sections above, about `YargCharHandRender.cs`. I rendered the rest pose, saw clean arms, and drew
+a conclusion the posed render reverses — the same mistake as verifying Gordon's lens on the VRM
+rather than on the bundle, made in the same day, after writing that one up.
+
+So the honest reading of the three builds is narrower than "the fit is unnecessary":
+
+- the **shoulder** step of the fit is harmful and is now removed — it doubled his span;
+- the **scale** step was missing from the scripts entirely and is now `scale_rig.py`;
+- the rest of the fit — elbow, wrist, knee, ankle, and the descendants it carries — **is load
+  bearing**, because the source rig's hands genuinely do not sit in the source mesh's hands.
+
+Which means the original claim this section doubted — that the rig is wrong by a different factor
+in different places — holds for the hands even though it does not hold for the shoulders. The
+defect was never "fitting is wrong"; it was "fitting the shoulder is wrong", and one bad joint in
+a four-joint chain discredited the whole method.
+
+**Nothing was installed.** The scale-only build fixes the silhouette and breaks the hands, which
+is not a trade worth making, and `The Rock.pregorilla.yargchar` holds the build that was live.
 
 ## Open questions
 

@@ -13,7 +13,15 @@
 # is the wrong size. So the hips give a point to scale about that does not
 # need to be guessed, and feet-on-floor gives the factor.
 #
-# WHY THIS MUST RUN BEFORE fit_joints.py, not instead of it: a uniform scale
+# RUN IT BEFORE fit_joints.py, NOT INSTEAD OF IT -- and that was tested the
+# wrong way round first. The scale-only build renders correctly at REST, which
+# is what a .vrm render shows, so it looked like the fit could be dropped
+# entirely. Put on the podium, where the character is POSED, its fingers
+# stretch into strips hanging past the knees. Only the animated pose shows a
+# skinning fault; a rest render cannot, and judging this from one reversed the
+# conclusion for an hour.
+#
+# WHY IT MUST RUN BEFORE fit_joints.py: a uniform scale
 # cannot express a rig that is wrong by a different factor in each limb, which
 # The Rock is. But fit_joints alone cannot do it either -- it only moves the
 # joints it fits, so an unfitted bone (the shoulder, deliberately, since
