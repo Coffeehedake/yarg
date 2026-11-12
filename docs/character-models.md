@@ -2773,6 +2773,15 @@ is destroyed** — that depends on where the material sits and whether anything 
 The measurement is how you find candidates; it is not a ranking of importance, and treating it
 as one would have installed the regression and skipped the best fix.
 
+**Measured after installing**, the remaining loss is roughly halved everywhere it was touched:
+Alice Ivy comes back completely clean, Heels' lash went 98.7% → 53.8%, Sayuri's went 71.5% →
+40.9% and 77.3% → 43.7%, Ariel's 73.4% → 31.3%.
+
+Two materials no cutoff can ever help are now named by the sweep rather than hidden among the
+cutouts: **Heels' `Std_Eye_Occlusion_L` has an alpha maximum of 0.000** — the texture carries no
+opacity data at all, so it draws nothing whatever the threshold is — and **Ariel's `Cornea` peaks
+at 0.051**, which is a pane and wants a blend. Both predate this work and both need a rebuild.
+
 Ariel's failure is the same thing from the other side. `EyeMoisture` is a transparent film over
 the eyeball — its alpha is 95.4% mid-range, exactly the signature that says "this wants a blend,
 not a cutout". Giving it a lower cutoff instead makes *more* of a thing draw that should not be
