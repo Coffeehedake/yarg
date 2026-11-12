@@ -3489,6 +3489,46 @@ written for is worth nothing, and this one finds them.
 So **Prix was the last one**, and the sweep is kept because the next character acquired will be
 checked by a tool rather than by somebody noticing.
 
+## The 45 UNUSED alpha candidates are 14, and the other 30 can be ruled out on their histograms
+
+`alpha_sweep_installed.py` flags 44 materials as `UNUSED` — an opaque material whose base texture
+carries an alpha channel — and warns, correctly, that *"an alpha channel in a game rip is as
+likely to be a specular mask as an opacity map; confirm with a render before changing anything"*.
+That warning has kept the list untouched and uncounted for weeks.
+
+It does not have to stay a list of 44 unknowns. **The sweep already prints the shape of each
+alpha channel**, and the shape is the discriminator:
+
+- **An opacity map is BIMODAL.** It is a stencil: pixels are in or out, so `clear + solid ≈ 1`
+  and `mid ≈ 0`. Hair cards, lace, a cut-out logo.
+- **A specular, gloss or ambient-occlusion map is CONTINUOUS.** Its whole job is mid-tones.
+
+And one more, which needs no judgement at all: if honouring the alpha would erase **most of the
+surface**, it was never an opacity map, because nobody ships a body that is 99.9% invisible.
+
+| | | |
+|---|---|---|
+| **11** | `clear ≥ 0.88` | honouring would erase almost everything. `onefreeman` at **0.999** would delete Gordon Freeman. Ruled out |
+| **15** | `mid ≥ 0.10` | continuous, so specular/gloss. The Xenomorph's headcap is **100% mid-tones**; Shadow's `body_d` 65%. Ruled out |
+| **14** | bimodal, `0.05 < clear < 0.95`, `mid < 0.10` | the only shape a real opacity map takes. **These are the list** |
+
+### The 14, and which of them can be acted on at all
+
+Yui Suzukaze (4), Gadget Hackwrench (4 — `Jumpsuit` and `Body` ×3), Peach (2, the same texture
+duplicated), Shrek (`t_Shrek_alpha_c`, whose name says it), Scott Hall (`Hall_hair_color`), Jinx,
+and Steve.
+
+**Only three of those characters still have a `.vrm`** — Gadget Hackwrench, Jinx and Peach. For
+Yui Suzukaze, Shrek, Scott Hall and Steve there is no `.vrm` and no source, so even a confirmed
+finding has no route to a fix: `set_material_alpha.py` and every other repair here needs a `.vrm`
+to round-trip.
+
+**Not acted on, deliberately.** Honouring one of these means switching a material to MASK or
+BLEND so the map's alpha is used, and on Gadget's `Body` that would make 32% of her disappear.
+Whether the result is better is a judgement about how the character should look, not a defect
+with a right answer — which is exactly what the sweep's own warning says. The triage is the
+deliverable: 44 unknowns reduced to 14, with reasons, and three of them reachable.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
