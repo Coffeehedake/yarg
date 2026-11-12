@@ -263,13 +263,46 @@ shape keys:
 | Heels, Alice Ivy | the Character Creator `V_*` set | 5/5 |
 | Alastor | `a`, `e`, `o`, `U` -- no `i` | 5/5 (ih mirrors ee) |
 | Gordon Freeman | FACS action units: `AU26` jaw, `AU12` lip corners, `AU18` pucker | 5/5 |
-| Pomni | `A`, `ClosedTeeth` -- named for an artist | 5/5 |
+| Pomni | `A`, `ClosedTeeth` -- named for an artist | **1/5, not 5/5** — corrected 2026-11-12 |
 | Doom Slayer | `JawDrop` (`CheekPuff`/`CheekSuck` deliberately NOT used -- puffed cheeks are not a wide mouth) | 5/5, all from `JawDrop` at five weights |
 | Prix | `M_kiss` only, so `ee`/`ih` alone | **skipped on purpose** -- her README row warns her shape keys must be dropped or she builds at 0.42 m |
 | Jessica Rabbit | a DIFFERENT source blend has keys; the GLB she was built from has none | not attempted |
 
 The other 35 have **no mouth shape keys at all**, Batman among them. No pipeline change can give
 them one.
+
+### What is actually INSTALLED, measured 2026-11-12
+
+That table is about sources. `viseme_audit.py` reads the bundles the game loads, which is the only
+version that can be wrong, and the two disagree:
+
+> **65 installed: 11 with all five visemes, 1 partial, 53 with none; 10 can blink.**
+
+| | |
+|---|---|
+| **11 at 5/5** | Alastor, Alice Ivy, Chibi Rem, Doom Slayer, Gordon Freeman, Heels — and the five downloaded bundles (Adachi Rei, Harq Alkahana, Inforder Trogen, both Hatsune Mikus), which carry 70-odd expressions each including a full `*_hi`/`*_lo` phoneme set |
+| **1 partial** | **Pomni, at 1/5** — only `aa`. The table above said 5/5 and that was wrong: her `ClosedTeeth` matches none of the anchored patterns and her recipe row has no `VRM_VISEME` to pin it. Every build of her on this machine is 1/5. She is mappable by hand the way Gordon is, and that is not done |
+| **53 with none** | 35 have no mouth shape keys and never can; the rest are characters whose source has them but whose installed build predates the viseme work |
+| **Alastor and Doom Slayer** | 5/5 bound but `blink=NO` — they have a mouth and no eyelids |
+
+**Run this audit after rebuilding any character.** It is how a regression introduced on 2026-11-12
+was caught: Gordon Freeman was rebuilt for his glasses, and the rebuild silently shipped **zero**
+morph targets where his installed bundle had twelve. The cause is the next section.
+
+### A hand-written viseme map that is not in the recipe row will be lost on the next rebuild
+
+Gordon Freeman's shape keys are FACS action units — `AU26ZR+AU26ZL` (jaw), `AU12R+AU12L` (lip
+corners), `AU18R+AU18L.001` (pucker). **None of them matches any of the anchored viseme patterns**,
+and the patterns are the only automatic path, so his 5/5 came from an explicit `VRM_VISEME=`
+mapping written by hand — which his recipe row did not record. Rebuilding him from the documented
+recipe therefore dropped all 32 of his shape keys and bound nothing, and the build log said so in
+passing while every count a census checks stayed identical: 7,169 triangles, 4 meshes, 7 materials,
+6 images.
+
+The map was recovered from the bundle that still had it rather than guessed, by reading its
+`morphTargetBinds` back — node, target index and weight — and it is now in his row. The general
+rule: **an env var that a character cannot be rebuilt without belongs in the recipe table the
+moment it is used**, and `viseme_audit.py` is the check that catches it when it is not.
 
 ### viseme_fit.py -- proposing a mapping for a model that does not follow a convention
 
@@ -1052,6 +1085,11 @@ right.
   reads `Vrm10Instance.SpringBone.Springs`, `VRM10SpringBoneJoint` and `VRM10SpringBoneCollider`
   out of the bundle, which is the only way to cover the 35 characters with no `.vrm` left here —
   and the two agree to the millimetre on all nine of Peach's chains
+- `viseme_audit.py <yargchar|dir>` — which INSTALLED characters can actually lipsync, read out of
+  the bundle. Every VRM declares all 18 preset expressions whether or not anything is wired to
+  them, so a file always *looks* capable; this reports the ones with real `MorphTargetBindings`,
+  visemes and blink separately. Run it after rebuilding any character — it is what caught a
+  rebuild shipping zero morph targets while every other count stayed identical
 - `alpha_sweep.py <vrm|dir>` — materials shipping `alphaMode: OPAQUE` over a base map that carries
   real transparency, in **two tiers**: `mask` passes the same test `build_vrm.py` uses to decide a
   cutout, and `soft` is a feathered alpha that wants BLEND, or a cutoff chosen for it, rather than
@@ -1305,7 +1343,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Clone troopers | mixamo | 1.83 | |
 | Jinx | ue4 | 1.68 | braids and bangs already in the rig |
 | Shrek | mayajnt | 2.10 | |
-| Gordon Freeman | valvebiped | 1.80 | **As installed 2026-11-12:** build from `m2/source/Valve_Gordon_Freeman.fbx`, textures `m2/textures`, with `VRM_BLEND_MATERIALS="lens"` — his glasses lenses shipped opaque and drew as two solid white panes over his eyes. 7,169 triangles, 4 meshes, 7 materials. Do NOT add `eye-iris-green.tga` or `onefreeman` to that list: both alphas are specular masks, and honouring them hides his irises and erases his suit |
+| Gordon Freeman | valvebiped | 1.80 | **As installed 2026-11-12:** build from `m2/source/Valve_Gordon_Freeman.fbx`, textures `m2/textures`, with BOTH of these or he loses something — `VRM_BLEND_MATERIALS="lens"` (his glasses lenses shipped opaque and drew as two solid white panes over his eyes) and `VRM_VISEME="aa=gordon_freeman/AU26ZR+AU26ZL,ee=gordon_freeman/AU12R+AU12L,ih=gordon_freeman/AU12R+AU12L@0.7,oh=gordon_freeman/AU18R+AU18L.001,ou=gordon_freeman/AU18R+AU18L.001@0.75"`. **His shape keys are FACS action units and match none of the automatic patterns**, so without that map a rebuild drops all 32 of them and binds nothing — which is exactly what happened on the first rebuild, silently, with every census count unchanged. 7,169 triangles, 4 meshes, 7 materials, 12 morph targets, 5/5 bound. Do NOT add `eye-iris-green.tga` or `onefreeman` to the blend list: both alphas are specular masks, and honouring them hides his irises and erases his suit |
 | Joker / Miku | maxbiped | 1.85 / 1.58 | |
 | Tenna | rigify_def | 1.80 | exclude `^(Floor\|Lights\|Sign)` |
 | Sophia | rp | 1.70 | |
