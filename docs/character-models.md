@@ -3308,6 +3308,88 @@ the floor (Batman −8.9 mm, Power Girl −11.5 mm, Link −7.0 mm, Gwen Stacy �
 Xenomorph's by 588 mm, which is his crouch. None of them moves a total enough to flag, and all
 of them still span their target exactly.
 
+## Nobody else can be lipsynced, and that is a measurement now rather than a subtraction
+
+The target was every character lipsynced. **It cannot be reached, and the limit is in the models.**
+
+`viseme_audit.py` over the installed set: **13 of 65 bind all five visemes, 52 bind none.** This
+document's account of the 52 was that "35 have no mouth shape keys and never can; the rest are
+characters whose source has them but whose installed build predates the viseme work" — 18
+characters, arrived at by subtraction and never checked. It is wrong.
+
+`viseme_fit.py` over all 30 surviving `.vrm` files splits them cleanly, with nothing in between:
+
+| | |
+|---|---|
+| **22** | **zero shape keys.** Not "no mouth shape" — no shape keys at all. Nothing in the pipeline can give a model a mouth it has not got |
+| **8** | mappable: Alastor, Alice Ivy, Chibi Rem, Doom Slayer, Gordon Freeman, Heels, Pomni, Sonic |
+
+**Seven of those eight are already installed at 5/5.** The eighth is Sonic, and he is the whole
+remainder of the problem — see below. The four extracted source archives were measured the same
+way and agree: Sayuri, Alcina, Ariel and Jessica Rabbit's GLB carry **zero shape keys** each,
+and all four were inside the "18 whose source has them".
+
+**The control that makes the 22 readable.** A reading of zero from an importer is worth nothing
+without proof the importer can read a non-zero. The same code path, the same Blender, the same
+VRM importer reports 16 shape keys for Chibi Rem, 13 for Pomni, 10 for Heels and 5 for Sonic. So
+the zeroes are the models.
+
+### Sonic is the one gap, and closing it would mean swapping the character
+
+His `.vrm` carries `A`, `E`, `I`, `O`, `U` on `Sonic_Event.001` — a complete vowel set — and it
+already **binds all five visemes**. His installed bundle binds none. That is exactly the "build
+predates the viseme work" case, and exporting that `.vrm` would fix it.
+
+Except it is not his bundle's model. `identify_build.py` puts the two at **4.3% of names shared,
+6 bones compared**, with the rotations differing on `Head`, `Hips`, `Neck` and `Spine`. They are
+unrelated rigs: the installed Sonic carries Mixamo's `HeadTop_End` and is the HD one, and this
+`.vrm` is the other model in the download set. Installing it would not give Sonic a mouth, it
+would replace Sonic. **Left alone — that is a decision about which character to ship, not a
+defect to repair.**
+
+### `add_visemes.py`, which is the tool this needed and still deserves to exist
+
+A character whose `.vrm` holds mouth shapes but whose bundle predates the binding work needs only
+the bindings, and most such characters have no source file left — the same situation that made
+`add_colliders.py` necessary. `add_visemes.py` is the same round trip for expressions: it
+consumes the `VRM_VISEME=` line `viseme_fit.py` emits, so **the measuring is not duplicated** and
+the mapping is visible in between where a human can disagree with it.
+
+It refuses to write a file when the mapping names a mesh or key the file has not got — verified
+by failing, with `aa=NoSuchMesh/Nope`:
+
+    ABORT: VRM_VISEME names mesh 'NoSuchMesh', which this file has not got (it has: Sonic_Event.001)
+
+That is the check that matters, because the add-on writes a binding to a name that does not exist
+without complaining, and the result is a file that looks lipsync-capable and moves nothing —
+which is the entire class of bug this area keeps producing.
+
+## Gadget Hackwrench's installed build IS her `.vrm`, and she had two chains guarding nothing
+
+Her row said her installed build "is not any `.vrm` here (57 rotation mismatches, a real
+difference)". The number was right and the reading was wrong, in the way this project has now
+been caught by three times: **0 length mismatches and 57 rotation mismatches is the
+`add_colliders.py` round-trip signature**, not a different build. Sayuri's was 25 bones, Jessica
+Rabbit's 31, hers 57.
+
+Round-tripping her own `.vrm` through `add_colliders.py` with `VRM_RECOLLIDE=1` reports
+**MATCH — 177 bones compared, 0 length and 0 rotation mismatches** against the installed bundle,
+and takes her from **2 colliders to 10**. She had 2 of her 4 hair chains unguarded; she now has
+none, and her group reads `all grouped and used`. Installed over a hash-verified backup.
+
+### The export collided with a file that is not ours
+
+The first export died on `IOException: Cannot create a file when that file already exists`. The
+file is `Assets/Gadget Hackwrench.yargchar_metal.bytes`, one of the untracked `_metal` artefacts
+this repo carries that **were not produced here and must not be committed or deleted**. The fix
+is to park them and put them back, by hash both ways:
+
+    parked   Gadget Hackwrench.yargchar_metal.bytes        6F00593DCE1C VERIFIED
+    restored Gadget Hackwrench.yargchar_metal.bytes        6F00593DCE1C VERIFIED
+
+The export writes its own `_metal_*GadgetHackwrench_*.mat` files as a side effect. They are
+untracked, they are the same class, and they stay out of every commit.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
@@ -3376,5 +3458,4 @@ Not answered by the code, and worth measuring before authoring anything expensiv
   share 15 chains between them. Also worth a look before anyone acts: 30 of his 36 are named
   `TopsUpperArm` while hugging his legs, which is either a naming quirk in the original or a sign
   that his chains are not what their names say.
-- **Gadget Hackwrench's installed build is not any `.vrm` here** (57 rotation mismatches, a real
-  re-pose), so her two unguarded chains and her goggles cannot be touched until that is resolved.
+- ~~**Gadget Hackwrench's installed build is not any `.vrm` here**~~ **Answered 2026-11-12: it IS her `.vrm`.** 0 length mismatches and 57 rotation mismatches is the `add_colliders.py` round-trip signature, not a different build — Sayuri's was 25 bones and Jessica Rabbit's 31. Round-tripped, it reports MATCH, and the re-fit took her from 2 colliders to 10 and her 2 unguarded chains to 0. Installed.

@@ -282,6 +282,19 @@ shape keys:
 The other 35 have **no mouth shape keys at all**, Batman among them. No pipeline change can give
 them one.
 
+**Measured 2026-11-12, and the "18 whose source has them" was a subtraction that does not survive
+contact with the files.** `viseme_fit.py` over all 30 surviving `.vrm` files splits them with
+nothing in between: **22 carry zero shape keys** and 8 are mappable — and seven of those eight
+are the characters already installed at 5/5. The four extracted source archives agree: Sayuri,
+Alcina, Ariel and Jessica Rabbit's GLB have zero shape keys each, and all four were inside
+that 18. The control that makes the zeroes readable is that the same importer reports 16 keys
+for Chibi Rem, 13 for Pomni, 10 for Heels and 5 for Sonic.
+
+The eighth is **Sonic**, whose `.vrm` binds all five visemes while his bundle binds none — but
+`identify_build.py` puts that `.vrm` at **4.3% of names** against his installed bundle, 6 bones
+compared. It is the other Sonic model, not his. Installing it would replace the character
+rather than give him a mouth, so it is left alone.
+
 ### What is actually INSTALLED, measured 2026-11-12
 
 That table is about sources. `viseme_audit.py` reads the bundles the game loads, which is the only
@@ -1296,6 +1309,11 @@ right.
 - `collider_group_check.py <dir|vrm...>` — does every collider reach the group that guards the
   chains? The builder's log is not an answer: it said "10 in one group" for three characters
   whose exported group held six. Exits non-zero on an orphan, so it works in a pre-commit check
+- `add_visemes.py <in.vrm> <out.vrm>` (via `blender --background --python`, with
+  `VRM_VISEME=` in the environment) — retro-fit viseme bindings onto a built `.vrm` whose
+  source is gone. Consumes the line `viseme_fit.py` emits, so the measuring is not
+  duplicated. REFUSES to write a file when the mapping names a mesh or key the file has not
+  got, which the VRM add-on otherwise writes silently and which moves nothing in game
 - `collider_group_check_installed.py <dir|yargchar...>` — the same question asked of the
   **installed bundle**, which is the only form 35 of the 65 characters still exist in. Separates
   an orphaned collider from a dangling group reference and from a group no chain uses, and knows
