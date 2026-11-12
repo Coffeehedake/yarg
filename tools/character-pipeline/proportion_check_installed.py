@@ -34,6 +34,22 @@ and the same on the right, averaged. Human reference, for orientation only:
 upper arm about 0.186 of height, forearm 0.146, thigh 0.245, shin 0.246,
 shoulder span 0.259, and a reach roughly equal to height.
 
+STATURE IS A BONE MEASUREMENT, AND A LOW HEAD BONE INFLATES EVERY RATIO.
+
+Stature is foot bone to head bone, which is shorter than the character: it
+excludes the skull above the head bone and the foot below the ankle. On most
+of this set that comes to about 0.87-0.89 of mesh height. The Rock's old build
+sat at 1.536 / 1.96 = 0.78, so every ratio of his was inflated by about 12%
+before anything else was wrong -- which is part of why his `reach` read 1.268
+against a median of 0.938.
+
+So read a single high ratio with that in mind, and prefer the ones where the
+two sides of the comparison share a denominator. His SHOULDERS were the real
+finding because 0.548 is more than twice the median and no denominator error
+of 12% explains that. His `reach` was not: a rebuilt, correct build also reads
+1.272, because this mesh's hands genuinely sit far out and fitting the hand
+bones to them is what makes the hands WORK.
+
 THE POPULATION IS THE STANDARD, NOT THE HUMAN FIGURE. Half this set is not
 human -- Yoda, Shrek, a Xenomorph, a toilet -- so a deviation from anatomy is
 not a defect. What IS a defect is a character that disagrees with the rest of
