@@ -94,15 +94,34 @@ def report(path):
         if not res:
             continue
         clear, solid = res
+        # TWO tiers, and the second one is why this tool was rewritten.
+        #
+        # The first version reported only the cutout-shaped tier -- the rule
+        # `build_vrm` uses to DECIDE a mask. On Sayuri it flagged exactly one
+        # material, `Lace`, and that was the least important of her five: her
+        # EYELASHES were the serious fault, two opaque black slabs covering
+        # both eyes, and the gate rejected them because a lash alpha is
+        # FEATHERED (46.7% clear, 0.3% solid) rather than two-valued. So was
+        # her hair, and so was the mole decal that drew as a pink rectangle on
+        # her cheek.
+        #
+        # "Is this a clean mask?" and "does this material ignore real
+        # transparency?" are different questions, and only the second one is
+        # the defect. A feathered alpha wants BLEND, or a cutout with a cutoff
+        # chosen for it -- not nothing at all.
         if 0.05 <= clear <= 0.90 and (clear + solid) >= 0.80:
-            hits.append((m.get("name", "?"), iname, clear, solid))
+            hits.append(("mask", m.get("name", "?"), iname, clear, solid))
+        elif clear + (1.0 - solid) > 0.06:
+            hits.append(("soft", m.get("name", "?"), iname, clear, solid))
 
     if hits:
-        print("%-24s %d material(s) OPAQUE over a cutout-shaped alpha"
-              % (name[:24], len(hits)))
-        for mn, iname, clear, solid in hits:
-            print("    %-24s %-28s %.1f%% clear, %.1f%% solid"
-                  % (mn[:24], iname[:28], 100 * clear, 100 * solid))
+        nm = sum(1 for h in hits if h[0] == "mask")
+        print("%-24s %d material(s) OPAQUE over real transparency "
+              "(%d cutout-shaped, %d feathered)"
+              % (name[:24], len(hits), nm, len(hits) - nm))
+        for kind, mn, iname, clear, solid in hits:
+            print("    %-5s %-24s %-28s %5.1f%% clear, %5.1f%% solid"
+                  % (kind, mn[:24], iname[:28], 100 * clear, 100 * solid))
     else:
         print("%-24s clean" % name[:24])
     return hits

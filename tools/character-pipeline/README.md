@@ -485,24 +485,76 @@ plate. Hiding a mesh tells you what was *behind* it; rendering it alone tells yo
 and only the second answered the question — her face is six overlapping expression meshes from a
 Smash rip and reasoning about the stack produced two wrong answers before the renders settled it.
 
-### `alpha_sweep.py` found six more, and four of them need a judgement call
+### Sayuri: the sweep found her, then under-reported her by a factor of five
 
-The same signature across every `.vrm` still on this machine — a material shipping OPAQUE over an
-alpha that is shaped like a cutout mask. **12 materials across 6 characters**, and the sweep
-deliberately only prints:
+**FIXED and installed 2026-11-11.** Nobody had reported Sayuri. `alpha_sweep.py` named her for one
+material, `Lace`, and the lace *was* solid — but a render of the installed build showed something
+far worse that the sweep had said nothing about: **both of her eyes were buried under solid black
+slabs**, and a pink rectangle sat on her cheek.
 
-| character | material | alpha | reading |
+Her source has **eight dedicated `*_Opacity.png` maps** — hair, lace, cloth, eyelashes, moles,
+bikini, clock, scrunchie — and her build predates the alpha fix, so every one of them was dropped.
+Thirteen materials, all `OPAQUE`. The eyelash and eye-shadow quads therefore drew as opaque black
+rectangles over her eyes; the Moles decal, which is two soft dots on a transparent map, drew as a
+patch of pink.
+
+Rebuilt with the recovered command plus two additions:
+
+```
+build_vrm.py -- "Sayuri dans.fbx" <textures> 1.70 cc_base Sayuri <out.vrm> 1024 '' '' '^Hair$'
+VRM_BREASTRIG=1 VRM_TEX="Eye_Shadows=Eyelashes_Opacity.png:alpha"
+```
+
+`VRM_BREASTRIG=1` because the recovered ARGV is the ORIGINAL build and the installed one has her
+chest rig — without it the rebuild came back with 4 spring chains against her 6, which is the sort
+of silent loss a triangle count cannot see. The `VRM_TEX` pin is because `Eye_Shadows` shares
+`Eyelashes_Diffuse` with `Eyelashes` but the opacity picker gave the single `Eyelashes_Opacity.png`
+to the material whose name matched, leaving the other one opaque — half a fix, and the half that
+still covers an eye.
+
+Nine opacity maps baked, 91,632 triangles unchanged, 0 unguarded chains, no undriven weight, and
+the podium render has eyes, lashes, hair that reads as strands and a sheer lace skirt. Her chest
+springs come out at 1.00/0.90 where the installed build had 0.85/0.60 — that is the current code's
+scale-aware value, not a loss.
+
+**The lesson is about the instrument.** The sweep's single hit was the least important of her five
+faults. Its gate was `build_vrm`'s rule for deciding a *mask* — mostly two-valued, neither almost
+all clear nor almost all solid — and an eyelash alpha is **feathered** (46.7% clear, 0.3% solid),
+so it failed the test. So did her hair, and so did the mole decal at 95.0% clear. "Is this a clean
+mask?" and "does this material ignore real transparency?" are different questions, and only the
+second one is the defect. `alpha_sweep.py` now reports both tiers, which takes it from 12 materials
+across 6 characters to **24 across 10**. Verified both ways on her: the pre-fix build flags all
+seven of her materials, the rebuild comes back clean.
+
+Ignore `[VRM Add-on:ERROR] Unexpected alpha clip input node type` on this character — fifteen of
+them, all emitted during the FBX import before the builder touches a material, from alpha-clip
+inputs the Character Creator export left wired to nothing. Peach and Heels produce none.
+
+### `alpha_sweep.py`'s other hits, and which of them to believe
+
+With both tiers, **24 materials across 10 characters**. Sayuri is done; the rest, with what the
+numbers are worth — and none of these has been rendered yet, so each row is a candidate and not a
+finding:
+
+| character | material ← map | alpha | reading |
 |---|---|---|---|
-| Sayuri | `Lace` ← `Lace_Diffuse` | 26.4% clear | **almost certainly real.** The material is named lace, the texture is named lace, and lace that ships solid is a slab |
-| Alcina Dimitrescu | `Material.006` ← `CILIOS` | 87.1% clear | **almost certainly real.** `CILIOS` is Portuguese for eyelashes |
-| Alcina Dimitrescu | `Material.005` ← `CABELOO_preto_1` | 88.7% clear | hair cards, mostly-empty atlas — plausible, but close to the 90% cap where a mask erases the mesh |
-| Doom Slayer | `doomslayer_hair` | 88.9% clear, **0.0% solid** | a mask with no fully-opaque pixel is a gradient, not a cutout. A 0.5 cutoff could erase nearly all of it |
-| Gadget Hackwrench | `Body`, on three materials | 31.5% clear | the body atlas. Masking a body map punches holes in a body |
-| Jinx | `12_meshes_Merge_Diffuse` | 24.4% clear | a merged diffuse; the clear region is likely unused atlas space, not intended holes |
+| Alcina | `Material.006` ← `CILIOS` | 87.1% clear | **likely real.** `CILIOS` is Portuguese for eyelashes, and Sayuri's lashes were the worst fault on her |
+| Alcina | `Material.005` ← `CABELOO_preto_1` | 88.7% clear | hair cards — plausible, but close to the 90% cap where a mask erases the mesh |
+| The Rock | `Material #30` ← `eye_ov` | 1.2% clear, 84.8% solid | an eye overlay. `build_vrm`'s own comments record a cornea that "shipped alphaMode OPAQUE and became a solid grey disc over the eye" |
+| Gordon Freeman | `eye_r`, `eye_l` ← `eye-iris-green.tga`, `lens` | 7.5% / 0.0% clear | same shape: eyes and a lens |
+| Killer Clown | `eyes` ← `eyes_base_color` | 95.3% clear | over the cap; a mask would erase them |
+| Gordon Freeman | `HEV`, `HEV_Mesh` ← `onefreeman` | **99.9% clear** | do not touch. An alpha that is essentially all transparent erases the mesh |
+| Yoda | two materials | 0.0% and 65.9% clear | unexamined |
+| Peach | `_`, `_.017` ← `1_model0.png` | 4.4% clear, 64.1% solid | her hair, a vertical gradient. Deliberately left opaque in the shipped build |
+| Peach | `_6`, `_6.002` ← `0_model46.png` | 67.3% clear | the crown. **Tried and rejected** — its alpha is an outline and masking it carved the jewel out |
+| Gadget | `Body` on three materials, `Jumpsuit` | 31.5% / 52.1% clear | a body atlas. Masking a body map punches holes in a body |
+| Jinx | `12_meshes_Merge_Diffuse` | 24.4% clear | a merged diffuse; the clear region is likely unused atlas space |
+| Doom Slayer | `doomslayer_hair` ×2 | 88.9% clear, **0.0% solid** | no fully-opaque pixel at all |
+| **Prix** | `Hair`, `lambert8` ← `CN_F_HAIR_110_hair` | 58.6% clear | **a trap this project has already sprung.** That is a DIFFERENT hair model's atlas, reached by the loose global-pool fallback; its alpha "cut away the wrong regions and left her bald". The fault is the texture's provenance, not its channel |
 
-Pomni is why this prints instead of acting: her eyes carry a two-valued alpha that is not a cutout
-at all, and inferring one made them see-through in game while every render and count said she was
-fine.
+Pomni is the other reason this prints instead of acting: her eyes carry a two-valued alpha that is
+not a cutout at all, and inferring one made them see-through in game while every render and count
+said she was fine.
 
 ### One cause under six of the reports: a bone nothing drives
 
@@ -805,10 +857,12 @@ right.
   reads `Vrm10Instance.SpringBone.Springs`, `VRM10SpringBoneJoint` and `VRM10SpringBoneCollider`
   out of the bundle, which is the only way to cover the 35 characters with no `.vrm` left here —
   and the two agree to the millimetre on all nine of Peach's chains
-- `alpha_sweep.py <vrm|dir>` — materials shipping `alphaMode: OPAQUE` over a base map whose alpha
-  is a cutout-shaped mask, using the same thresholds `build_vrm.py` uses to decide one. It prints
-  candidates and fixes nothing on purpose: an alpha that looks like a mask is not always meant as
-  one, and the list below says which of its hits are real
+- `alpha_sweep.py <vrm|dir>` — materials shipping `alphaMode: OPAQUE` over a base map that carries
+  real transparency, in **two tiers**: `mask` passes the same test `build_vrm.py` uses to decide a
+  cutout, and `soft` is a feathered alpha that wants BLEND, or a cutoff chosen for it, rather than
+  nothing at all. The second tier exists because the first version reported only `mask` and
+  therefore missed Sayuri's eyelashes — see below. It prints candidates and fixes nothing on
+  purpose: an alpha that looks like a mask is not always meant as one
 - `alpha_check.py` / `mat_check.py` / `spring_scan.py` / `uv_test.py` / `tex_stats.py` — material,
   alpha, spring and texture inspection straight out of the exported file
 
@@ -1039,7 +1093,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 |---|---|---|---|
 | Prix | mixamo | 1.70 | shape keys must be dropped, else she builds at 0.42 m |
 | Pomni | pomni | 1.70 | exclude `^Circle`; `VRM_VISEME_GAIN=3.0` (4.4 turns her upper lip inside out); `VRM_BLINK_BAKE="EyelidSup.L=1,0.55,0,0;EyelidInf.L=1,-0.5,0,0;EyelidSup.R=1,0.5,0,0;EyelidInf.R=1,-0.5,0,0"` and `VRM_BLINK_LASH="^Lashes"` (lash ticks lie on the closed seam, 4 mm in front of the lid, keeping 40% of their height) -- her blink is four eyelid BONES (peak at frame 30 of `Animation`), not a shape key; her `Lashes/Closed` key only moves two lash ticks and leaves the eyes open. The bake applies Solidify+Subsurf to the lid meshes, writes the closed pose as a `Blink` key and binds it. Rendered at weight 1.0: dark lids with a slit, matching her Sketchfab blink. Her iris `Big`/`Small` keys ride on YARG's own facial events: `VRM_EXPR="Wide_eyed=Eye.L/Big;Squint=Eye.L/Small"` makes them custom expressions named for lipsync event types, which `VRMCharacter.TryGetExpressionKey(string)` sets by name -- `Big` fills the eye with iris, `Small` shrinks it to a pinpoint (rendered, both eyes). The chart generator emits `Squint` but not `Wide_eyed` |
-| Sayuri / Aiko | cc_base / mixamo | 1.70 | hairrig `^Hair$` — no hair bones of their own |
+| Sayuri / Aiko | cc_base / mixamo | 1.70 | hairrig `^Hair$` — no hair bones of their own. **Sayuri as installed 2026-11-11:** add `VRM_BREASTRIG=1` (the recovered ARGV is the original build and omits it — without it the rebuild comes back with 4 spring chains against her 6) and `VRM_TEX="Eye_Shadows=Eyelashes_Opacity.png:alpha"` (she has one `Eyelashes_Opacity.png` and two materials that need it; the picker gives it to the one whose name matches). Her model is `source/Sayuri dans.fbx`, its texture paths point at `C:\Temp\CharacterCreator4Temp\` on someone else's machine and the builder relocates all 8 of them. 91,632 triangles |
 | Aiko | mixamo | 1.70 | exclude `^Girl2\.[0-9]` — one girl, 15 Mixamo clips |
 | Batman | multiversus | 1.88 | run `prep_batman.py` first: two half-characters on two armatures |
 | Chibi Rem | rigify_def | 1.55 | exclude `'^(?!GME_Rem$).*'` |
