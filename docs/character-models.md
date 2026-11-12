@@ -3390,6 +3390,75 @@ is to park them and put them back, by hash both ways:
 The export writes its own `_metal_*GadgetHackwrench_*.mat` files as a side effect. They are
 untracked, they are the same class, and they stay out of every commit.
 
+## Prix's eyes were a flat lens parked in front of them, which is the third time
+
+Reported only as "Prix's eye textures". A render of her own `.vrm` shows the symptom clearly:
+**blank, featureless eyes** — no iris, no pupil, a pale shell where the eye should be.
+
+### What it was not
+
+**Not a missing texture.** Her file carries `eyes_lambert2SG_BaseColor`, a 1024² atlas with a
+proper blue iris and veined sclera in it, and `eyes1` — the material on `L_eye`/`R_eye` — is
+wired to it.
+
+**Not the iris material's texture either, which is wrong but is not the fault.**
+`aiStandardSurface4`, on `L_iris`/`R_iris`, is textured with `body 3_initialShadingGroup_BaseColor`
+— her **skin** atlas, reached by the same loose filename fallback that gave her hair a different
+model's map. Repointing it at the eye atlas and re-rendering changed **nothing**: the iris mesh's
+UVs span u 0.502–0.978, which is the flat half of that atlas. So the texture is wrong and fixing
+it buys nothing, which is worth recording because it is the obvious move and it is a dead end.
+
+### What it was
+
+**`L_iris`/`R_iris` are a lens shell over the eyeball, and the shell ships OPAQUE.** Hiding those
+two meshes and re-rendering gives her perfect blue eyes with pupils. Her eyes were never damaged;
+they were covered — and that is now the **third** occurrence of one fault:
+
+| | the shell | how it was fixed |
+|---|---|---|
+| Alice Ivy | `EyeMoisture_Left/_Right`, black at the source's own alpha 0.051 | `VRM_VALUE_ALPHA=1` at build time, honouring the authored value |
+| Ariel | `Cornea`, alpha max 0.051 under a 0.50 cutoff | left as it is — deliberate, recorded |
+| **Prix** | `aiStandardSurface4` on `L_iris`/`R_iris`, opaque, wearing the skin atlas | `set_material_alpha.py`, below |
+
+### She has no source, so the fix is on the built file
+
+Prix exists on this machine only as a built `.vrm`, so there is no archive whose authored alpha
+could be honoured and no rebuild available. `set_material_alpha.py` is the same round trip
+`add_colliders.py` and `add_visemes.py` use, applied to one material's alpha.
+
+**0.08 is a choice, not a measurement**, and it was settled by rendering three ways — as shipped,
+at 0.08, and with the lens hidden entirely as the control. At 0.08 she is indistinguishable from
+the control while the lens is kept for its highlight.
+
+The round trip changed nothing else: triangles 105,480, 10 meshes, 9 materials, 10 images, 5
+springs, 10 colliders, 138 nodes — **identical before and after** — and `identify_build.py`
+against her installed bundle reports 0 length mismatches and 2 rotation mismatches, both on
+collider helper NODES rather than deform bones. Installed over a hash-verified backup; she now
+reports `all grouped and used` and 0 unguarded chains.
+
+**Her hair is still not touched**, and the reason is unchanged: the only hair map in her folder is
+a different model's atlas reached by the loose fallback, so honouring its alpha leaves her bald.
+The two `UNUSED` rows that remain on her are that.
+
+## The four NOALPHA materials are all benign, and the sources say so
+
+`alpha_sweep_installed.py` flags four materials as `NOALPHA` — a cutout whose base map has no
+alpha variation, so the cutout clips nothing "and may be hiding a lost opacity map". The second
+half is the part worth checking, and it checks out clean:
+
+| | | |
+|---|---|---|
+| Sayuri | `Clock_Diffuse_OPA`, `Scrunchie_Diffuse_OPA` | the archive's `Clock_Opacity.png` and `Scrunchie_Opacity.png` measure **254..255** — the artist shipped blank opacity maps |
+| Heels | `High_Heels_Diffuse`, `Underwear_Bottoms_Diffuse` | her archive merges the names into one file, `High_Heels_Diffuse-High_Heels_Opacity.png`, and that file is **RGB with no alpha channel at all** — the opacity never existed in it |
+
+The control is `Eyelashes_Opacity.png` from the same Sayuri folder, which measures 0..255 with
+57% of it clear. So the reader sees real transparency when there is some, and the blank readings
+are the files.
+
+Nothing is lost in any of the four and nothing renders wrongly — the materials simply pay a
+cutout's cost to clip zero pixels. **Not worth churning two characters for**, and recorded here so
+the next sweep that flags them does not re-investigate.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
@@ -3434,9 +3503,7 @@ Not answered by the code, and worth measuring before authoring anything expensiv
   Both need the game rebuilt and run with logging around `LoadAnimationDefaults`; the reading of
   the source is written up above and filed upstream as YARC-Official/YARG#1769, and neither is
   settled without that run. This is the one thing on this list that blocks other work.
-- **Prix's eye textures**, and her hair, which must be left alone: the only hair map in her folder
-  is a different model's atlas reached by the loose fallback, so honouring its alpha leaves her
-  bald. The fault is the texture's provenance, not its channel.
+- ~~**Prix's eye textures**~~ **Answered and fixed 2026-11-12:** a lens shell shipped opaque over perfect eyes, the third occurrence of that fault. Her hair is unchanged and must stay that way — the only hair map in her folder is a different model's atlas reached by the loose fallback, so honouring its alpha leaves her bald. The fault is the texture's provenance, not its channel.
 - **Alcina's colour maps.** Every base-colour map in her archive is a grey noise field, so she
   renders as a white statue; her appearance lives in her `.blend`'s material nodes, which no glTF
   export carries. Recovering it means baking those to textures, which nothing here does. Her head
