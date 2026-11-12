@@ -8,8 +8,31 @@
 # the two flesh clusters, so place it at the midpoint of their weighted-vertex
 # centroids. The last bone keeps its own direction and length ratio.
 #
+# THE SHOULDER IS NOT ONE OF THOSE JOINTS, and fitting it gave The Rock
+# gorilla arms. Measured 2026-11-12 against the installed set:
+#
+#                    shoulders   reach     (population median 0.249 / 0.938)
+#   his rig before     0.276     0.931     normal
+#   after this fit     0.548     1.268     +4.9 sigma, the widest in 65
+#
+# The midpoint rule holds where two flesh clusters lie along one axis and the
+# joint really is the boundary between them -- an elbow, a knee, a wrist, an
+# ankle. It does not hold at the shoulder: the clavicle's cluster is a small
+# patch beside the neck and the upper arm's is a large mass offset sideways,
+# so their midpoint is out in the deltoid rather than at the joint. The more
+# muscular the model, the further out it lands, and The Rock is the most
+# muscular model in the set. Both sides moved outwards, his shoulder span
+# doubled, and every angle and his total height stayed correct throughout --
+# which is why `limb_check_installed.py` (angles) and
+# `height_check_installed.py` (total) both passed him.
+#
+# The arm chain therefore starts at the upper arm, exactly as the leg chain
+# starts at the knee and never moves the hip. `proportion_check_installed.py`
+# is what measures this and did not exist until it was needed.
+#
 # Connected bones must be disconnected before writing, or a child's head is
 # dragged back to its parent's tail and later writes undo earlier ones.
+import os
 import bpy, sys
 from mathutils import Vector
 
@@ -39,7 +62,14 @@ def centroid(bone):
 
 CHAINS = []
 for s in ("Left", "Right"):
-    CHAINS.append([s+"Shoulder", s+"Arm", s+"ForeArm", s+"Hand"])
+    # Starts at Arm, not Shoulder: the first fitted joint is the ELBOW. See
+    # the header -- fitting the clavicle-to-upper-arm joint doubled The Rock's
+    # shoulder span. FIT_SHOULDER=1 restores the old behaviour for anyone who
+    # wants to reproduce that measurement.
+    if os.environ.get("FIT_SHOULDER") == "1":
+        CHAINS.append([s+"Shoulder", s+"Arm", s+"ForeArm", s+"Hand"])
+    else:
+        CHAINS.append([s+"Arm", s+"ForeArm", s+"Hand"])
     CHAINS.append([s+"UpLeg", s+"Leg", s+"Foot", s+"ToeBase"])
 
 cen = {}

@@ -1218,6 +1218,15 @@ right.
 - `fingerpose.py <model>` — per-chain finger curl, REST vs POSE, both hands. The left/right
   comparison is the measurement: one relaxed hand is the control that says whether the other is
   really clenched
+- `proportion_check_installed.py <yargchar|dir>` — are a character's limb SEGMENTS the right
+  length relative to each other? Nothing measured this, which is how The Rock shipped with
+  **gorilla arms** while passing every check here: `limb_check_installed.py` measures joint
+  ANGLES (he reads `worst=0.38`, perfectly symmetric) and `height_check_installed.py` measures
+  the TOTAL (1.960 against a documented 1.96). Both are right and neither looks at segment
+  length. This reports each segment as a fraction of stature — foot bone to head bone, so it is
+  rig-intrinsic — against the population median with a robust sigma, because half this set is not
+  human and a deviation from anatomy is not a defect. Population, measured over 65: upperarm
+  0.181, forearm 0.174, thigh 0.292, shin 0.286, shoulders 0.249, reach 0.938
 - `fit_joints.py` — places each limb joint at the midpoint of the weighted-vertex centroids of
   the two bones meeting there, and carries untouched descendants by their nearest fitted
   ancestor's displacement. For a rig that is wrong by a **different factor in each limb**, which

@@ -2789,6 +2789,65 @@ drawing opaquely at all. **A material that genuinely needs a blend is made worse
 cutoff**, and the sweep cannot tell those apart from the lashes, which need exactly the same
 numbers and want the opposite treatment.
 
+## The Rock had gorilla arms, every check passed him, and our own repair did it
+
+2026-11-12, found by looking at him in the game rather than by any tool here. His silhouette is
+wrong — the arms start far too wide and the whole figure reads ape-like — and **every measurement
+this project owns said he was fine**:
+
+- `limb_check_installed.py` → `worst=0.38`, elbow 0.0/0.0, knee 0.0/0.0. Perfectly symmetric.
+- `height_check_installed.py` → 1.960 m against a documented 1.96. Dead on.
+- `bundle_audit.py` → 52 humanoid bones, 30 fingers, 6 clips, 1 controller.
+
+All three are correct and none of them measures the thing a person notices first, which is
+**segment length relative to the body**. Angles can all be right and totals can all be right
+while the pieces in between are the wrong size. That gap is now closed by
+`proportion_check_installed.py`, and the first run named him immediately:
+
+| | shoulders | reach | upperarm | forearm | thigh | shin |
+|---|---|---|---|---|---|---|
+| population median (65) | 0.249 | 0.938 | 0.181 | 0.174 | 0.292 | 0.286 |
+| **The Rock, installed** | **0.548** | **1.268** | 0.208 | 0.152 | 0.320 | 0.227 |
+| The Rock, before our fit | 0.276 | 0.931 | 0.160 | 0.167 | 0.294 | 0.276 |
+
+**His arms are not long. His shoulders are twice as far apart as anyone else's** — +4.9 sigma, the
+widest in the set — so the arms begin out at the edge of the silhouette. "Gorilla arms" is the
+right description and the wrong diagnosis, which is why measuring the arm segments alone would
+have found nothing.
+
+### The pre-fit backup is the control, and it exonerates the model
+
+`The Rock.prescale.yargchar` is the build from before `fit_joints.py` ran. Its proportions are
+**normal on every segment** — shoulders 0.276 against a median of 0.249, reach 0.931 against
+0.938 — on a skeleton 4.18 m tall for a 1.96 m mesh. So the source rig was correctly proportioned
+and merely the wrong size, and the thing that broke him is our own repair.
+
+### Why the fit broke exactly this joint
+
+`fit_joints.py` places a joint at the midpoint of the weighted-vertex centroids of the two bones
+meeting there. That is sound where two flesh clusters lie along one axis and the joint really is
+the boundary between them: an elbow, a knee, a wrist, an ankle. The arm chain was written as
+`Shoulder → Arm → ForeArm → Hand`, so its **first** fitted joint was the clavicle-to-upper-arm
+one — and there the rule does not hold. The clavicle's cluster is a small patch beside the neck;
+the upper arm's is a large mass offset sideways. Their midpoint sits out in the deltoid, not at
+the joint, and the more muscular the model the further out it lands. The Rock is the most
+muscular model in the set.
+
+The leg chain never had this problem because it starts at `UpLeg`, so its first fitted joint is
+the knee and the hip is never moved. The arm chain now starts at `Arm` for the same reason.
+`FIT_SHOULDER=1` restores the old behaviour, so the measurement above can be reproduced.
+
+His legs were distorted too, less visibly: shin 0.276 → 0.227 and thigh 0.294 → 0.320, a knee
+pushed down by about 17% of the shin. That is the same rule applied to a joint it does suit,
+getting a worse answer than leaving it alone — which is the harder half of this finding. The
+centroid fit is not merely wrong at the shoulder; on a heavily muscled figure whose rig was
+already proportioned correctly, it was not needed at all.
+
+**The lesson for the tool list**: a repair that moves geometry needs a check that can see what it
+moved. `fit_joints.py` shipped with `bone_fit.py` as its verification — "how far is each bone from
+the mesh it carries" — which rewards exactly what the centroid method does, and so could never
+have caught this. A verification derived from the same idea as the fix agrees with the fix.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
