@@ -2486,14 +2486,175 @@ And a gain applied to a shape that has never carried one must be checked at full
 and side** before shipping, per *Exaggerate the mouth, or nobody sees it*: doubling a shape key
 can tear geometry, and the front view hides a lip flip.
 
+## Nothing in the project could express alpha blending, and nobody had counted
+
+2026-11-12. Re-sweeping the whole installed set turned up one defect that is not a character's
+fault at all. **Of the 396 URP/Lit materials in the 59 characters this pipeline built, 40 are
+alpha-tested cutouts and not one is alpha-blended.** The single transparent material anywhere in
+the 65 belongs to Adachi Rei — a downloaded MToon bundle we did not build.
+
+The cause is one branch in `YargCharExporter.cs`:
+
+```csharp
+var rt = src.GetTag("RenderType", false, "");
+if (rt == "TransparentCutout" || rt == "Transparent")
+{
+    nm.SetFloat("_AlphaClip", 1f);
+    ...
+}
+```
+
+Alpha testing and alpha blending are different things, and that `||` treated them as one. The
+comment above it says "Hair, eyelashes and lace are alpha-cut cards", which is true of the case
+it was written for; the `Transparent` arm was added to catch blends and catches them by
+converting them into cutouts.
+
+**Gordon Freeman is what it cost, and he is recorded in the README as fixed.** `lens.png` was the
+reason `VRM_BLEND_MATERIALS` exists; its alpha has no extremes at all, which is what a lens is,
+and the builder did its half correctly — his `.vrm` carries `alphaMode: BLEND`. Then the exporter
+ran. Measured off the installed bundle: alpha from **0.153 to 0.624, mean 0.330**, against
+`_Cutoff = 0.5`. So **79.3% of the lens is clipped away and the remaining 21% draws fully
+opaque.** His glasses are not glass; they are a speckled mask. There is no value of `_Cutoff`
+that expresses "uniformly 33% opaque" — that is the whole point of a blend.
+
+The fix separates the two cases and gives `Transparent` URP's transparent surface (`_Surface 1`,
+SrcAlpha/OneMinusSrcAlpha, `_ZWrite 0`, queue 3000, the `RenderType` override tag). The cutout
+path is left byte-identical on purpose: the 40 materials that work today must not move.
+
+### Why the render that confirmed Gordon's fix could not have caught this
+
+It was a render of the **VRM**, where the blend is correct. The conversion happens later, in the
+Unity exporter, and the only render that would have shown it is one of the installed bundle —
+which is what `YargSceneShot.cs` is for. The general rule is already in this document in another
+form: *a green must come from the thing being tested*. A fix verified one stage upstream of where
+it is applied is not verified.
+
+### The second half of the fix, which is NOT done
+
+The exporter can now carry a blend across. It does not decide to make one, and that decision is
+`build_vrm.py`'s: the opacity-map path emits `alphaMode: MASK`, so a merged diffuse-plus-opacity
+texture becomes a cutout whatever its alpha looks like. For a two-valued mask that is right. For
+a feathered one it is destructive, and `alpha_sweep_installed.py` counts **20 materials across 6
+characters** in that state:
+
+| character | material | texture | clipped by the 0.5 threshold |
+|---|---|---|---|
+| Heels | `Heels_5` | `Std_Eyelash_Diffuse_OPA` | **99.6%** |
+| Alcina Dimitrescu | `AlcinaDimitrescu_11` | `CILIOS.png` | 96% |
+| Ariel | `Ariel_10` | `EyeMoisture_BaseColor` | 95% |
+| Ariel | `Ariel_20` | `Ariel_Eyelash-Brow_Eyelashes_Base_Color` | 86% |
+| Sayuri | `Sayuri_8`, `Sayuri_11` | `Eyelashes_Diffuse_OPA` | 85% |
+| Gordon Freeman | `GordonFreeman_4` | `lens.png` | 79% |
+| Heels | `Heels_18`, `Heels_19` | `front_hair_Transparency`, `tail_Transparency` | 56% |
+| Alice Ivy | `AliceIvy_5` | `Std_Eyelash_Diffuse_OPA` | 45% |
+| Sayuri | `Sayuri_10` | `Hair_Diffuse_OPA` | 40% |
+| Sayuri | `Sayuri_1` | `Lace_Diffuse_OPA` | 32% |
+| Ariel | `Ariel_25` | `Ariel_Hair_Cap_Base_Color` | 25% |
+| Alice Ivy | 4 hair materials | `Hair_100n_Transparency_Diffuse_OPA` | 1% each |
+
+Heels' eyelashes are the extreme and they are worth stating plainly: **99.6% of that texture is
+below the threshold, so her eyelashes are very nearly not drawn at all** — and her row in the
+README says her transparency was "Resolved 2026-11-11". It was resolved as far as the VRM. The
+rebuild does keep all five of her transparent materials; it keeps them as cutouts that throw
+almost everything away.
+
+**99.6 and not 100.** The tool printed `100% clipped` at first, because the format was `%.0f`.
+That is a claim of total invisibility, and the arithmetic does not support it — the separate
+`INVISIBLE` test, which fires only when the texture's alpha *maximum* is under the cutoff, had
+already and correctly declined to fire. A rounded number that reads as an absolute is the same
+mistake as reading a count in a comment as a measurement; the format is `%.1f` now.
+
+## The floating-prop sweep came back empty, and the first version of the check was the bug
+
+Runlist item 2 had asked for a height sweep over the installed set since Peacemaker: his USDZ
+carried a second figure's helmet floating above his head, and because the builder scales a model
+to its target height by its own bounding box, scaling the FILE to 1.85 m scaled the HELMET to
+1.85 m and left Peacemaker 1.51 m. Nothing in the build log said so, and nothing in a render of
+him alone says so either — he is correctly proportioned, just small, which only reads as wrong
+beside somebody else.
+
+`m_LocalAABB` makes this cheap. It is in the mesh's own local space, and for these exports that
+space *is* the model root: Peacemaker's head mesh reports a centre at y=1.535, head height for a
+1.85 m man rather than anything local. So the union of the AABBs is the figure, with no
+transforms to compose. That is asserted rather than assumed — `--strict` re-derives every bound
+from the raw vertex buffer and aborts on a millimetre of disagreement, and it does not abort.
+
+Incidentally, `identify_build.py`'s header says the mesh data "is not readable that way". That is
+true of UnityPy's `obj.read()` convenience wrapper, which reports `verts=0`, and false of
+`read_typetree()`, which hands over the whole vertex buffer. A limit of one accessor was written
+down as a property of the format.
+
+**The result: 51 of the 52 characters with a documented target height measure it to within
+0.8%**, Peacemaker among them at 1.850 exactly, and **no character in the set carries a mesh
+detached from its body.** The one exception is Jessica Rabbit at 1.867 m against a documented
+1.80 — +3.7%, carried in from whatever exclude shipped her.
+
+### The check flagged twelve characters, and all twelve were the check's fault
+
+The first version measured *how far the tallest mesh clears the top of everything else*, which
+sounds like the same question. It flagged 12 of 65, and the names gave it away at a glance: Judy
+Hopps' tallest mesh is her **face**, Lola Bunny's is `C038_SkelMesh` — her whole body — and
+Shadow's is `RIG`. On any character whose accessories sit low, the tallest mesh is the character.
+Adachi Rei scored 99%, because she has two meshes and one of them is a flat sliver at her feet,
+so "clears the rest" was the height of her entire body.
+
+What Peacemaker's helmet did was sit above him **with nothing in between**: its lowest vertex was
+higher than his highest. That is a test about *disjointness*, not about rank, and it cannot fire
+on a body mesh, because the body is what everything else is measured against. The body is now
+defined as the mesh of greatest vertical extent, its span grows to absorb anything overlapping it
+— repeatedly, so a hat that overlaps the head and a plume that overlaps the hat are both part of
+the figure — and only a mesh whose whole span is clear of that counts.
+
+**And a check that fires on nothing has to be shown firing.** `--selftest` runs the real decision
+function (not a copy of it, which would be free to agree with itself) over four shapes:
+Peacemaker's actual geometry, which must flag at +22.5% inflation, and Judy's, Lola's and Adachi
+Rei's, which must all come back clean. Without that, "0 of 65" and "the detector cannot detect"
+are the same output.
+
+## Three of the eight classes are closed, and that is a result worth recording
+
+The same sweep re-ran every installed-side check over all 65. Three came back with nothing new,
+and saying so is the point — an unswept class and a clean class look identical in silence:
+
+- **Limb geometry.** Every character the sweep flags is already explained above: the
+  Mandalorian's ankle is his authored stance, Alcina's wrist is her pose-as-shape, Jessica
+  Rabbit's pointed feet are heels, and the marginal wrists are marginal. No new findings.
+- **Animation and finger mapping.** Unchanged: one controller and 5–7 clips everywhere except
+  Teto, and the finger-coverage table stands.
+- **Floating props.** Zero, as above.
+
+Against that, one class turned out to be five times larger than it had ever been counted, because
+the tool that measured it could only read a `.vrm`, and **25 `.vrm` files survive here, covering
+about 22 of the 65 characters** — four of them are variants of Iron Man alone, and a `.vrm` being
+present does not even mean it is the build that is installed, which `identify_build.py` has caught
+twice.
+`alpha_sweep.py` found Miku's skirt, Peach's eyes, Alcina's eyelashes, Sayuri's lashes and Heels'
+transparency — and had never been pointed at the other forty-odd. Silence from a tool that never looked
+is not a clean result, which is the verify-a-zero-with-a-control lesson arriving from a third
+direction. Read from the bundle instead, the alpha class is **74 materials across 22 characters**:
+45 opaque-with-alpha, 20 soft-alpha-as-cutout, 9 cutouts with no alpha at all.
+
+Most of the 45 will not be defects. Gordon alone carries three alpha channels of three different
+kinds and only one is opacity; The Rock's `eye_ov` was already investigated and retracted. The
+honest output is a candidate list with its instrument attached, and the instrument here is weaker
+than the `.vrm` sweep's in one specific way: it is **not UV-masked**, so a material sharing an
+atlas can read as alpha-carrying because of a region its geometry never samples. That limitation
+is in the tool's header rather than in a conversation.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
 
-- **Scale and height.** Nothing normalises the model. A figure built at **1.70 m**, feet on z=0
-  and centred on the origin, sits correctly on the podium — measured 2026-11-07. Whether the
-  podium tolerates much taller or shorter is still unmeasured. Measure the base mesh — see
-  *Measure the base mesh, not the scene* above.
+- **Scale and height — the build side is now measured, the PODIUM side is not.** Nothing
+  normalises the model, and as of 2026-11-12 every installed character has been measured out of
+  its own bundle: 51 of the 52 with a documented target hit it to within 0.8%, none carries a
+  detached mesh setting its height, and the set runs from Yoda at 0.66 m to Alcina at 2.90 m.
+  What is still unmeasured is what the podium and the character-select camera tolerate. Two
+  characters are known to sit outside it — Alcina's head is above the select camera at 2.9 m, and
+  **Baby Groot measures 0.348 m**, a quarter the height of anything else and the shortest figure
+  in the set by a factor of two. Neither has a documented target, so neither is a build defect;
+  both are a framing question nobody has answered. Measure the base mesh — see *Measure the base
+  mesh, not the scene* above.
 - **Polygon and texture budget.** No limit is enforced or documented. The eight cleared models
   run 5.6–10.7 MB as bundles. A deliberately heavy character — 639,859 triangles with 1K
   textures — bundled to **31.4 MB** and loaded and rendered without complaint, so the ceiling is
@@ -2526,6 +2687,14 @@ Not answered by the code, and worth measuring before authoring anything expensiv
   export carries. Recovering it means baking those to textures, which nothing here does. Her head
   is also above the character-select camera at 2.9 m, and her height is canon.
 - **Three characters with zero colliders and no surviving `.vrm`** — Aiko, Scott Hall, Shadow the
-  Hedgehog. Nothing can re-fit them without re-acquiring the source.
+  Hedgehog, 11 unguarded chains between them. Nothing can re-fit them without re-acquiring the
+  source: the bundle round trip is not a route, for the measured reason above.
+- **Kaiser Aufhänger has colliders on his arms and torso and none on his legs**, which leaves
+  **36 unguarded chains — 70% of every unguarded chain remaining in the set**, in one character.
+  He is a downloaded MToon bundle with no source, so this is the same wall as the three above, but
+  it is worth separating because the arithmetic is so lopsided: the other five affected characters
+  share 15 chains between them. Also worth a look before anyone acts: 30 of his 36 are named
+  `TopsUpperArm` while hugging his legs, which is either a naming quirk in the original or a sign
+  that his chains are not what their names say.
 - **Gadget Hackwrench's installed build is not any `.vrm` here** (57 rotation mismatches, a real
   re-pose), so her two unguarded chains and her goggles cannot be touched until that is resolved.

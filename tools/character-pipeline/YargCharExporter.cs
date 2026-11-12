@@ -115,6 +115,7 @@ public static class YargCharExporter
                     var remapped = new Dictionary<Material, Material>();
                     int fixedCount = 0;
                     int cutoutCount = 0;
+                    int blendCount = 0;
                     foreach (var r in instance.GetComponentsInChildren<Renderer>(true))
                     {
                         var mats = r.sharedMaterials;
@@ -190,8 +191,53 @@ public static class YargCharExporter
                             // Hair, eyelashes and lace are alpha-cut cards. Building a
                             // fresh URP material throws that away and they turn into
                             // opaque slabs, so carry the source's RenderType across.
+                            //
+                            // ALPHA TESTING AND ALPHA BLENDING ARE NOT THE SAME THING,
+                            // and this branch used to treat them as one. `Transparent`
+                            // and `TransparentCutout` both got `_AlphaClip`, so every
+                            // genuinely blended material in the project shipped as a
+                            // hard threshold at 0.5. Measured over the installed set on
+                            // 2026-11-12: of 396 URP/Lit materials in the 59 characters
+                            // this pipeline built, 40 were cutouts and **not one** was
+                            // blended. The single transparent material anywhere in the
+                            // 65 belongs to Adachi Rei, a downloaded MToon bundle we
+                            // did not build.
+                            //
+                            // Gordon Freeman is the measured cost. `VRM_BLEND_MATERIALS=
+                            // "lens"` was added for him and the builder did its half
+                            // correctly -- his `.vrm` carries alphaMode BLEND. Then this
+                            // ran, and `lens.png`'s alpha (0.153 to 0.624, mean 0.330)
+                            // met a 0.5 threshold: **79.3% of the lens is clipped away
+                            // and the remaining 21% draws fully opaque**. His glasses are
+                            // not glass, they are a speckled mask -- and he is recorded
+                            // in the README as fixed, because the render that confirmed
+                            // the fix was of the VRM and not of the bundle.
+                            //
+                            // A cutout cannot express "uniformly 33% opaque". There is no
+                            // value of _Cutoff that does. So the two cases are separated
+                            // and `Transparent` now gets URP's transparent surface. The
+                            // cutout path below is UNCHANGED, deliberately: the 40
+                            // materials that work today must not move.
                             var rt = src.GetTag("RenderType", false, "");
-                            if (rt == "TransparentCutout" || rt == "Transparent")
+                            if (rt == "Transparent")
+                            {
+                                nm.SetFloat("_Surface", 1f);     // 0 Opaque, 1 Transparent
+                                nm.SetFloat("_Blend", 0f);       // 0 Alpha, 1 Premultiply...
+                                nm.SetFloat("_SrcBlend", (float) UnityEngine.Rendering.BlendMode.SrcAlpha);
+                                nm.SetFloat("_DstBlend", (float) UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                                nm.SetFloat("_SrcBlendAlpha", (float) UnityEngine.Rendering.BlendMode.One);
+                                nm.SetFloat("_DstBlendAlpha", (float) UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                                nm.SetFloat("_ZWrite", 0f);
+                                nm.SetFloat("_AlphaClip", 0f);
+                                nm.DisableKeyword("_ALPHATEST_ON");
+                                nm.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                                // The shader reads RenderType from the tag, and a URP
+                                // material built from scratch carries the Lit default.
+                                nm.SetOverrideTag("RenderType", "Transparent");
+                                nm.renderQueue = 3000;           // after everything opaque
+                                blendCount++;
+                            }
+                            else if (rt == "TransparentCutout")
                             {
                                 nm.SetFloat("_AlphaClip", 1f);
                                 nm.EnableKeyword("_ALPHATEST_ON");
@@ -207,7 +253,7 @@ public static class YargCharExporter
                         r.sharedMaterials = mats;
                     }
                     AssetDatabase.SaveAssets();
-                    Debug.Log($"[YARGCHAR] {outName}: retargeted {fixedCount} materials to URP/Lit ({cutoutCount} alpha-cut)");
+                    Debug.Log($"[YARGCHAR] {outName}: retargeted {fixedCount} materials to URP/Lit ({cutoutCount} alpha-cut, {blendCount} alpha-blended)");
 
                     var character = instance.GetComponent<VRMCharacter>() ?? instance.AddComponent<VRMCharacter>();
                     character.Type = VenueCharacter.CharacterType.Vocals;

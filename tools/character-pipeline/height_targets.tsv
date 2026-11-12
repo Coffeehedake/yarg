@@ -1,0 +1,81 @@
+# Target height in metres per installed character, for height_check_installed.py.
+#
+# Transcribed from the "Known per-model arguments" table in README.md. It is a
+# DATA FILE in the repo on purpose: a hand-written mapping that lives only in a
+# session is lost, and this project has already paid for that once -- Gordon
+# Freeman's viseme map was not in his recipe row, so the next rebuild silently
+# dropped all 32 of his morph targets with every census count unchanged.
+#
+# Four rows of that table name two characters at once and are split here:
+#   "Sayuri / Aiko"            -> Sayuri, Aiko
+#   "Joker / Miku"             -> Joker, Miku
+#   "Vegeta / Spider-Man PS"   -> Vegeta, Spider-Man PS
+#   "Clone troopers"           -> Clone Trooper 501st, Clone Trooper Shiny
+# and two are named differently in the table than on disk:
+#   "Link (OoT)" -> Link,  "Sonic (HD)" -> Sonic,  "Shadow" -> Shadow the Hedgehog
+#
+# A character with NO row here is not a pass and not a failure -- it is
+# unmeasurable, because no target was ever written down for it. The tool prints
+# "-" for those and judges them on the detached-mesh half only.
+#
+# 52 rows below, and 52 of the 65 installed characters match one. The 13 that
+# do not are the characters whose source archive was never located, so no
+# target was ever chosen for them: Adachi Rei, Baby Groot, Doom Slayer, Harq
+# Alkahana, Hatsune Miku (Retry Now ver.), Hatsune Miku (Dark) (Retry Now
+# ver.), Inforder Trogen, Iron Man Mark 85, K-2SO, Kaiser Aufhaenger, Skeleton
+# Mage, Spartan Mark V, Spider-Man.
+#
+# 52 + 13 = 65. If that stops adding up, a name here has drifted from a name on
+# disk and the tool is silently judging fewer characters than it reports.
+Aiko	1.70
+Alastor	1.95
+Alcina Dimitrescu	2.90
+Alice Ivy	1.70
+Ariel	1.70
+B1 Battle Droid	1.93
+Batman	1.88
+Chibi Rem	1.55
+Clone Trooper 501st	1.83
+Clone Trooper Shiny	1.83
+Elite Terrorist	1.83
+Gadget Hackwrench	1.30
+Gordon Freeman	1.80
+Gwen Stacy	1.70
+Harley Quinn	1.70
+Heels	1.70
+Jessica Rabbit	1.80
+Jinx	1.68
+Joker	1.85
+Judy Hopps	1.05
+Killer Clown	1.80
+Link	1.65
+Lola Bunny	1.75
+Mannequin	1.75
+Mario	1.55
+Mickey Mouse	1.10
+Miku	1.58
+Peacemaker	1.85
+Peach	1.70
+Pepsiman	1.85
+Pomni	1.70
+Power Girl	1.80
+Prix	1.70
+Sayuri	1.70
+Scott Hall	2.01
+Shadow the Hedgehog	1.05
+Shaggy Rogers	1.83
+Shrek	2.10
+Skibidi Toilet	1.60
+Sonic	1.00
+Sophia	1.70
+Spider-Man PS	1.75
+Steve	1.80
+Tenna	1.80
+Thanos	2.40
+The Mandalorian	1.83
+The Rock	1.96
+Vegeta	1.64
+Vigilante	1.88
+Xenomorph	2.40
+Yoda	0.66
+Yui Suzukaze	1.60

@@ -22,3 +22,8 @@
 *.exr
 *.zip
 *.log
+
+# And what audit_all.py produces: it names the installed conversions,
+# their materials and their textures. Same principle as the line at the top.
+audit-*.md
+__pycache__/

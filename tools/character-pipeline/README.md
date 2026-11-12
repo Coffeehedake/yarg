@@ -976,6 +976,76 @@ installed version has merged textures and whose rebuild has none has lost its tr
 What is left, in the order it is worth doing. Kept here rather than in a conversation,
 because every entry below has already been rediscovered at least once.
 
+**Re-swept on 2026-11-12 with `audit_all.py`, and the order changed.** Three classes turned out
+to be closed, one turned out to be far larger than anyone had counted, and the ordering that
+falls out of that is by *characters fixed per change made* rather than by severity:
+
+| # | class | scope | state |
+|---|---|---|---|
+| 1 | a soft alpha shipped as a hard cutout | **20 materials, 6 characters** | one exporter change, below. Heels' eyelashes are **99.6% clipped away** |
+| 2 | Kaiser Aufhänger has no leg colliders | 36 chains, 1 character | **70% of every unguarded chain left in the set** is this one character |
+| 3 | zero colliders, no `.vrm` | 11 chains, 3 characters | **blocked, and not by effort.** Editing a loaded bundle works; writing it back does not — `BackgroundHelper.Export` exits 0 and produces a 2,552-byte shell with no meshes in it. See `docs/character-models.md` |
+| 4 | opacity in an opaque material (`UNUSED`) | 45 materials, 17 characters | needs a render each; roughly half will be specular masks |
+| 5 | no bound visemes | 52 of 65 | mostly blocked on a source file that does not exist |
+| 6 | Jessica Rabbit is 3.7% too tall | 1 character | cosmetic |
+| — | floating prop setting the height | **0 of 65** | **CLOSED** — item 2 below |
+| — | bent or asymmetric limbs | **0 new** | **CLOSED** — every flag is already explained in `docs/character-models.md` |
+| — | missing animation / finger mapping | **0 new** | **CLOSED** — same |
+
+The reasoning behind each is in `docs/character-models.md`; what follows is the older list,
+which items 1-3 above now sit in front of.
+
+0. **Rebuild the six characters whose soft alpha ships as a hard cutout**, now that the exporter
+   can express a blend at all. `YargCharExporter.cs` used to give `_AlphaClip` to both
+   `TransparentCutout` **and** `Transparent`, so not one of the 396 URP/Lit materials in the 59
+   characters this pipeline built was alpha-blended. That is fixed; the measured damage, and the
+   second half of the fix that is **not** done, are written up in `docs/character-models.md`.
+   Per material, the share of the texture the 0.5 threshold throws away:
+
+   | character | material | texture | clipped |
+   |---|---|---|---|
+   | Heels | `Heels_5` | `Std_Eyelash_Diffuse_OPA` | **99.6%** |
+   | Alcina Dimitrescu | `AlcinaDimitrescu_11` | `CILIOS.png` | 96% |
+   | Ariel | `Ariel_10` | `EyeMoisture_BaseColor` | 95% |
+   | Ariel | `Ariel_20` | `Ariel_Eyelash-Brow_…` | 86% |
+   | Sayuri | `Sayuri_8`, `Sayuri_11` | `Eyelashes_Diffuse_OPA` | 85% |
+   | Gordon Freeman | `GordonFreeman_4` | `lens.png` | 79% |
+   | Heels | `Heels_18`, `Heels_19` | `front_hair`, `tail` | 56% |
+   | Alice Ivy | `AliceIvy_5` | `Std_Eyelash_Diffuse_OPA` | 45% |
+   | Sayuri | `Sayuri_10` | `Hair_Diffuse_OPA` | 40% |
+   | Sayuri | `Sayuri_1` | `Lace_Diffuse_OPA` | 32% |
+   | Ariel | `Ariel_25` | `Ariel_Hair_Cap_…` | 25% |
+
+   Back up each installed `.yargchar` first, and look at each one before and after — a material
+   that goes from cutout to blend changes sort order as well as edges, and hair that sorts wrongly
+   against itself is its own defect.
+
+0b. **Triage the 45 `UNUSED` candidates, strongest first.** These are opaque materials whose base
+   map carries alpha, and roughly half of such hits have historically been specular masks, atlas
+   padding, or already correct — so this is a list to *look at*, in this order, not a list to fix.
+   The ranking is by two things the sweep can see: whether the alpha is two-valued (`mask`, which
+   is what an opacity map looks like) and whether the filename admits what it is.
+
+   | strength | character / material | why it ranks there |
+   |---|---|---|
+   | **strong** | Shrek `t_Shrek_alpha_c` | the filename says `alpha`, and it is a clean mask: 43.7% clear, 56.3% solid, 0.0% between |
+   | **strong** | Gadget Hackwrench `Body` ×4 + `Jumpsuit` | mask, 31.6% clear; five of her six materials. She also has 2 unguarded chains, so she is worth one visit |
+   | **strong** | Killer Clown `eyes_base_color` | mask, 95.3% clear — an eye plane on a mostly-empty atlas is the Peach shape exactly |
+   | **strong** | Steve `Diffuse` | mask, 17.1% clear. Minecraft skins use alpha for the **hat/overlay layer**; this is the one hit where the format itself predicts real opacity |
+   | **strong** | Doom Slayer `doomslayer_hair` ×2 | `soft`, 88.8% clear — a hair card with a feathered edge, which also means it wants BLEND and not a cutout |
+   | **medium** | Jinx `12_meshes_Merge_Diffuse` | mask, 23.9% clear, but it is her ONE material for the whole character — masking it wrongly costs everything |
+   | **medium** | Yoda `CHA_yodaEye_C`, Aiko `pf2001_C01`, Yui Suzukaze ×9 | masks on the right kind of part, no filename signal either way |
+   | **weak** | Scott Hall `Hall_body_color` ×4 | 97.9% solid, 1.7% clear. A body atlas that is almost entirely opaque is what a specular mask looks like |
+   | **weak** | Spider-Man PS `SMAdvanced_Gloves_D` | 95.5% solid, same shape |
+   | **weak** | Shadow the Hedgehog ×4, Xenomorph `headcap` | Shadow's are `_d` diffuses from a Sonic-series rip; the Xenomorph's is **uniform** alpha (100% between the extremes), which no opacity map is and every gloss mask is |
+   | **leave** | The Rock `eye_ov` | already investigated and retracted once. Do not re-open without new evidence |
+   | **leave** | Prix `CN_F_HAIR_110_hair` ×2 | the only hair map in her folder belongs to a **different model**, reached by the loose fallback. Honouring its alpha leaves her bald |
+   | **leave** | Gordon Freeman `eye-iris-green.tga`, `onefreeman` ×2 | measured specular masks. Honouring them hides his irises and erases his suit |
+   | **care** | Peach ×4 | her five real cutouts are already in her recipe. The crown is deliberately NOT among them — its alpha is an outline, and masking it carves the jewel out |
+
+   Nineteen of the 45 are in the `leave` or `weak` rows, which is the useful half of this exercise:
+   the shortlist that is actually worth a render is about ten materials, not forty-five.
+
 1. **Tune the chest rig** once it has been seen in game. The feel is
    `VRM_BREAST_PARAMS="stiffness,drag,gravity"` (default `0.85,0.6,0.0` — stiffer and draggier
    than the hair chains, which swing and keep swinging). Detection has three knobs:
@@ -987,9 +1057,12 @@ because every entry below has already been rediscovered at least once.
    A character under those is refused as a **limitation of the model, not a failure** — the
    build finishes normally and the log says which floor it was under. Run `VRM_BREASTRIG=check` to see what a change does to a character
    without rebuilding it.
-2. **Sweep the installed set for the floating-prop height bug** — the Peacemaker failure mode,
-   where the tallest mesh in the file is not part of the character and the whole figure scales
-   down to fit it. Nothing looks wrong until the character stands next to another one.
+2. ~~Sweep the installed set for the floating-prop height bug.~~ **Done 2026-11-12, and the
+   class is closed.** `height_check_installed.py` over all 65: **no character carries a mesh
+   detached from its body**, and 51 of the 52 with a documented target height measure it to
+   within 0.8%. The one exception is **Jessica Rabbit at 1.867 m against a documented 1.80**
+   (+3.7%) — small, carried in from whatever exclude shipped her, and the only height finding
+   in the set. Peacemaker himself now measures 1.850 exactly.
 3. ~~Re-check Lola Bunny against the split-channel metallicRoughness fix.~~ **Settled: it
    never applied to her.** Her `.glb` carries its own packed ORM, so every map on her one
    material arrives wired from the import (`base=packed:C038_Base_C, metal=packed:C038_Base_ORM,
@@ -1176,8 +1249,65 @@ right.
   below. It prints candidates and fixes nothing on purpose: an alpha that looks like a mask is not
   always meant as one, and roughly half of its hits have turned out to be specular masks, atlas
   padding, or already correct
+- `alpha_sweep_installed.py <yargchar|dir>` — the same question asked of the **installed bundle**,
+  which is the only way to cover the forty-odd characters with no `.vrm` (25 `.vrm` files survive,
+  covering about 22 of the 65, and four of those are Iron Man variants). Reads `_Surface`, `_AlphaClip`
+  and `_Cutoff` off each URP/Lit material and decodes its `_BaseMap`, and reports three different
+  defects: `UNUSED` (opaque material, base map carries alpha — the Peach/Alcina class), `HARDCUT`
+  (a **cutout** whose alpha is a smooth gradient, so the 0.5 threshold butchers it rather than
+  softening it) and `NOALPHA` (a cutout whose map has no alpha at all). `ALPHA_CONTROL=1` forces
+  every material opaque, so every alpha-carrying one must flag — it takes UNUSED from 45 to 75 and
+  HARDCUT to 0, which is what says the tiers are live rather than vacuous. MToon materials are
+  listed and **not judged**: the six downloaded bundles carry their transparency in MToon's own
+  properties, not URP's, and scoring them on a property they do not have would invent findings.
+  It is **not** UV-masked, unlike `alpha_sweep.py` — a material sharing an atlas can read as
+  alpha-carrying because of a region it never samples, so treat a hit on a shared atlas as the
+  weaker evidence
+- `height_check_installed.py <yargchar|dir>` — how tall each installed character is, against
+  `height_targets.tsv` (transcribed from the per-model table below, and a committed data file
+  because a mapping that lives in a session is lost), plus the floating-prop check that runlist
+  item 2 asked for: a mesh whose whole vertical span is clear of the body's, and how much of the
+  figure's height it is adding. That is Peacemaker's defect — scaling the FILE to 1.85 m scaled a
+  second figure's helmet to 1.85 m and left him 1.51 m. `--strict` re-derives every bound from
+  the raw vertex buffer and aborts if it disagrees with `m_LocalAABB` by a millimetre;
+  `--selftest` runs the decision over Peacemaker's real geometry **and** the three shapes that
+  made the first version flag a body mesh, and must get all four right
+- `audit_all.py` — runs every installed-side check in one command and writes a dated report. See
+  the next section
 - `alpha_check.py` / `mat_check.py` / `spring_scan.py` / `uv_test.py` / `tex_stats.py` — material,
   alpha, spring and texture inspection straight out of the exported file
+
+### One command for the whole set
+
+```
+python audit_all.py
+```
+
+`audit_all.py` finds the character folder, finds an interpreter that can import UnityPy, runs
+every installed-side check over all 65 characters and writes `audit-<date>.md` next to itself —
+each check's full output, and at the top a table of what each one said.
+
+It exists because the list of checks was the thing that kept going missing. Seven of them read
+the installed bundles, each with its own argument shape, and knowing which ones exist lived in a
+conversation: that is how the floating-prop sweep sat unwritten in the runlist for days, and how
+one character was excluded from the collider rollout twice. `--only cloth,alpha` runs a subset,
+`--chars <dir>` points it elsewhere, `--out <dir>` moves the report.
+
+Two details that are load-bearing rather than tidy:
+
+- **It resolves the interpreter by IMPORTING UnityPy**, not by picking a version. `python` on
+  this machine's PATH is 3.13 and has no UnityPy; the one that has it is 3.12. The obvious
+  command fails with `ModuleNotFoundError: No module named 'UnityPy'`, which reads as "the
+  tooling is not installed" rather than "you have two Pythons", and that is a five-minute
+  detour every time.
+- **When it cannot read a check's own summary line it says so** instead of printing a zero. The
+  priority table is parsed out of each tool's last line with a per-tool regex; a regex that
+  silently stops matching after an output change would turn a real count into a clean bill of
+  health, which is the single most expensive shape of wrong answer this project has met.
+
+It fixes nothing, by design, and it cannot see what only a render can see — a two-toned face, a
+slab over an eye, an inside-out mesh. The alpha rows in particular are candidates: in a game rip
+an alpha channel is as likely to be a specular mask as an opacity map.
 
 The thirty-odd scripts in this folder that are **not** listed above — `bonecounts.py`,
 `matcol.py`, `meshz.py`, `island_probe.py` and the rest — are one-off probes written to answer a
