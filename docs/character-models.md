@@ -3581,6 +3581,95 @@ there is no reason to think any of them is different.
 Both tools are kept — `uv_alpha.py` for the narrowing and `honour_alpha.py` for the five-minute
 test — so the next candidate is settled by a render rather than by an argument.
 
+## "No surviving source" was never checked against the Downloads folder
+
+Three characters were recorded as beyond repair — *"Aiko, Scott Hall, Shadow the Hedgehog, 11
+unguarded chains between them. Nothing can re-fit them without re-acquiring the source"* — and
+several others carry the same assumption in passing. It is true that only 30 of the 65 have a
+`.vrm` here. It does not follow that the rest have no source.
+
+**28 of the 36 characters with no `.vrm` have a plausible source archive sitting in Downloads.**
+Scott Hall's is `scott-hall.zip`, and he was *already extracted* at `C:\dev\_tmp\scott-hall-2`.
+Shadow's is `shadow-the-hedgehog-sonic-forcesgmod.zip`. Only 8 have nothing — Aiko, Adachi Rei,
+Harq Alkahana, Inforder Trogen, Kaiser Aufhänger, Mickey Mouse, Spartan Mark V, Yui Suzukaze —
+and five of those are the downloaded bundles that were never built here at all.
+
+The matching is by name tokens and every row is a **candidate**: `Skeleton Mage` matches
+`terminator-t-800-endo-skeleton-damaged.zip` on the word "skeleton" and is certainly wrong. The
+point is not the list, it is that **nobody had looked**, and two of the three characters declared
+unrecoverable had their archives on the same disk the whole time.
+
+This is the fourth time in two days: Ariel's "no source archive", Jessica Rabbit's "built from
+the GLB" then "built from the blend", Gadget Hackwrench's "not any `.vrm` here". **A note saying
+something is unavailable is a note, not a measurement.**
+
+## Scott Hall: colliders at last, and a texture downgrade caught on the way
+
+His recipe was recorded in full and his archive was extracted. Two things were in the way, and
+neither was the one the docs named:
+
+**The outer zip's `textures/` folder is missing the right elbow pad maps.** That is the omission
+his recorded `VRM_TEX` exists to work around — and the build aborts on it, because `VRM_TEX`
+names a file that is not there. The **nested** `scott_hall_2k20__rigged__by_dexpac_df16783.zip`
+inside `source/` carries a complete `PNGs/` folder, all 40 maps. Build from that.
+
+**The recipe records no TEXMAX, and 1024 is wrong for him.** Built at 1024 he came out
+22,451,264 bytes against the installed 35,377,899 — a **36% smaller bundle**, because his
+installed build keeps **seven textures at 2048²** and 1024 quietly halved them. The bundle is the
+measurement: built at 2048 he exports to 35,405,370 bytes, **27 KB from the original**, which is
+the collider data he gained.
+
+That downgrade would have shipped silently. Nothing in the recipe, the build log or any sweep
+would have said a word about it — `height_check`, `collider_group_check` and `identify_build` all
+pass either way. **Read the installed bundle's texture sizes before choosing a TEXMAX.**
+
+With that: rig **identical** — 79 bones compared, 0 length and 0 rotation mismatches. The only
+name differences are the hair bones' naming convention (`HairSpring_0_0` then,
+`HairSpring_0_0_0` now, same sixteen bones) and the Unity-side wrappers. He gains **10 colliders
+in one group attached to all 4 of his chains**, so his 4 unguarded chains are 0.
+
+## Shadow the Hedgehog: three unguarded chains and no fingers, both from one rebuild
+
+His recipe was two values — `sonicforces`, 1.05 — and his archive is
+`shadow-the-hedgehog-sonic-forcesgmod.zip`. Rebuilt from it:
+
+| | before | after |
+|---|---|---|
+| colliders | **0** | 10 in one group, attached to **3 of 3** chains |
+| unguarded chains | **3** (Tail, Wing_L, Wing_R) | **0** |
+| humanoid bones | **21** | **39** |
+| finger bones | **0** — flagged `NO FINGERS MAPPED` | **18** |
+
+The rig is otherwise untouched: **169 bones compared, 0 length and 0 rotation mismatches**, the
+same three chains by the same names. 2,076,841 bytes before, 2,079,923 after — the 3 KB is the
+collider data. His textures top out at 512², so a 1024 TEXMAX downgrades nothing; that was checked
+first, after Scott Hall.
+
+The finger half is the more interesting one. `build_vrm.py` now **fills missing finger chains
+with weightless bones fused to a real one, because YARG's microphone code dereferences them and a
+null makes the character INVISIBLE**. His installed build predates that, and the rebuild logs it
+filling six chains. Whether it was ever actually at risk in game is not known — he has been
+installed and nobody has reported him missing — but the mapping is right now and it was not.
+
+### Set-wide, after Scott Hall and Shadow
+
+**51 unguarded chains across 6 characters → 42 across 3.** The three left are the three that
+cannot be reached: **Aiko** (4 chains, and a search of Downloads and `C:\dev` finds nothing of
+hers), **Kaiser Aufhänger** (36 — a downloaded bundle whose own author covered his arms and torso
+and not his legs) and **Adachi Rei** (2 orphaned colliders, also downloaded). Fixing any of them
+means synthesising collider objects inside somebody else's bundle, which is a different kind of
+operation from anything here.
+
+### Five more characters have a finger-mapping defect, and four have a source
+
+`bundle_audit.py` across the 65: **B1 Battle Droid** (humanoid 18, fingers 0), **Mannequin** (15,
+0), **Steve** (15, 0), **Sonic** (28, 6 — index only) and **Yui Suzukaze** (28, 6). All but Yui
+have an archive in Downloads and a recorded recipe.
+
+Two of them are probably correct as they are: **Steve is Minecraft Steve**, whose hands are
+blocks, and the Mannequin is a featureless artist's dummy. Mapping fingers onto a hand that has
+none is not a fix. The other three are worth a rebuild and have not had one.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
@@ -3637,9 +3726,7 @@ Not answered by the code, and worth measuring before authoring anything expensiv
   `collider_group_check_installed.py` over all 65 `.yargchar`. **Every character built here is
   clean.** The single orphan in the set is in Adachi Rei, a downloaded bundle. See *The other 35
   characters had never been checked* below.
-- **Three characters with zero colliders and no surviving `.vrm`** — Aiko, Scott Hall, Shadow the
-  Hedgehog, 11 unguarded chains between them. Nothing can re-fit them without re-acquiring the
-  source: the bundle round trip is not a route, for the measured reason above.
+- ~~**Three characters with zero colliders and no surviving `.vrm`**~~ — **two of the three are fixed.** Scott Hall and Shadow the Hedgehog both had their source archives in Downloads the whole time; rebuilt, they report 0 unguarded chains and rigs identical to their installed builds. **Aiko** is the one that was genuinely unrecoverable, and that is now a measurement — nothing of hers is in Downloads or under `C:\dev`.
 - **Kaiser Aufhänger has colliders on his arms and torso and none on his legs**, which leaves
   **36 unguarded chains — 70% of every unguarded chain remaining in the set**, in one character.
   He is a downloaded MToon bundle with no source, so this is the same wall as the three above, but
