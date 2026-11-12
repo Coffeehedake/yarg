@@ -3518,10 +3518,12 @@ Yui Suzukaze (4), Gadget Hackwrench (4 — `Jumpsuit` and `Body` ×3), Peach (2,
 duplicated), Shrek (`t_Shrek_alpha_c`, whose name says it), Scott Hall (`Hall_hair_color`), Jinx,
 and Steve.
 
-**Only three of those characters still have a `.vrm`** — Gadget Hackwrench, Jinx and Peach. For
-Yui Suzukaze, Shrek, Scott Hall and Steve there is no `.vrm` and no source, so even a confirmed
-finding has no route to a fix: `set_material_alpha.py` and every other repair here needs a `.vrm`
-to round-trip.
+~~**Only three of those characters still have a `.vrm`**~~ — **corrected: six do.** Gadget
+Hackwrench, Jinx and Peach were the three in `withcols`; **Shrek, Scott Hall and Steve** have
+theirs elsewhere in the scratchpads and both Shrek's and Steve's report MATCH against their
+installed bundles. Only **Yui Suzukaze** of this group genuinely has none. See *"Only 30 of the
+65 have a `.vrm`" was a count of one directory* below — and *Shrek's hem*, which is what that
+correction turned up.
 
 **Not acted on, deliberately.** Honouring one of these means switching a material to MASK or
 BLEND so the map's alpha is used, and on Gadget's `Body` that would make 32% of her disappear.
@@ -3686,6 +3688,123 @@ mapped, a gap of one chain per hand, and Yui has no source.
 **Shadow was the only real one**, with 66 finger bones and none of them mapped, and he is fixed.
 That is also what makes the number trustworthy: the same count that says he had a defect says the
 other three do not.
+
+## "Only 30 of the 65 have a `.vrm`" was a count of one directory
+
+That figure appears throughout this document and has been load-bearing in several conclusions,
+including three written today. It is the contents of `scratchpad/withcols`. The session
+scratchpads hold **226 distinct `.vrm` basenames across several directories**, and
+**45 of the 65 installed characters have at least one `.vrm` somewhere.** Twenty have none, and
+five of those are the downloaded bundles that were never built here.
+
+It surfaced through Sonic. His recipe row records that his installed build was identified as
+`rollout/out/Sonic.vrm` — a directory the viseme sweep never read, holding 33 more files
+including `The Mandalorian.vrm`, which `withcols` has not got. `identify_build.py` puts
+`rollout/out/Sonic.vrm` at **97.1% of names, 0 length and 0 rotation mismatches: MATCH**, while
+the `withcols` copy shares 4.3% of names with his bundle. **They are two different Sonics and
+only one of them is his.**
+
+### What that corrects
+
+- **The alpha triage said Shrek, Scott Hall and Steve have no `.vrm`.** All three do. Shrek's and
+  Steve's are in the scratchpad root and both report **MATCH** against their installed bundles.
+  Only Yui Suzukaze of that group genuinely has none.
+- **Sonic's lipsync verdict was right for the wrong reason.** It is not that his `.vrm` is a
+  different model — that was the `withcols` copy. His REAL build, the one that matches his
+  bundle, carries **zero shape keys**. He cannot lipsync, and now that is measured on the right
+  file.
+
+### The lipsync conclusion survives, on a bigger base
+
+The second store was swept the same way: **33 files, 30 with zero shape keys, 0 unreadable**, and
+the only two "mappable" rows are **Alice Ivy and Heels at 2 and 6 keys** — older builds carrying
+blink shapes only, where the fitter proposes mapping `Eye_Blink_R` to `aa`. That is the tool
+being asked to map a mouth in a file that has none, and it is a caution rather than a find; both
+characters already ship their proper `V_*` sets.
+
+So across **63 `.vrm` files in two stores**, the set of characters that could gain lipsync and
+have not is still **empty**.
+
+### And a warning the first attempt earned
+
+The first pass over `rollout/out` was `sed`-edited from the `withcols` sweep script, and the sed
+rewrote the log directory into a path nothing created. All 33 Blender runs wrote nowhere and
+every row came back `keys=?`. **The sweep's own per-row output is what caught it** — a tally
+alone would have said "33 files examined, 0 mappable" and looked exactly like a clean result.
+The second pass was written fresh rather than patched.
+
+## Shrek's hem IS a real opacity map, and it still is not installed
+
+Shrek was reachable after all (his `.vrm` is in the scratchpad root and reports **MATCH** against
+his bundle), and he is the strongest of the 14 bimodal candidates: his texture is literally named
+`t_Shrek_alpha_c`, and under its own UVs it measures **40.8% clear, 59.2% solid, 0.0% mid** on a
+238-vertex mesh. A small card, a perfectly bimodal alpha, and a name that says what it is.
+
+**And this time the render says yes.** As installed, the bottom of his tunic is a clean straight
+cut. Honoured, it gains a **ragged, frayed hem** — which is how Shrek's tunic looks. 1.78% of the
+frame changes, all of it at the hem.
+
+So the previous section's conclusion needs narrowing. *"The histogram cannot distinguish an
+opacity map from a specular mask"* still holds — Gadget's `Hair` looked identical by every number
+and was wrong. What is now also true is that **one of the five tested is right**, so the
+candidates are not all noise and the render is the only thing that sorts them.
+
+### Why he is not installed anyway
+
+`honour_alpha.py` asks for a CUTOUT and the file comes out `alphaMode: BLEND`. The VRM exporter
+reads `mtoon1.alpha_mode` when that block is enabled and falls back to Blender's `blend_method`
+otherwise — and its fallback maps `CLIP` to `BLEND`, not `MASK`. `build_vrm.py` knows this and
+turns `mtoon1.enabled` on for exactly this reason.
+
+Turning it on here does not work either: with mtoon1 live the exporter writes **its** base colour
+factor and **its** texture slot, neither of which this tool sets, and the result is a flat
+`baseColorFactor [0.8, 0.8, 0.8, 1.0]` hem with **no fringe at all** — the cutout gone and the
+tunic 20% darker. That is the documented MToon trap, met from the other side.
+
+**A blended skirt card is not safe to ship on a guess.** A skirt is a cylinder, so the back of the
+fringe and the front are the same material with no z-write between them, which is precisely the
+card-against-card sorting this project has already paid for on hair. One static front-on render
+cannot see it, and the angled renders that would have come out mis-framed.
+
+So: **the finding is recorded and the change is not made.** What it needs is for `honour_alpha.py`
+to wire the base texture into the mtoon1 slot and carry the base colour factor across, which is
+the same plumbing `build_vrm.py` does; then it can be shipped as the cutout it should be.
+
+## Aiko was never unrecoverable either, and that makes three of three
+
+She was the one character left in *"nothing can re-fit them without re-acquiring the source"* —
+the one I had just confirmed was genuinely beyond reach, because nothing of hers is in Downloads
+or under `C:\dev`. Both halves of that were true and the conclusion was still wrong: **her `.vrm`
+is in the scratchpad root**, and `identify_build.py` puts it at **98.8% of names, 0 length and 0
+rotation mismatches: MATCH** against her installed bundle.
+
+She needs no source. `add_colliders.py` round-trips the `.vrm` she already has:
+
+    colliders: 9 in one group, attached to 4 of 4 spring chain(s)
+    round trip: tris 28605->28605, meshes 1->1, materials 3->3, images 3->3,
+                springs 4->4, colliders 0->9
+    round trip lost nothing; colliders 0 -> 9
+
+Three rotations differ afterwards, on `Head`, `HeadTop_End` and `Neck` — the round trip's
+bone-roll normalisation, the same benign signature as Sayuri's 25, Jessica Rabbit's 31 and Gadget
+Hackwrench's 57. Positions identical.
+
+**So all three characters in that note were fixable, by three different routes**: Scott Hall from
+an archive that was already extracted, Shadow from one in Downloads, and Aiko from a `.vrm` that
+was on disk the whole time. The note was written once and never re-checked, and each re-check
+cost about ten minutes.
+
+### The path bug that hid it, three times in one session
+
+Looking for her `.vrm` meant walking the scratchpads from Python. Three times today a Windows
+Python was handed an MSYS-style `/c/Users/...` path — once for a PIL open, once reading the
+backup bundles, once writing a file list — and **every time the only symptom was a zero**: no
+textures, no objects, no files examined. Bash hands those paths to a native `.exe` translated;
+inside a `-c` string they are just text, and Windows reads them against the current drive root.
+
+A zero from a tool that cannot see its input is indistinguishable from a zero that means
+something, which is the lesson this document already has under a different name. **Pass Windows
+paths to Windows Python.**
 
 ## Open questions
 

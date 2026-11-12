@@ -90,7 +90,31 @@ for n in names:
             mat.alpha_threshold = 0.5
         except Exception:                               # noqa: BLE001
             pass
-    done.append("%s (%s, %s)" % (n, tex.image.name, mode))
+    # blend_method ALONE IS NOT ENOUGH, and the first Shrek build proved it:
+    # CLIP in Blender came out `alphaMode: BLEND` in the .vrm, because the VRM
+    # exporter reads mtoon1 when that block is live and only falls back to
+    # blend_method when it is not. A blended card has no z-write and sorts by
+    # draw order, which this project has already paid for once on hair -- so a
+    # cutout asked for must be a cutout written.
+    extra = ""
+    try:
+        mt = mat.vrm_addon_extension.mtoon1
+        # `mtoon1.enabled` defaults to FALSE and the exporter only writes the
+        # extension's alpha_mode when it is on; with it off, Blender's CLIP
+        # comes out as glTF BLEND. build_vrm.py turns it on for exactly this
+        # reason. HONOUR_MTOON=0 leaves it off and accepts BLEND, because
+        # enabling MToon swaps that material's SHADING MODEL -- fine on a hair
+        # card, and the thing that put a tan unlit plate across Peach's brow.
+        if mode == "CLIP" and os.environ.get("HONOUR_MTOON", "1") != "0":
+            mt.enabled = True
+        if getattr(mt, "enabled", False):
+            mt.alpha_mode = "MASK" if mode == "CLIP" else "BLEND"
+            if mode == "CLIP":
+                mt.alpha_cutoff = 0.5
+            extra = ", mtoon1 ON, alpha_mode=%s" % mt.alpha_mode
+    except Exception as e:                              # noqa: BLE001
+        extra = ", (no mtoon1 block: %s)" % e
+    done.append("%s (%s, %s%s)" % (n, tex.image.name, mode, extra))
 
 print("  honoured: %s" % "; ".join(done))
 
