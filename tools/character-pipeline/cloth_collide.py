@@ -193,10 +193,21 @@ def report(path):
             continue
         tally = {}
         dcol = 1e9
-        for jn in joints:
+        for ji, jn in enumerate(joints):
             p = pos[jn]
             best = min(segments, key=lambda s: seg_dist(p, s[2], s[3]))
             tally[best[0]] = tally.get(best[0], 0) + 1
+            # The ANCHOR is excluded from the collider distance, because a
+            # collider cannot move it. Verified in the code the game runs:
+            # UniVRM builds `joints.Length - 1` logic elements, each from
+            # joints[i] as head and joints[i+1] as tail, and collision moves
+            # `nextTail` only -- so joints[0] is a head and never a tail.
+            # A tail rooted on the spine therefore sits inside the torso
+            # capsule by design, and reporting that as "inside a collider"
+            # would bury the fault this number exists to catch: a SIMULATED
+            # joint inside one, which is ejected on frame one.
+            if ji == 0:
+                continue
             for kind, a, b, r in cshapes:
                 d = (float(np.linalg.norm(p - a)) if kind == "S"
                      else seg_dist(p, a, b)) - r

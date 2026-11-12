@@ -155,7 +155,23 @@ def fit(arm, ext, MAP, bone_names, log=print):
     for sp in sb.springs:
         if re.search(CHEST, getattr(sp, "vrm_name", "") or "", re.I):
             continue
-        for j in sp.joints:
+        # Skip the chain's FIRST joint. It is the anchor: its position comes
+        # from the skeleton, not from the simulation, so no collider can eject
+        # it -- and guarding against it is actively harmful, because an anchor
+        # is normally attached to the very body part the collider represents.
+        #
+        # The Xenomorph is the case. His tail is rooted on his spine, so
+        # `XenosBiped_TailRoot_SHJnt` sits at EXACTLY 0.0000 m from the torso
+        # capsule's axis, the guard shrank the capsule to 0.000, and `add`
+        # dropped it. He ended up with eight limb colliders and nothing at all
+        # on his torso -- which is where his lower back tubes hang. A joint on
+        # the axis has no outward direction to be ejected along either, so the
+        # old behaviour was not even protecting anything.
+        #
+        # The joints that matter are still guarded: his next tail joint is at
+        # 0.073 and his back-tube roots at 0.123, so the capsule comes out at
+        # 0.070 rather than vanishing.
+        for j in list(sp.joints)[1:]:
             b = arm.data.bones.get(j.node.bone_name)
             if b is not None:
                 guard.append(b.head_local)

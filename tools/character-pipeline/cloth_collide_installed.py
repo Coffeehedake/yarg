@@ -275,9 +275,14 @@ def report(path):
         mine = [c for g in gids for c in groups.get(g, []) if c in cshapes]
         tally = {}
         dcol = 1e9
-        for p in pts:
+        for pi, p in enumerate(pts):
             best = min(segments, key=lambda s: seg_dist(p, s[1], s[2]))
             tally[best[0]] = tally.get(best[0], 0) + 1
+            # The anchor is excluded from the collider distance; a collider
+            # cannot move it. See the note in cloth_collide.py -- UniVRM's
+            # simulation collides tails only, and joints[0] is never a tail.
+            if pi == 0:
+                continue
             for cid in mine:
                 a, b, r = cshapes[cid]
                 dcol = min(dcol, seg_dist(p, a, b) - r)

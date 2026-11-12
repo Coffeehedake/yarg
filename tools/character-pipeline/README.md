@@ -437,8 +437,53 @@ What is left, and why each is left:
 | character | chains | why not fixed |
 |---|---|---|
 | Kaiser Aufhänger (36), Adachi Rei (2) | 38 | downloaded bundles, not built here. Kaiser's own author covered his arms and torso and not his legs |
-| Aiko, Scott Hall, Shadow, Xenomorph | 16 | **zero colliders** — the original collider rollout never reached them, and no `.vrm` for any of them survives on this machine. Xenomorph's source FBX is still here, so he could be rebuilt; the other three cannot be |
+| Aiko, Scott Hall, Shadow | 11 | **zero colliders** — the original collider rollout never reached them, and no `.vrm` for any of them survives on this machine |
 | Gadget Hackwrench, Pomni | 4 | they have a `.vrm`, but `identify_build.py` says it is **not what is installed** (57 and 5 rotation mismatches). Installing it would swap the character, which is the trap this project has already been caught by twice |
+| ~~Xenomorph~~ | ~~5~~ | **DONE 2026-11-12** — his source FBX survived. See below |
+
+Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
+one of the three rows above.
+
+### The Xenomorph: his tail is on his spine, so he had no torso collider
+
+Rebuilt from `xeno/source/Xenomorph Default.fbx` at `2.40 xeno`, which reproduces the installed
+bundle exactly — **171 bones matching to zero length and zero rotation mismatches**, 51,548
+triangles, 1 mesh, humanoid 46/46 — and he had no `rollout/out` reference, so that rig comparison
+is what stands in for the triangle gate. Two things had to be recovered rather than guessed:
+
+- **His spring regex.** The default finds his tail and nothing else; his four dorsal tubes need
+  `BackTube` appending to it, or he comes back with 1 chain against the installed 5. And
+  `(BackTube|TailRoot)` is *not* enough — the regex has to match a chain's whole run of bones, not
+  just its root, so `TailRoot` alone produced the four tubes and **lost the tail**.
+- **A real defect in the collider guard**, which is the part worth keeping.
+
+The guard refuses to let a collider contain a spring joint. His tail is rooted on his spine, so
+`XenosBiped_TailRoot_SHJnt` sits at **exactly 0.0000 m from the torso capsule's axis** — and the
+guard dutifully shrank the capsule to 0.000, `add` dropped it as degenerate, and he ended up with
+eight limb colliders and **nothing at all on his torso**, which is where his lower back tubes hang.
+
+The anchor is now excluded from the guard, and this is checked rather than assumed. From the code
+the game actually runs — `UpdateFastSpringBoneJob` and `FastSpringBoneBuffer` in
+`com.vrmc.gltf` — a spring is built as `joints.Length - 1` logic elements, each taking `joints[i]`
+as its head and `joints[i+1]` as its tail, and collision moves `nextTail` only. **`joints[0]` is a
+head and never a tail, so no collider can move it.** Guarding against it protected nothing and cost
+the collider; a joint sitting exactly on the axis has no outward direction to be ejected along
+either.
+
+With it excluded his torso capsule comes back at 0.041 (shrunk from 0.122 to clear his next tail
+joint at 0.043), all five chains are guarded, and the nearest **simulated** joint to any collider
+surface is +0.002 m.
+
+Both cloth checks now skip the anchor when measuring that distance, for the same reason: a tail
+rooted on a spine is inside the torso capsule by design, and reporting it would bury the case the
+number exists to catch — a *simulated* joint inside a collider, which is ejected on frame one.
+
+**It makes the already-shipped colliders bigger**, which is the intended direction and was measured
+before being believed. Re-fitting four of them: Jinx is byte-identical, Chibi Rem's spine goes
+0.091 → 0.103, Gadget's 0.127 → 0.193, and **Peach's hip capsule 0.055 → 0.103** — it had been
+halved by her own skirt anchors. Across all of them no simulated joint ends up inside a collider,
+closest approach +0.002 m. Those nine have *not* been reinstalled with the larger colliders; that
+is a second pass worth doing and is not done.
 
 ### Chest chains are unguarded on purpose
 
@@ -1271,6 +1316,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Yoda | mixamo | 0.66 | USDZ, no skeleton at all — auto-rigged; `VRM_RIGID="island:0=Head"`, robe on `island:1` with `HAIR_BONE=Spine1 HAIR_STRANDS=1`. The USDZ has **no** eye map: merge `CHA_yodaEye_C.png` from the original zip and pin it with `VRM_TEX="yoda_mesh_RoninShader7=CHA_yodaEye_C.png"` |
 | Miku | maxbiped | 1.58 | `VRM_FINGER_FILL=1`, exclude `^ts_bot` (a detached guitar), spring regex `$^` and `VRM_CLEAR_SPRINGS=1`. **The hairrig was removed**: `island:7+8` reached 198 of her ~493 hair verts and weighted 59, which sheared the ribbons apart. Her hair is ~250 strips and is splayed outward in the ORIGINAL download, not by us |
 | Skibidi Toilet | valvebiped | 1.60 | exclude `^(Icosphere\|Object_2$)` — the toilet shell swamps the model |
+| Xenomorph | xeno | 2.40 | `xeno/source/Xenomorph Default.fbx`, 51,548 triangles, 1 mesh, humanoid 46/46. The spring argument must be the DEFAULT regex with `\|BackTube` appended — the default alone finds only his tail and loses his four dorsal tubes, and `(BackTube\|TailRoot)` loses the tail, because the regex has to match a chain's whole run of bones rather than just its root. No `rollout/out` reference exists for him, so verify a rebuild with `identify_build.py` against the installed bundle instead: expect 171 bones, 0 length and 0 rotation mismatches |
 
 ### Recovering a character from its own .yargchar
 
