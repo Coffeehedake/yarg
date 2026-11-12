@@ -1309,6 +1309,12 @@ right.
 - `collider_group_check.py <dir|vrm...>` — does every collider reach the group that guards the
   chains? The builder's log is not an answer: it said "10 in one group" for three characters
   whose exported group held six. Exits non-zero on an orphan, so it works in a pre-commit check
+- `eye_shell_sweep.py <dir|yargchar|vrm ...>` — is an opaque shell parked in front of
+  anybody's eyes? Three characters shipped that way and all three were found by accident.
+  Reads BOTH forms and needs to: a bundle renames every material to `<Character>_<n>`, so
+  a shell that lives as a MATERIAL inside an ordinarily-named mesh (Alice Ivy's
+  `EyeMoisture_*` inside `Custom_Eye`) is invisible on that side. Every hit is a
+  CANDIDATE — a solid eye is ordinary on a stylised character
 - `set_material_alpha.py <in.vrm> <out.vrm>` (via `blender --background --python`, with
   `SETALPHA="Material=0.08"`) — make one material transparent in a built `.vrm`. For the
   eye-shell fault on a character with no source: Alice Ivy, Ariel and Prix have all had a

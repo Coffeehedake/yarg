@@ -3459,6 +3459,36 @@ Nothing is lost in any of the four and nothing renders wrongly — the materials
 cutout's cost to clip zero pixels. **Not worth churning two characters for**, and recorded here so
 the next sweep that flags them does not re-investigate.
 
+## Is anybody else's eye covered? A sweep, because three accidents is a pattern
+
+Three characters have shipped with a flat shell over perfect eyes, and each was found by
+accident. `eye_shell_sweep.py` looks for the shape they have in common, which is **not** their
+alpha and **not** their texture: a mesh or material whose NAME says it is a layer in front of the
+eye, drawn solid.
+
+**It has to read both the bundle and the `.vrm`, and that is the interesting part.** A bundle
+renames every material to `<Character>_<n>`, so only mesh names survive — and Alice Ivy's shell
+was a *material* (`EyeMoisture_Left`) inside an ordinarily-named mesh (`Custom_Eye`). The bundle
+pass cannot see that shape of the fault at all. The `.vrm` keeps the authored names, and 30 of
+the 65 characters still have one.
+
+**The positive control is free**: run over the pre-fix `.vrm` files, the sweep reproduces both
+known faults — Alice Ivy's two `EyeMoisture` materials OPAQUE with no base map, and Prix's
+`aiStandardSurface4` OPAQUE on `L_iris`/`R_iris`. A sweep that cannot find the bugs it was
+written for is worth nothing, and this one finds them.
+
+### Nothing new turned up. Four candidates, four explanations
+
+| | | |
+|---|---|---|
+| **Spider-Man PS** | `24_lens_…` OPAQUE, with `24_eye_…001` and `.002` **behind it** | the one that looks most like Prix, and is not. He is MASKED: the lens is the white eye piece of the mask and the eyes modelled beneath are meant to be hidden. Making it transparent would show human eyes through his mask |
+| **Yui Suzukaze** | `…EyeIris…` OPAQUE | VRoid construction — `EyeWhite` behind, `EyeIris` on it, `EyeHighlight` on top. The iris is *supposed* to be solid; transparent, the white would show through it |
+| **Ariel** | `Irises` OPAQUE | that is her eye, not a shell. Her `EyeMoisture` and `Cornea` are the deliberate `MASK` pair already recorded, and her irises render correctly |
+| **Heels** | `Std_Cornea_L/R` OPAQUE | deliberate and documented: honouring their authored 0.553 over a textured base washed her iris out |
+
+So **Prix was the last one**, and the sweep is kept because the next character acquired will be
+checked by a tool rather than by somebody noticing.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
