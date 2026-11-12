@@ -3153,6 +3153,64 @@ across the set.
 source archive; theirs are not on disk, and nothing in a `.yargchar` or a `.vrm` distinguishes
 "black on purpose" from "a 5% film flattened to 100%". Re-acquiring a model is the only way.
 
+## The other 35 characters had never been checked, and the sweep that cleared them was reading half the set
+
+`collider_group_check.py` reads `.vrm` files. Only **30 of the 65** installed characters still
+have one on this machine, so when it came back clean it had cleared 30 characters and said
+nothing whatever about the other 35 — while reading as though the question were closed. That is
+the same hole this document already records under *Verify a zero with a control*, in a tool
+written to avoid it.
+
+`collider_group_check_installed.py` closes it. The spring-bone configuration survives the Unity
+import whole, so the question the `.vrm` check asks of indices can be asked of the bundle's
+path_ids:
+
+    Vrm10Instance.SpringBone.Springs[].ColliderGroups[]   -> group path_ids
+    VRM10SpringBoneColliderGroup.Colliders[]              -> collider path_ids
+    VRM10SpringBoneCollider                               -> the collider
+
+### Result: every character built here is clean, and the one orphan is not ours
+
+**65 bundles: 26 clean, 1 with a fault, 38 with no colliders at all.**
+
+The fault is **Adachi Rei — 16 colliders in 14 groups, `LowerBody` in none of them**. She is a
+**downloaded bundle we did not build**, and her structure says so: 14 hand-authored groups,
+mostly one collider each, named after the garment they guard (`apronL0-collider`, `HeadTip`,
+`LegD_R-collider`). Ours are one group of ten. Her author made a collider for the lower body and
+never put it in a group; nothing in this pipeline touched it. **It is not the Blender bug, and
+it is not ours to have caused.** Leaving it is the correct answer, for the reason already
+recorded about rewriting bundles we did not build.
+
+### Two things the check had to learn before its output was worth reading
+
+**A group that no chain references is not automatically a fault.** `VRM_BREASTRIG` gives a
+character two chest chains, and chest chains are deliberately given no collider group — handing
+them the torso capsule would push them out of the body they belong to. Alcina Dimitrescu has
+*only* chest chains, so her one group is referenced by nothing, correctly. The first version of
+this check called that a fault. A check that reports a design decision as a defect teaches the
+reader to skim its output, which is worse than not running it.
+
+**A character with colliders and no chains at all is a different statement** from one whose
+colliders are all grouped, and both are printed. "Found nothing" and "examined nothing" look
+identical otherwise.
+
+### Verified by failing, twice
+
+The pre-rebuild `Alcina Dimitrescu.yargchar` kept as a control comes back
+**`4 ORPHANED: forearm.L, spine, spine.005, upper_arm.L`** — independently reproducing, from the
+bundle, the same four the `.vrm` check found, and matching the documented signature of the bug
+(the head/spine and the left arm). `CGC_CONTROL=1` discards every group's membership, and then a
+clean character reports all ten of its colliders orphaned. A check that has never been seen to
+fail has not been verified.
+
+### A by-product worth recording: three characters with long hair have no hair chains
+
+The sweep surfaced it because all three report "every chain here is a chest chain": **Alice Ivy,
+Jessica Rabbit and Alcina Dimitrescu** each carry exactly two spring chains, both chest, and no
+hair chain at all. All three have long hair. That is a different fault class from this one and is
+not fixed here, but it is a standing rule of this project that long hair gets spring bones, so it
+is recorded rather than left in a terminal.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
@@ -3198,12 +3256,13 @@ Not answered by the code, and worth measuring before authoring anything expensiv
   renders as a white statue; her appearance lives in her `.blend`'s material nodes, which no glTF
   export carries. Recovering it means baking those to textures, which nothing here does. Her head
   is also above the character-select camera at 2.9 m, and her height is canon.
-- **Collider groups are now verified, not assumed.** 2026-11-12: a stale Blender reference meant
-  four colliders per character resolved to nothing in Alcina, Pomni and the Xenomorph, while the
-  build log reported all ten. All three are rebuilt; `collider_group_check.py` over every `.vrm` behind
-  an installed character now comes back clean. What has *not* been checked is the same property
-  inside the installed bundles of characters whose `.vrm` no longer exists — the sweep reads
-  `.vrm` files, and there is no equivalent read of a `.yargchar`'s spring-bone data.
+- **Collider groups are verified across the whole installed set, not assumed.** 2026-11-12: a
+  stale Blender reference meant four colliders per character resolved to nothing in Alcina, Pomni
+  and the Xenomorph, while the build log reported all ten. All three are rebuilt, and both ends
+  are now swept — `collider_group_check.py` over every `.vrm`, and
+  `collider_group_check_installed.py` over all 65 `.yargchar`. **Every character built here is
+  clean.** The single orphan in the set is in Adachi Rei, a downloaded bundle. See *The other 35
+  characters had never been checked* below.
 - **Three characters with zero colliders and no surviving `.vrm`** — Aiko, Scott Hall, Shadow the
   Hedgehog, 11 unguarded chains between them. Nothing can re-fit them without re-acquiring the
   source: the bundle round trip is not a route, for the measured reason above.

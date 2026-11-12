@@ -1296,6 +1296,11 @@ right.
 - `collider_group_check.py <dir|vrm...>` — does every collider reach the group that guards the
   chains? The builder's log is not an answer: it said "10 in one group" for three characters
   whose exported group held six. Exits non-zero on an orphan, so it works in a pre-commit check
+- `collider_group_check_installed.py <dir|yargchar...>` — the same question asked of the
+  **installed bundle**, which is the only form 35 of the 65 characters still exist in. Separates
+  an orphaned collider from a dangling group reference and from a group no chain uses, and knows
+  that a chest-only character's unused group is by design. `CGC_CONTROL=1` empties every group,
+  so a clean character must come back orphaned
 - `armpose2.py <model>` — arm straightness in REST **and** POSE for any rig, finding the arm
   chain by name. This is what showed Mixamo's rest pose to be the arms-down original
 - `fingerpose.py <model>` — per-chain finger curl, REST vs POSE, both hands. The left/right
