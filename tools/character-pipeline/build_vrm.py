@@ -6157,17 +6157,36 @@ for mat in bpy.data.materials:
     # iris disc, and honouring `onefreeman` would erase his whole suit, since
     # its alpha is ~0 everywhere. The way to tell is to ask what the texture is
     # FOR and whether honouring its alpha would erase that.
+    # IT OVERRIDES AN ESTABLISHED CUTOUT, and that is a deliberate reversal of
+    # the precedence every other branch here follows. The guard used to be
+    # `not cut`, which made this switch a no-op on exactly the materials that
+    # needed it most: a dedicated opacity map sets `cut` before this runs, so
+    # naming such a material did nothing and the cutout shipped. That is how
+    # Heels' eyelashes came to be **99.6% clipped away** -- her lash alpha is
+    # feathered, the 0.5 MASK threshold throws away almost all of it, and the
+    # one lever that could have said otherwise declined to fire.
+    #
+    # "A dedicated opacity map is the stronger signal" is right when the
+    # question is OPAQUE vs not. It is not an answer to MASK vs BLEND, which
+    # is a question about the SHAPE of the alpha, not its provenance. An
+    # explicit name from a person who has looked at the texture outranks an
+    # inference either way, so this branch now wins over `cut`. `blend`
+    # already dominates `cut` everywhere it is read (blend_method,
+    # mtoon1.enabled, alpha_mode), so nothing else has to change.
     _blend_names = [s.strip() for s in
                     os.environ.get("VRM_BLEND_MATERIALS", "").split(";")
                     if s.strip()]
-    if (not cut and mat.name in _blend_names and base_tex is not None
+    if (mat.name in _blend_names and base_tex is not None
             and bsdf is not None and "Alpha" in bsdf.inputs
             and base_tex.image and base_tex.image.channels == 4):
         if not bsdf.inputs["Alpha"].links:
             nt.links.new(base_tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+        print("    %s: blended on its base map's own alpha, by name%s"
+              % (mat.name,
+                 " -- OVERRIDING the cutout a dedicated opacity map had "
+                 "already established" if cut else ""))
         blend = True
-        print("    %s: blended on its base map's own alpha, by name"
-              % mat.name)
+        cut = False
 
     # Honour the authored blend. Not a guess about what an alpha channel MEANS
     # -- the material was SET to BLEND with that image in its Alpha, and all

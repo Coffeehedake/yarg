@@ -235,7 +235,24 @@ def fit(arm, ext, MAP, bone_names, log=print):
             c.shape.capsule.radius = radius
         if not c.uuid:
             c.uuid = c.name
-        cols.append(c)
+        # KEEP THE UUID, NOT THE ELEMENT. `sb.colliders` is a Blender
+        # CollectionProperty, and `.add()` may reallocate its storage -- which
+        # leaves every reference handed out by an earlier `.add()` pointing
+        # somewhere it should not. Holding `c` and reading `c.uuid` later
+        # therefore reads a uuid that belongs to a different collider, or to
+        # nothing, and the add-on silently drops a group reference whose uuid
+        # does not resolve.
+        #
+        # MEASURED, because the log says otherwise: the builder reported
+        # "colliders: 10 in one group" for Sayuri while the exported file's
+        # group held `[4, 5, 6, 7, 8, 9]` -- the last six. Her head, hip and
+        # left arm were measured, fitted, written into the file and then
+        # guarded nothing. The surviving slice depends on when Blender happens
+        # to reallocate, so it is not even stable: the same character built
+        # twice in the same batch came out with six references one time and
+        # `[8, 9]` the next. A count printed from the builder's own list is
+        # not a measurement of what reached the file.
+        cols.append(c.uuid)
         log("  collider: %-7s on %-22s r=%.3f at world %s"
             % (kind, bone[:22], radius, tuple(round(v, 3) for v in centre)))
 
@@ -335,8 +352,18 @@ def fit(arm, ext, MAP, bone_names, log=print):
         pass
     if not grp.uuid:
         grp.uuid = "colgrp_body"
-    for c in cols:
-        grp.colliders.add().collider_uuid = c.uuid
+    for u in cols:
+        grp.colliders.add().collider_uuid = u
+    # Say what REACHED the group, not what was intended. The add-on resolves
+    # each reference by uuid at export and drops the ones it cannot match, so
+    # a reference count taken here is the first point at which the two can be
+    # compared at all.
+    _live = {getattr(c, "uuid", "") for c in sb.colliders}
+    _lost = [u for u in cols if u not in _live]
+    if _lost:
+        log("colliders: WARNING %d of %d group references do not resolve to a "
+            "collider in the file and will be dropped on export: %s"
+            % (len(_lost), len(cols), ", ".join(_lost)))
 
     n = 0
     for sp in sb.springs:

@@ -71,7 +71,12 @@ changes the feel; `VRM_CUTOUT_INFER=1` infers a cutout from a base map's own alp
 `VRM_CUTOUT_MATERIALS="a;b;c"` does the same for named materials only, when the inference is right
 about some of a character's materials and wrong about others; `VRM_BLEND_MATERIALS="a;b"` is the third state, for a
 material whose alpha has no extremes at all and that therefore no cutoff can express — Gordon
-Freeman's glasses lenses; `VRM_MTOON_ALL=1` puts every material
+Freeman's glasses lenses — and for a **feathered** one a cutout would destroy, such as an
+eyelash. **It overrides a cutout an opacity map has already established**, deliberately: "a
+dedicated opacity map is the stronger signal" answers OPAQUE vs not, and says nothing about MASK
+vs BLEND, which is a question about the shape of the alpha rather than its provenance. While it
+was guarded the other way it was a no-op on every material that needed it, and Heels' eyelashes
+shipped 99.6% clipped away; `VRM_MTOON_ALL=1` puts every material
 on the MToon shading model, which is what a character needs when a cutout shares a continuous
 surface with an opaque material (otherwise only the cutouts are MToon and the seam shows);
 `VRM_LIMB_COLLIDERS=0` goes back to a head sphere and a torso capsule alone;
@@ -982,7 +987,8 @@ falls out of that is by *characters fixed per change made* rather than by severi
 
 | # | class | scope | state |
 |---|---|---|---|
-| 1 | a soft alpha shipped as a hard cutout | **20 materials, 6 characters** | one exporter change, below. Heels' eyelashes are **99.6% clipped away** |
+| — | a soft alpha shipped as a hard cutout | was 20 materials, 6 characters | **CLOSED 2026-11-12** — all six rebuilt, `HARDCUT` 20 → 1 across the set, blended materials 1 → 20. Item 0 below |
+| — | colliders in a group that do not resolve | was 12 orphans, 3 characters | **CLOSED 2026-11-12** — a stale Blender reference; found while doing the above. Item 0a |
 | 2 | Kaiser Aufhänger has no leg colliders | 36 chains, 1 character | **70% of every unguarded chain left in the set** is this one character |
 | 3 | zero colliders, no `.vrm` | 11 chains, 3 characters | **blocked, and not by effort.** Editing a loaded bundle works; writing it back does not — `BackgroundHelper.Export` exits 0 and produces a 2,552-byte shell with no meshes in it. See `docs/character-models.md` |
 | 4 | opacity in an opaque material (`UNUSED`) | 45 materials, 17 characters | needs a render each; roughly half will be specular masks |
@@ -995,54 +1001,79 @@ falls out of that is by *characters fixed per change made* rather than by severi
 The reasoning behind each is in `docs/character-models.md`; what follows is the older list,
 which items 1-3 above now sit in front of.
 
-0. **Rebuild the six characters whose soft alpha ships as a hard cutout.** Still open, and the
-   reason it was briefly closed is worth keeping: this entry said "NOT POSSIBLE — none of the six
-   can be rebuilt", which was **wrong**. Every source archive is in `%USERPROFILE%\Downloads\`,
-   named after the model listing rather than the character — `sayuri-dans.zip`,
-   `alice-ivy-animated-by-jungle-jim.zip`, `valve-gordon-freeman-model.zip`,
+0. ~~**Rebuild the six characters whose soft alpha ships as a hard cutout.**~~ **DONE, all six,
+   2026-11-12.** Across the installed set `HARDCUT` went **20 → 1**, and the one left is
+   deliberate (Ariel's `EyeMoisture`, below). Blended materials in the 65 went from **1 to 20**,
+   and the one that was there before belongs to Adachi Rei, a downloaded bundle we did not build.
+
+   **The entry was wrong twice, in opposite directions, and both are worth keeping.**
+
+   First it said "NOT POSSIBLE — none of the six can be rebuilt". Every source archive is in
+   `%USERPROFILE%\Downloads\`, named after the model listing rather than the character —
+   `sayuri-dans.zip`, `alice-ivy-animated-by-jungle-jim.zip`, `valve-gordon-freeman-model.zip`,
    `topless-sexy-girl-with-heels.zip`, `alcina-dimitrescu-resident-evil-village.zip`. The search
    that "proved" they were gone looked for the file *inside* each archive, which is what the
-   recipe rows name, and a file inside a zip matches no `find`.
+   recipe rows name, and a file inside a zip matches no `find`. **Search for the CONTAINER, not
+   the content**, and sort by modification time: the whole set was downloaded within a few hours
+   of 2026-11-07, so one known archive's timestamp finds the rest.
 
-   **Search for the CONTAINER, not the content**, and sort by modification time: the whole set
-   was downloaded within a few hours of 2026-11-07, so one known archive's timestamp finds the
-   rest. Ariel is the only one with no archive, and her row already says she was recovered from
-   her own `.yargchar`.
+   Then it said "Ariel is the only one with no archive". **Also wrong.** Her recipe row says her
+   arguments were *recovered from her own `.yargchar`*, which is a statement about how the
+   ARGUMENTS were reconstructed and says nothing about whether the model exists. It does:
+   `base-female-character.zip`, as `source/Ariel For Sketchfab.fbx`. A row explaining how a
+   recipe was derived is not evidence about what is on disk — go and look.
 
-   What IS true: the three surviving `.vrm` files (Heels, Ariel, Alcina) are OLDER than what is
-   installed — 0 length and 0 rotation mismatches against a sub-90% name overlap, the same rig
-   *minus* the spring bones the 11-11 chest rig added — so re-exporting a `.vrm` is not a route.
-   A rebuild from the archive is.
+   **The builder had no lever for this, and that was the real blocker.** The exporter fix landed
+   on 2026-11-12 and carried a blend across correctly; what it could not do is *decide* to make
+   one. Only 3 of the 20 flagged materials were `alphaMode: BLEND` in their `.vrm` at all — the
+   other 17 were `MASK`, chosen by `build_vrm.py`'s opacity-map path — so a plain re-export would
+   have reproduced every cutout exactly. `VRM_BLEND_MATERIALS` existed but was guarded on
+   `not cut`, which made it a no-op on precisely the materials that needed it. **An explicitly
+   named material now outranks an inferred cutout**; see the switch's description above.
 
-   Until then, four of the six carry the lowered-cutoff stopgap below. **That is not the fix** —
-   a rebuild with the corrected exporter gives them real alpha blending.
+   Only Gordon needed no Blender rebuild — his lens was already `BLEND` and his fault was purely
+   the exporter — which is also why re-exporting his existing `.vrm` was the right move: it put
+   his 32 FACS shape keys out of reach of a rebuild that has dropped them before.
 
-   Two consolation routes were then measured, and only one of them works. **Patching the
-   installed bundle's material to a real blend does NOT work**: every number comes back right and
-   Gordon's lens renders as a solid white pane, worse than the 79%-clipped cutout it replaced.
-   **Lowering `_Cutoff` does work**, because it changes no shader variant — see
-   `patch_alpha_blend.py` and the write-up in `docs/character-models.md`. It cannot give a
-   feathered edge, and it needs a render and a per-material `--keep` each, because one value does
-   not suit both an eyelash and a hair atlas.
-
-   **Four of the six are installed, as of 2026-11-12**, by lowering `_Cutoff` to 0.16 on the
-   materials the threshold was destroying, each one rendered before and after on the podium:
-
-   | character | materials changed | result | backup |
+   | character | blended | verdict from the podium render | installed |
    |---|---|---|---|
-   | Alice Ivy | `AliceIvy_5` | solid black bars over both eyes become real lashes — the biggest visible gain in the set | `.precutblend` |
-   | Heels | `Heels_5`, `_18`, `_19`, `_13` | lashes appear, hair fuller, tear line kept by the cap (0.042) | `.precutblend` |
-   | Sayuri | `Sayuri_8`, `_9`, `_10`, `_11` | modestly heavier lashes, slightly fuller hair | `.precutblend` |
-   | Ariel | `Ariel_20`, `Ariel_25` **only** | lashes fuller. Her `EyeMoisture` and `Cornea` are deliberately excluded — at 0.16 they draw an opaque white film and **erase her irises** | `.precutblend` |
-   | Alcina Dimitrescu | — | not installed: no visible change, her head is above the select camera at 2.9 m | — |
-   | Gordon Freeman | — | not installed: a lens is a pane, and no cutoff expresses one. Needs the blend, so needs a rebuild | — |
+   | Gordon Freeman | `lens` | **a speckled hard mask over both eyes becomes glass you can see his eyes through.** The clearest single win | re-export only |
+   | Sayuri | 2 eyelash, `Lace`, `Moles`, `Hair` | **hair stops being dotted and reads as hair.** The cutout was chewing the feathered strand edges into speckle | + hair |
+   | Heels | eyelash, both tear lines, both eye occlusions, 2 hair | lashes present, hair continuous instead of speckled | + hair |
+   | Alice Ivy | `Std_Eyelash` | lashes already fixed by the stopgap; the blend keeps them without a threshold | lashes only |
+   | Ariel | `Eyelashes`, `Hair Cap` | hair edge and lash softer, **irises intact** | lashes only |
+   | Alcina Dimitrescu | `Material.006` (`CILIOS`) | **no verdict possible** — at 2.9 m her head is above the podium camera and the render shows her dress | yes, on the numbers |
+
+   **Hair was built both ways and decided by a render, not by preference.** A blended card has no
+   z-write, so overlapping hair sorts by draw order rather than by depth, which a cutout does not
+   — that cost cannot be predicted from an alpha channel. Two builds each for the three
+   characters with hair in the flagged set, rendered side by side: blending it is clearly better
+   for Sayuri and Heels, whose hair loses ~25% of its ink to the threshold. **Alice Ivy's hair
+   stayed a cutout**, because it loses **1%** — there is nothing to recover, and a cutout sorts
+   more robustly. Rule: blend the hair only where the sweep flags it.
+
+   **Ariel's `EyeMoisture` and `Cornea` are deliberately still cutouts**, and that is the one
+   remaining `HARDCUT` plus the one `INVISIBLE` in the whole set. At a lowered cutoff
+   `EyeMoisture` drew an opaque white film and erased her irises; a blend is a different
+   operation on the same suspect alpha, and upgrading the two materials already proven safe costs
+   nothing while adding these two re-opens a measured regression.
+
+   Backups are `<Name>.prerebuild.yargchar` in `character-backups/`.
+
+   The earlier stopgap (lowering `_Cutoff` to 0.16 on the installed bundle) is superseded by all
+   of the above and its tooling is kept only for what it measured: **patching an installed
+   bundle's material to a real blend does NOT work** — every number comes back right and Gordon's
+   lens renders as a solid white pane — while **lowering `_Cutoff` does**, because it changes no
+   shader variant. See `patch_alpha_blend.py` and `docs/character-models.md`.
 
    **Do not rank this work by the clipped-ink number.** Alice Ivy was last of eleven by that
-   measure and produced the most visible improvement; Alcina was second and produced nothing.
-   How much of a texture a threshold destroys says nothing about how much of the *character* it
-   destroys — that depends on where the material sits and whether the camera can see it.
+   measure and produced the most visible improvement from the stopgap; Alcina was second and
+   produced nothing. How much of a texture a threshold destroys says nothing about how much of
+   the *character* it destroys — that depends on where the material sits and whether the camera
+   can see it. The same number then mis-ranked the rebuild in the other direction: Gordon's lens
+   was sixth of eleven at 79% and is the most improved thing in the set.
 
-   Per material, the share of the texture the 0.5 threshold threw away before this:
+   Per material, the share of the texture the 0.5 threshold threw away before any of this:
 
    | character | material | texture | clipped |
    |---|---|---|---|
@@ -1061,6 +1092,34 @@ which items 1-3 above now sit in front of.
    Back up each installed `.yargchar` first, and look at each one before and after — a material
    that goes from cutout to blend changes sort order as well as edges, and hair that sorts wrongly
    against itself is its own defect.
+
+0a. **Four colliders per character were guarding nothing, in three installed characters.**
+   Found while rebuilding the six, and it is the more serious of the two faults.
+   `vrm_colliders.py` built its collider group by holding the element `.add()` handed back and
+   reading `.uuid` off it later. `sb.colliders` is a Blender `CollectionProperty`, and `.add()`
+   may reallocate, so those references go stale; the add-on then drops every group reference
+   whose uuid does not resolve.
+
+   **The builder's own log said "colliders: 10 in one group" while the file held six.** Sayuri's
+   exported group was `[4, 5, 6, 7, 8, 9]` — her head, hip and left arm were measured, fitted,
+   written into the file and guarded nothing. It is not even stable: the same character built
+   twice in one batch came out `[4..9]` once and `[8, 9]` the next. **A count printed from the
+   builder's own list is not a measurement of what reached the file**, and this is the second
+   time that distinction has cost something here.
+
+   Fixed by keeping the uuid string rather than the element, plus a warning that compares the
+   group's references against the colliders actually in the file. `collider_group_check.py` over all 30 `.vrm` files
+   behind an installed character found exactly three affected — **Alcina, Pomni, the Xenomorph,
+   4 orphans each, always the head/spine and the left arm**. All three are rebuilt and installed;
+   Pomni and the Xenomorph carry no other change, and their backups are `.precolgroup`.
+
+   Only Sayuri of the rebuilt six goes through `add_colliders.py`, and it matters: that script is
+   a **round trip**, so the installed Sayuri carries 19 named collider nodes the importer makes
+   and a bone-roll convention that differs from a direct build on 25 bones by exactly 90° or
+   180°. Her rebuild was put through the same round trip, which takes her from `differs` back to
+   a clean `MATCH` against the installed bundle. Check `identify_build.py` before assuming a
+   recipe reproduces what is installed — a recipe row records the *build*, not the steps after
+   it.
 
 0b. **Triage the 45 `UNUSED` candidates, strongest first.** These are opaque materials whose base
    map carries alpha, and roughly half of such hits have historically been specular masks, atlas
@@ -1226,6 +1285,12 @@ right.
   nothing about weights; at rest every weighting is the identity
 - `weight_check.py <vrm> <pattern>` — do those bones actually drive vertices?
 - `skin_check.py <vrm>` — any mesh node without a skin can never animate
+- `vrm_alpha_modes.py <vrm...>` — what alpha mode each material actually CARRIES. Run it before
+  rebuilding for an alpha fault: a material that is `MASK` in the `.vrm` comes out a cutout no
+  matter what the exporter can express, and the rebuild will report success doing it
+- `collider_group_check.py <dir|vrm...>` — does every collider reach the group that guards the
+  chains? The builder's log is not an answer: it said "10 in one group" for three characters
+  whose exported group held six. Exits non-zero on an orphan, so it works in a pre-commit check
 - `armpose2.py <model>` — arm straightness in REST **and** POSE for any rig, finding the arm
   chain by name. This is what showed Mixamo's rest pose to be the arms-down original
 - `fingerpose.py <model>` — per-chain finger curl, REST vs POSE, both hands. The left/right
@@ -1619,8 +1684,8 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Character | rig | height | notes |
 |---|---|---|---|
 | Prix | mixamo | 1.70 | shape keys must be dropped, else she builds at 0.42 m |
-| Pomni | pomni | 1.70 | exclude `^Circle`; `VRM_VISEME_GAIN=3.0` (4.4 turns her upper lip inside out); `VRM_BLINK_BAKE="EyelidSup.L=1,0.55,0,0;EyelidInf.L=1,-0.5,0,0;EyelidSup.R=1,0.5,0,0;EyelidInf.R=1,-0.5,0,0"` and `VRM_BLINK_LASH="^Lashes"` (lash ticks lie on the closed seam, 4 mm in front of the lid, keeping 40% of their height) -- her blink is four eyelid BONES (peak at frame 30 of `Animation`), not a shape key; her `Lashes/Closed` key only moves two lash ticks and leaves the eyes open. The bake applies Solidify+Subsurf to the lid meshes, writes the closed pose as a `Blink` key and binds it. Rendered at weight 1.0: dark lids with a slit, matching her Sketchfab blink. Her iris `Big`/`Small` keys ride on YARG's own facial events: `VRM_EXPR="Wide_eyed=Eye.L/Big;Squint=Eye.L/Small"` makes them custom expressions named for lipsync event types, which `VRMCharacter.TryGetExpressionKey(string)` sets by name -- `Big` fills the eye with iris, `Small` shrinks it to a pinpoint (rendered, both eyes). The chart generator emits `Squint` but not `Wide_eyed`. **Added 2026-11-12, and she cannot be rebuilt without it:** `VRM_VISEME="aa=Face/A,ee=Face/ClosedTeeth,ih=Face/ClosedTeeth@0.7,oh=Face/OpenNoTeeth,ou=Face/OpenNoTeeth@0.6"` — her mouth shapes are named for an artist and only `A` is guessable, so without this she builds at 1/5 visemes. 32,764 triangles, 16 meshes, 27 morph targets, 5/5 bound |
-| Sayuri / Aiko | cc_base / mixamo | 1.70 | hairrig `^Hair$` — no hair bones of their own. **Sayuri as installed 2026-11-11:** add `VRM_BREASTRIG=1` (the recovered ARGV is the original build and omits it — without it the rebuild comes back with 4 spring chains against her 6) and `VRM_TEX="Eye_Shadows=Eyelashes_Opacity.png:alpha"` (she has one `Eyelashes_Opacity.png` and two materials that need it; the picker gives it to the one whose name matches). Her model is `source/Sayuri dans.fbx`, its texture paths point at `C:\Temp\CharacterCreator4Temp\` on someone else's machine and the builder relocates all 8 of them. 91,632 triangles |
+| Pomni | pomni | 1.70 | exclude `^Circle`; `VRM_VISEME_GAIN=3.0` (4.4 turns her upper lip inside out); `VRM_BLINK_BAKE="EyelidSup.L=1,0.55,0,0;EyelidInf.L=1,-0.5,0,0;EyelidSup.R=1,0.5,0,0;EyelidInf.R=1,-0.5,0,0"` and `VRM_BLINK_LASH="^Lashes"` (lash ticks lie on the closed seam, 4 mm in front of the lid, keeping 40% of their height) -- her blink is four eyelid BONES (peak at frame 30 of `Animation`), not a shape key; her `Lashes/Closed` key only moves two lash ticks and leaves the eyes open. The bake applies Solidify+Subsurf to the lid meshes, writes the closed pose as a `Blink` key and binds it. Rendered at weight 1.0: dark lids with a slit, matching her Sketchfab blink. Her iris `Big`/`Small` keys ride on YARG's own facial events: `VRM_EXPR="Wide_eyed=Eye.L/Big;Squint=Eye.L/Small"` makes them custom expressions named for lipsync event types, which `VRMCharacter.TryGetExpressionKey(string)` sets by name -- `Big` fills the eye with iris, `Small` shrinks it to a pinpoint (rendered, both eyes). The chart generator emits `Squint` but not `Wide_eyed`. **Added 2026-11-12, and she cannot be rebuilt without it:** `VRM_VISEME="aa=Face/A,ee=Face/ClosedTeeth,ih=Face/ClosedTeeth@0.7,oh=Face/OpenNoTeeth,ou=Face/OpenNoTeeth@0.6"` — her mouth shapes are named for an artist and only `A` is guessable, so without this she builds at 1/5 visemes. 32,764 triangles, 16 meshes, 27 morph targets, 5/5 bound. **Rebuilt and reinstalled 2026-11-12 for the collider-group fix alone** (item 0a) — no alpha change; backup `.precolgroup` |
+| Sayuri / Aiko | cc_base / mixamo | 1.70 | hairrig `^Hair$` — no hair bones of their own. **Sayuri as installed 2026-11-11:** add `VRM_BREASTRIG=1` (the recovered ARGV is the original build and omits it — without it the rebuild comes back with 4 spring chains against her 6) and `VRM_TEX="Eye_Shadows=Eyelashes_Opacity.png:alpha"` (she has one `Eyelashes_Opacity.png` and two materials that need it; the picker gives it to the one whose name matches). Her model is `source/Sayuri dans.fbx`, its texture paths point at `C:\Temp\CharacterCreator4Temp\` on someone else's machine and the builder relocates all 8 of them. 91,632 triangles. **As installed 2026-11-12:** add `VRM_BLEND_MATERIALS="Eyelashes;Eye_Shadows;Lace;Moles;Hair"`, then run the result through `add_colliders.py` with `VRM_RECOLLIDE=1`. **That last step is not optional and is not in the ARGV**: what is installed went through that round trip, which adds 19 named collider nodes and normalises bone rolls, so a direct build reads as `differs` against the installed bundle (25 bones off by exactly 90° or 180°) until it has been round-tripped too |
 | Aiko | mixamo | 1.70 | exclude `^Girl2\.[0-9]` — one girl, 15 Mixamo clips |
 | Batman | multiversus | 1.88 | run `prep_batman.py` first: two half-characters on two armatures |
 | Chibi Rem | rigify_def | 1.55 | exclude `'^(?!GME_Rem$).*'` |
@@ -1633,7 +1698,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Clone troopers | mixamo | 1.83 | |
 | Jinx | ue4 | 1.68 | braids and bangs already in the rig |
 | Shrek | mayajnt | 2.10 | |
-| Gordon Freeman | valvebiped | 1.80 | **As installed 2026-11-12:** build from `m2/source/Valve_Gordon_Freeman.fbx`, textures `m2/textures`, with BOTH of these or he loses something — `VRM_BLEND_MATERIALS="lens"` (his glasses lenses shipped opaque and drew as two solid white panes over his eyes) and `VRM_VISEME="aa=gordon_freeman/AU26ZR+AU26ZL,ee=gordon_freeman/AU12R+AU12L,ih=gordon_freeman/AU12R+AU12L@0.7,oh=gordon_freeman/AU18R+AU18L.001,ou=gordon_freeman/AU18R+AU18L.001@0.75"`. **His shape keys are FACS action units and match none of the automatic patterns**, so without that map a rebuild drops all 32 of them and binds nothing — which is exactly what happened on the first rebuild, silently, with every census count unchanged. 7,169 triangles, 4 meshes, 7 materials, 12 morph targets, 5/5 bound. Do NOT add `eye-iris-green.tga` or `onefreeman` to the blend list: both alphas are specular masks, and honouring them hides his irises and erases his suit |
+| Gordon Freeman | valvebiped | 1.80 | **As installed 2026-11-12:** build from `m2/source/Valve_Gordon_Freeman.fbx`, textures `m2/textures`, with BOTH of these or he loses something — `VRM_BLEND_MATERIALS="lens"` (his glasses lenses shipped opaque and drew as two solid white panes over his eyes) and `VRM_VISEME="aa=gordon_freeman/AU26ZR+AU26ZL,ee=gordon_freeman/AU12R+AU12L,ih=gordon_freeman/AU12R+AU12L@0.7,oh=gordon_freeman/AU18R+AU18L.001,ou=gordon_freeman/AU18R+AU18L.001@0.75"`. **His shape keys are FACS action units and match none of the automatic patterns**, so without that map a rebuild drops all 32 of them and binds nothing — which is exactly what happened on the first rebuild, silently, with every census count unchanged. 7,169 triangles, 4 meshes, 7 materials, 12 morph targets, 5/5 bound. Do NOT add `eye-iris-green.tga` or `onefreeman` to the blend list: both alphas are specular masks, and honouring them hides his irises and erases his suit. **2026-11-12, second pass: he needed no rebuild at all** — his `.vrm` already carried `alphaMode: BLEND` on `lens` and the fault was entirely the exporter's, so his installed bundle is a straight re-export of that same `.vrm`. That was also the safer route: a rebuild is what dropped his 32 FACS keys the first time. His lens now renders as glass you can see his eyes through, where it had been a speckled hard mask |
 | Joker / Miku | maxbiped | 1.85 / 1.58 | |
 | Tenna | rigify_def | 1.80 | exclude `^(Floor\|Lights\|Sign)` |
 | Sophia | rp | 1.70 | |
@@ -1643,16 +1708,16 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Vegeta / Spider-Man PS | mixamo | 1.64 / 1.75 | |
 | Mannequin | simple | 1.75 | |
 | Sonic (HD) | mixamo | 1.00 | model arrives UNRIGGED — auto-rig it on mixamo.com first, then `VRM_RIGID="island:0=Head"`. Its T-pose is in the clip, not the rest skeleton |
-| Alcina Dimitrescu | rigify_plain | 2.90 | 9'6" is correct and her static pose is her SHAPE — never reset it to rest. exclude `^NurbsPath` (the cigarette holder skewers her hand), `VRM_TEX="Material.005=CABELOO_preto_1.png,Material.019=(null)_Base_Color.png"`. The floating hat was the unrigged-mesh rescue resizing her whole rig by 0.5568 to fit one stray dress train; it is fixed. **As installed 2026-11-12:** add `VRM_BREASTRIG=1` and `VRM_CUTOUT_MATERIALS="Material.005;Material.006"` — her hair and eyelashes, which shipped opaque and put two black slabs over her eyes. Build from `Alcina102.blend`, 350,162 triangles. Her colour maps are all noise fields and she renders white; that is the archive, not the build, and at 2.9 m her head is above the character-select camera |
+| Alcina Dimitrescu | rigify_plain | 2.90 | 9'6" is correct and her static pose is her SHAPE — never reset it to rest. exclude `^NurbsPath` (the cigarette holder skewers her hand), `VRM_TEX="Material.005=CABELOO_preto_1.png,Material.019=(null)_Base_Color.png"`. The floating hat was the unrigged-mesh rescue resizing her whole rig by 0.5568 to fit one stray dress train; it is fixed. **As installed 2026-11-12:** add `VRM_BREASTRIG=1` and `VRM_CUTOUT_MATERIALS="Material.005;Material.006"` — her hair and eyelashes, which shipped opaque and put two black slabs over her eyes. Build from `Alcina102.blend`, 350,162 triangles. Her colour maps are all noise fields and she renders white; that is the archive, not the build, and at 2.9 m her head is above the character-select camera — which also means **no podium render can verify a change to her face**; hers was accepted on the numbers alone. **Updated 2026-11-12:** `Material.006` (`CILIOS`, the lashes) moves from the cutout list to `VRM_BLEND_MATERIALS="Material.006"`; keep `VRM_CUTOUT_MATERIALS="Material.005;Material.006"` as it is, since an explicit blend now outranks it. Her rebuild also clears the four orphaned colliders in item 0a |
 | Yui Suzukaze | mixamo | 1.60 | recovered from her own .yargchar, re-rigged; needs the VRM_TEX map from the submesh headers |
 | Lola Bunny | multiversus | 1.75 | exclude `^Icosphere` |
 | Mickey Mouse | mixamo | 1.10 | archive is called `talking.zip` |
 | Elite Terrorist | mixamo | 1.83 | |
 | Jessica Rabbit | rigify_plain | 1.80 | exclude `^(BezierCurve\|Cylinder\|Cube)`, hairrig `^hair`, `VRM_RIG_MORE='^glitter-transprnt$@spine#4,4,0.2'` for the skirt, `VRM_TEX="rskin=Skin_makup_0003_Body_multires_sculpt.001_m.jpg"`. **The exclude was not lost** — this row said "something was excluded that nobody wrote down" while the rig-family table above recorded it all along. With it the rebuild matches the installed character exactly: 320,562 triangles, 10 meshes |
-| Alice Ivy | cc_base | 1.70 | exclude `^COLLIDER` |
-| Ariel | daz | 1.70 | hairrig `Hair`. Recovered from her own `.yargchar`: `lPectoral` and `abdomenUpper` are DAZ names, and the mesh bounds give the height |
+| Alice Ivy | cc_base | 1.70 | exclude `^COLLIDER`. **As installed 2026-11-12:** `VRM_BREASTRIG=1 VRM_VISEME_GAIN=2.2` and `VRM_BLEND_MATERIALS="Std_Eyelash"` — the lash only. **Her four hair materials stay cutouts on purpose**: they lose 1% of their ink to the 0.5 threshold, so a blend recovers nothing and gives up a cutout's sorting. Built both ways and compared on the podium before deciding |
+| Ariel | daz | 1.70 | hairrig `Hair`. The ARGV was recovered from her own `.yargchar` — `lPectoral` and `abdomenUpper` are DAZ names, and the mesh bounds give the height — but **she is not sourceless, and this row was read that way twice**: her model is `base-female-character.zip`, `source/Ariel For Sketchfab.fbx`. **As installed 2026-11-12:** `VRM_BREASTRIG=1` and `VRM_BLEND_MATERIALS="Eyelashes;Hair Cap"`. `EyeMoisture` and `Cornea` are deliberately left as cutouts and are the only `HARDCUT` and `INVISIBLE` left in the installed set: at a lowered cutoff `EyeMoisture` drew an opaque white film and erased her irises, and a blend is a different operation on the same suspect alpha |
 | Killer Clown | mixamo | 1.80 | hairrig `hair`. Her bones are Mixamo's with the prefix stripped (`Hips`, `LeftHandIndex1`, `HeadTop_End`), which the family auto-detects |
-| Heels | cc_base | 1.70 | hairrig `Hair`; the archive holds `source/untitled.zip` with the `.blend` inside. ~~Do not reinstall yet — a rebuild loses her transparency~~ **Resolved 2026-11-11**: that was the missing-alpha bug. A rebuild now keeps all five of her transparent materials and adds two more (`Std_Eye_Occlusion_R`, `Std_Tearline_R`). `High_Heels` and `Underwear_Bottoms` stay opaque, as installed — their "opacity" files are merged diffuses with no alpha channel left |
+| Heels | cc_base | 1.70 | hairrig `Hair`; the archive holds `source/untitled.zip` with the `.blend` inside. ~~Do not reinstall yet — a rebuild loses her transparency~~ **Resolved 2026-11-11**: that was the missing-alpha bug. A rebuild now keeps all five of her transparent materials and adds two more (`Std_Eye_Occlusion_R`, `Std_Tearline_R`). `High_Heels` and `Underwear_Bottoms` stay opaque, as installed — their "opacity" files are merged diffuses with no alpha channel left. **As installed 2026-11-12:** add `VRM_BREASTRIG=1 VRM_VISEME_GAIN=2.2` and `VRM_BLEND_MATERIALS="Std_Eyelash;Std_Tearline_R;Std_Tearline_L;Std_Eye_Occlusion_R;Std_Eye_Occlusion_L;front_hair_Transparency;tail_Transparency"` — seven blended, two cutouts left. Her hair IS in the blend list, unlike Alice Ivy's: hers loses 25.5% of its ink to the threshold and renders as speckle without it. Naming both the `_R` and `_L` of each pair is not redundant — the archive's merged texture is `Std_Eye_Occlusion_L_Diffuse-Std_Eye_Occlusion_R_Opacity.png`, so the opacity picker matched `_R` by name and left `_L` a cutout |
 | The Rock | mixamo | 1.96 | Archive `the-rock.zip` -> `source/The_Rock.7z` -> `Rock.fbx`, textures beside it. Two stages and **both are needed**: `scale_rig.py` (his skeleton spans 4.4726 m against a 1.96 m mesh with bones 1.7011 m below the floor; factor 0.3978 about the hips), then `fit_joints.py`. ~~SCALE ONLY, do not run fit_joints~~ — that was written off a REST-pose render, and on the podium the scale-only build's fingers stretch into strips past his knees. Only the posed render shows it. What IS removed from the fit is the **shoulder** joint, which doubled his span to 0.548 and is the gorilla-arm defect. Check with `proportion_check_installed.py` (expect shoulders near 0.249, reach near 0.938) AND a podium render of the hands — `bone_fit.py` alone rewards exactly what the fit does. **Installed 2026-11-12** with scale + fit-minus-shoulder: shoulders 0.548 -> 0.295, hands intact, wrist 24.9/25.1 -> 1.9/0.9, everything else identical (6 clips, 52 humanoid, 30 fingers, 21 meshes, 1.960 m). Backup `The Rock.pregorilla.yargchar` |
 | Mario | mariojnt | 1.55 | |
 | Link (OoT) | linkoot | 1.65 | `VRM_TEX="Hair=Link_Link_BaseColor.png"` |
@@ -1670,7 +1735,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Yoda | mixamo | 0.66 | USDZ, no skeleton at all — auto-rigged; `VRM_RIGID="island:0=Head"`, robe on `island:1` with `HAIR_BONE=Spine1 HAIR_STRANDS=1`. The USDZ has **no** eye map: merge `CHA_yodaEye_C.png` from the original zip and pin it with `VRM_TEX="yoda_mesh_RoninShader7=CHA_yodaEye_C.png"` |
 | Miku | maxbiped | 1.58 | `VRM_FINGER_FILL=1`, exclude `^ts_bot` (a detached guitar), spring regex `$^` and `VRM_CLEAR_SPRINGS=1`. **The hairrig was removed**: `island:7+8` reached 198 of her ~493 hair verts and weighted 59, which sheared the ribbons apart. Her hair is ~250 strips and is splayed outward in the ORIGINAL download, not by us |
 | Skibidi Toilet | valvebiped | 1.60 | exclude `^(Icosphere\|Object_2$)` — the toilet shell swamps the model |
-| Xenomorph | xeno | 2.40 | `xeno/source/Xenomorph Default.fbx`, 51,548 triangles, 1 mesh, humanoid 46/46. The spring argument must be the DEFAULT regex with `\|BackTube` appended — the default alone finds only his tail and loses his four dorsal tubes, and `(BackTube\|TailRoot)` loses the tail, because the regex has to match a chain's whole run of bones rather than just its root. No `rollout/out` reference exists for him, so verify a rebuild with `identify_build.py` against the installed bundle instead: expect 171 bones, 0 length and 0 rotation mismatches |
+| Xenomorph | xeno | 2.40 | `xeno/source/Xenomorph Default.fbx`, 51,548 triangles, 1 mesh, humanoid 46/46. The spring argument must be the DEFAULT regex with `\|BackTube` appended — the default alone finds only his tail and loses his four dorsal tubes, and `(BackTube\|TailRoot)` loses the tail, because the regex has to match a chain's whole run of bones rather than just its root. No `rollout/out` reference exists for him, so verify a rebuild with `identify_build.py` against the installed bundle instead: expect 171 bones, 0 length and 0 rotation mismatches. **Rebuilt and reinstalled 2026-11-12 for the collider-group fix alone** (item 0a) — four of his nine capsules were guarding nothing; no alpha change, backup `.precolgroup` |
 
 ### Recovering a character from its own .yargchar
 

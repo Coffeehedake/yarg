@@ -2529,7 +2529,11 @@ which is what `YargSceneShot.cs` is for. The general rule is already in this doc
 form: *a green must come from the thing being tested*. A fix verified one stage upstream of where
 it is applied is not verified.
 
-### The second half of the fix, which is NOT done
+### The second half of the fix, DONE 2026-11-12
+
+Everything below describes the gap as it stood; the resolution is the section
+"The builder had no lever for a blend, and that is why it took a second day" further down.
+Across the installed set `HARDCUT` went **20 → 1** and blended materials **1 → 20**.
 
 The exporter can now carry a blend across. It does not decide to make one, and that decision is
 `build_vrm.py`'s: the opacity-map path emits `alphaMode: MASK`, so a merged diffuse-plus-opacity
@@ -2641,7 +2645,11 @@ than the `.vrm` sweep's in one specific way: it is **not UV-masked**, so a mater
 atlas can read as alpha-carrying because of a region its geometry never samples. That limitation
 is in the tool's header rather than in a conversation.
 
-## The six characters could not be rebuilt, and the patch that looked right rendered worse
+## ~~The six characters could not be rebuilt~~, and the patch that looked right rendered worse
+
+**All six were rebuilt on 2026-11-12** — see "The builder had no lever for a blend" below.
+What follows is how the wrong conclusion was reached and what the stopgap measured, both of
+which are still worth having.
 
 2026-11-12, the same day. With the exporter able to express a blend, the obvious next step was to
 rebuild the six characters whose soft alpha ships as a hard cutout. None of them can be rebuilt
@@ -2952,6 +2960,117 @@ So the final recipe is **`scale_rig.py`, then `fit_joints.py` with the shoulder 
 the two earlier conclusions were each half right: the fit was never the problem and the shoulder
 always was, and the scale was never optional and was never in a script.
 
+## The builder had no lever for a blend, and that is why it took a second day
+
+2026-11-12, after the exporter fix and after the source archives were found. The remaining
+assumption was that a rebuild would now produce blended materials, because the exporter could
+carry one across and the sources existed. It would not have, and one measurement said so before
+a single build ran: **of the 20 flagged materials, only 3 were `alphaMode: BLEND` in their
+`.vrm`** (`vrm_alpha_modes.py`)**.** The other 17 were `MASK`.
+
+| character | BLEND in the `.vrm` | MASK |
+|---|---|---|
+| Heels | `Std_Eye_Occlusion_R`, `Std_Tearline_R` | 7, including the 99.6%-clipped eyelash |
+| Gordon Freeman | `lens` | — |
+| Alice Ivy, Sayuri, Alcina, Ariel | none | all |
+
+So a plain re-export would have reproduced every cutout exactly, and reported success doing it.
+**The cutout was the builder's choice, not the exporter's**, made by the opacity-map path, which
+emits `MASK` whatever the alpha looks like.
+
+`VRM_BLEND_MATERIALS` already existed for exactly this, and was guarded on `not cut`. A dedicated
+opacity map sets `cut` before that branch runs, so naming such a material did nothing at all —
+the one lever that could have said "this alpha is feathered, do not threshold it" declined to
+fire on every material that needed it. **"A dedicated opacity map is the stronger signal" is an
+answer to OPAQUE vs not. It is not an answer to MASK vs BLEND**, which is a question about the
+*shape* of an alpha rather than its provenance, and an explicit name from someone who has looked
+at the texture outranks an inference either way. The guard is gone; the switch now overrides an
+established cutout and says so in the build log.
+
+### Heels' left eye, and why the asymmetry was real
+
+Her `_R` tear line and eye occlusion were `BLEND` while the `_L` of each pair was `MASK`. That is
+not a quirk of the sweep: the archive's merged texture is literally
+`Std_Eye_Occlusion_L_Diffuse-Std_Eye_Occlusion_R_Opacity.png`, so the opacity picker matched `_R`
+by name, gave it the map, and left `_L` to ship as a cutout. The same class of fault as Sayuri's
+`Eye_Shadows`, one archive later. **Name both halves of a left/right pair in any material list**,
+because a texture named for one of them is not evidence that only one of them needs it.
+
+### Hair was built both ways, because the cost of a blend cannot be read off an alpha channel
+
+A blended card sets `_ZWrite 0`, so overlapping hair sorts by draw order instead of by depth; a
+cutout does not have that problem. Whether that costs more than the hard edge gains is not
+visible in any number the sweep produces, so Heels, Alice Ivy and Sayuri were each built twice
+and rendered side by side on the podium.
+
+| character | ink the threshold destroys | rendered | installed |
+|---|---|---|---|
+| Sayuri | 24.4% | hair stops being speckle and reads as hair | **blended** |
+| Heels | 25.5% | hair continuous instead of dotted | **blended** |
+| Alice Ivy | **1%** | the two are near-indistinguishable; the blend is slightly softer | **left a cutout** |
+
+The rule that falls out: **blend the hair only where the sweep flags it.** At 1% there is nothing
+to recover, so the blend is all cost and no benefit. This is also the measurement that retired
+the "pane" rule withdrawn earlier the same day — that rule picked Alice Ivy's four hair materials
+on a shape test, and the right answer for them turns out to be *leave them alone*.
+
+### The clipped-ink number mis-ranked this twice, in opposite directions
+
+It had already been recorded that the number over-ranked Alcina (2nd of eleven, renders nothing,
+her head is above the camera) and under-ranked Alice Ivy (11th, biggest visible gain from the
+stopgap). The rebuild inverted it again: **Gordon's lens was 6th at 79% and is the most improved
+thing in the set** — a speckled mask over both eyes became glass you can see his eyes through —
+while Alice Ivy, the previous champion, barely moved, because her lashes had already been
+repaired by the stopgap. The number measures the texture. Nothing about it measures the
+character.
+
+### Gordon needed no rebuild, and that was the safer answer
+
+His `.vrm` already said `BLEND`; his fault was entirely the exporter's. So his installed bundle
+is a straight re-export of the same `.vrm` that is already installed — which also keeps his 32
+FACS shape keys out of reach of a rebuild, and a rebuild is exactly what silently dropped all 32
+of them once before. **Check whether a fix needs the earlier stage at all before re-running it.**
+
+## Four colliders per character were guarding nothing
+
+Found while rebuilding the six, and the more serious of the two faults.
+
+`vrm_colliders.py` built its collider group by keeping the element that `sb.colliders.add()`
+returned and reading `.uuid` off it afterwards. `sb.colliders` is a Blender
+`CollectionProperty`; `.add()` may reallocate its storage, which leaves every earlier reference
+pointing somewhere it should not. The add-on resolves each group reference by uuid at export and
+silently drops the ones that do not match.
+
+**The builder's log said `colliders: 10 in one group`. The exported file's group held six.**
+Sayuri's was `[4, 5, 6, 7, 8, 9]`: her head, hip and left arm were measured, fitted, written into
+the file, and guarded nothing. The surviving slice depends on when Blender happens to reallocate,
+so it is not even stable — the same character built twice in one batch came out `[4..9]` once and
+`[8, 9]` the next.
+
+**A count printed from the builder's own list is not a measurement of what reached the file.**
+That is the same distinction as the render-of-the-VRM above, one stage earlier, and it is the
+second time in two days it has cost something here. The fix keeps the uuid string rather than the
+element, and adds a check that compares the group's references against the colliders actually
+present, so the log can no longer claim ten and ship six.
+
+`collider_group_check.py` over all 30 `.vrm` files behind an installed character found three —
+**Alcina, Pomni and the Xenomorph, four orphans each, always the head/spine and the left arm.**
+All three are rebuilt and installed. The sweep prints a line for every file including the ones
+with no colliders, and ends with a tally, for the reason already recorded in this document: a run
+that finds nothing and a run that examined nothing look identical.
+
+### A recipe row records the build, not the steps after it
+
+Sayuri's rebuild came back `differs` against her installed bundle — 25 bones off by exactly 90°
+or 180°, with every bone *position* identical — and her recipe row gave no hint why. The answer
+is that `add_colliders.py` is a **round trip through the VRM**, and the installed Sayuri went
+through it: that is where her 19 named collider nodes come from, and where the bone rolls were
+normalised. Running the rebuild through the same round trip took her back to a clean `MATCH`.
+
+Exact angles of 90° and 180° on bones whose roll is arbitrary — eyes, teeth, toes, share-bones —
+are the signature of a convention difference rather than a re-pose. A re-pose does not land on
+round numbers.
+
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
@@ -2997,6 +3116,12 @@ Not answered by the code, and worth measuring before authoring anything expensiv
   renders as a white statue; her appearance lives in her `.blend`'s material nodes, which no glTF
   export carries. Recovering it means baking those to textures, which nothing here does. Her head
   is also above the character-select camera at 2.9 m, and her height is canon.
+- **Collider groups are now verified, not assumed.** 2026-11-12: a stale Blender reference meant
+  four colliders per character resolved to nothing in Alcina, Pomni and the Xenomorph, while the
+  build log reported all ten. All three are rebuilt; `collider_group_check.py` over every `.vrm` behind
+  an installed character now comes back clean. What has *not* been checked is the same property
+  inside the installed bundles of characters whose `.vrm` no longer exists — the sweep reads
+  `.vrm` files, and there is no equivalent read of a `.yargchar`'s spring-bone data.
 - **Three characters with zero colliders and no surviving `.vrm`** — Aiko, Scott Hall, Shadow the
   Hedgehog, 11 unguarded chains between them. Nothing can re-fit them without re-acquiring the
   source: the bundle round trip is not a route, for the measured reason above.
