@@ -995,14 +995,27 @@ falls out of that is by *characters fixed per change made* rather than by severi
 The reasoning behind each is in `docs/character-models.md`; what follows is the older list,
 which items 1-3 above now sit in front of.
 
-0. ~~Rebuild the six characters whose soft alpha ships as a hard cutout.~~ **Attempted
-   2026-11-12 and NOT POSSIBLE on this machine — none of the six can be rebuilt.** Sayuri, Alice
-   Ivy and Gordon Freeman have no source archive and no `.vrm` here; Heels, Ariel and Alcina have
-   a `.vrm` and all three are OLDER than what is installed (0 length and 0 rotation mismatches
-   against a sub-90% name overlap, which is the same rig *minus* the spring bones the 11-11 chest
-   rig added; Alcina's reads MATCH and still carries none of her 11-12 cutouts). Exporting any of
-   them trades a newer fix for an older one. The exporter fix stands and is correct — it simply
-   cannot reach a character that cannot be rebuilt.
+0. **Rebuild the six characters whose soft alpha ships as a hard cutout.** Still open, and the
+   reason it was briefly closed is worth keeping: this entry said "NOT POSSIBLE — none of the six
+   can be rebuilt", which was **wrong**. Every source archive is in `%USERPROFILE%\Downloads\`,
+   named after the model listing rather than the character — `sayuri-dans.zip`,
+   `alice-ivy-animated-by-jungle-jim.zip`, `valve-gordon-freeman-model.zip`,
+   `topless-sexy-girl-with-heels.zip`, `alcina-dimitrescu-resident-evil-village.zip`. The search
+   that "proved" they were gone looked for the file *inside* each archive, which is what the
+   recipe rows name, and a file inside a zip matches no `find`.
+
+   **Search for the CONTAINER, not the content**, and sort by modification time: the whole set
+   was downloaded within a few hours of 2026-11-07, so one known archive's timestamp finds the
+   rest. Ariel is the only one with no archive, and her row already says she was recovered from
+   her own `.yargchar`.
+
+   What IS true: the three surviving `.vrm` files (Heels, Ariel, Alcina) are OLDER than what is
+   installed — 0 length and 0 rotation mismatches against a sub-90% name overlap, the same rig
+   *minus* the spring bones the 11-11 chest rig added — so re-exporting a `.vrm` is not a route.
+   A rebuild from the archive is.
+
+   Until then, four of the six carry the lowered-cutoff stopgap below. **That is not the fix** —
+   a rebuild with the corrected exporter gives them real alpha blending.
 
    Two consolation routes were then measured, and only one of them works. **Patching the
    installed bundle's material to a real blend does NOT work**: every number comes back right and
@@ -1227,6 +1240,14 @@ right.
   rig-intrinsic — against the population median with a robust sigma, because half this set is not
   human and a deviation from anatomy is not a defect. Population, measured over 65: upperarm
   0.181, forearm 0.174, thigh 0.292, shin 0.286, shoulders 0.249, reach 0.938
+- `scale_rig.py <in.blend> <out.blend>` — scales a rest skeleton onto its own mesh, about the
+  hips, feet on the floor. **This step was documented for a year and existed in no script**: The
+  Rock's row describes it precisely and then says "`fit_joints.py` does both", which it does not.
+  It had been done by hand once, so rebuilding him from source reproduced the original defect
+  verbatim — a 4.4726 m skeleton for a 1.96 m mesh with the feet 1.7011 m below the floor. The
+  hips are the anchor because they sit at about 0.573 of height on every rig here even when the
+  skeleton is the wrong size, and feet-on-floor gives the factor (0.3978 for him). Run it
+  **before** `fit_joints.py`, never instead of it. `RIG_HIPS_RATIO`, `RIG_HIPS_BONE` override
 - `fit_joints.py` — places each limb joint at the midpoint of the weighted-vertex centroids of
   the two bones meeting there, and carries untouched descendants by their nearest fitted
   ancestor's displacement. For a rig that is wrong by a **different factor in each limb**, which
@@ -1632,7 +1653,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Ariel | daz | 1.70 | hairrig `Hair`. Recovered from her own `.yargchar`: `lPectoral` and `abdomenUpper` are DAZ names, and the mesh bounds give the height |
 | Killer Clown | mixamo | 1.80 | hairrig `hair`. Her bones are Mixamo's with the prefix stripped (`Hips`, `LeftHandIndex1`, `HeadTop_End`), which the family auto-detects |
 | Heels | cc_base | 1.70 | hairrig `Hair`; the archive holds `source/untitled.zip` with the `.blend` inside. ~~Do not reinstall yet — a rebuild loses her transparency~~ **Resolved 2026-11-11**: that was the missing-alpha bug. A rebuild now keeps all five of her transparent materials and adds two more (`Std_Eye_Occlusion_R`, `Std_Tearline_R`). `High_Heels` and `Underwear_Bottoms` stay opaque, as installed — their "opacity" files are merged diffuses with no alpha channel left |
-| The Rock | mixamo | 1.96 | **Needs two corrections after the normal build, and `fit_joints.py` does both** — his source skeleton spans 4.47 m against a 1.96 m mesh with bones 1.7 m below the floor. Scale the rest skeleton about the hips anchored on feet-on-floor (0.3869), then fit each limb joint to the midpoint of the adjacent flesh centroids, because legs and arms are wrong by different factors (0.387 against 0.557) and no single scale expresses that. Check with `bone_fit.py`: expect `FINGERFIT 0 of 30`, which was 30 of 30 at 135.3 cm before. 44,359 triangles, 21 meshes |
+| The Rock | mixamo | 1.96 | Archive `the-rock.zip` -> `source/The_Rock.7z` -> `Rock.fbx`, textures beside it. **SCALE ONLY — do not run `fit_joints.py` on him.** His source skeleton spans 4.4726 m against a 1.96 m mesh with bones 1.7011 m below the floor; `scale_rig.py` fixes that about the hips (factor 0.3978) and that is the whole correction. Measured after: shoulders 0.276, reach 0.931, upperarm 0.160 — all on the population median — and the render has proper deltoids, biceps and fingers. ~~Needs two corrections and `fit_joints.py` does both~~: it does not do the scale, the scale was never in a script, and the joint fit makes him WORSE both ways — fitting the shoulder doubled his span to 0.548 (the gorilla arms), and even with the shoulder excluded it smears his arms into thin tubes (upperarm 0.344 against a median of 0.181). Check with `proportion_check_installed.py`, not `bone_fit.py`, which rewards exactly what the fit does |
 | Mario | mariojnt | 1.55 | |
 | Link (OoT) | linkoot | 1.65 | `VRM_TEX="Hair=Link_Link_BaseColor.png"` |
 | Gadget Hackwrench | rigify_def | 1.30 | exclude `^(WGT-\|smd_bone_vis)`, hairrig `^Hair$` |

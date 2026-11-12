@@ -2647,10 +2647,38 @@ is in the tool's header rather than in a conversation.
 rebuild the six characters whose soft alpha ships as a hard cutout. None of them can be rebuilt
 on this machine, and finding that out took three measurements rather than one.
 
-**Three have nothing to rebuild from.** Sayuri, Alice Ivy and Gordon Freeman have no source
-archive and no `.vrm` here. The archives lived in a session scratchpad that is gone; what
-survives is `%USERPROFILE%\Documents\YARG-Characters\`, which holds 25 `.vrm` files covering
-about 22 of the 65 characters, and none of those three is among them.
+**~~Three have nothing to rebuild from.~~ WRONG, and corrected the same day — every source
+archive is in `%USERPROFILE%\Downloads\`.** This paragraph originally said Sayuri, Alice Ivy and
+Gordon Freeman had no source and that "the archives lived in a session scratchpad that is gone".
+They are all there, along with essentially the whole set, downloaded on 2026-11-07.
+
+**The search was wrong, not the disk.** The recipe rows name the file *inside* the archive —
+`Alcina102.blend`, `Valve_Gordon_Freeman.fbx`, `source/Sayuri dans.fbx` — so that is what was
+searched for, and a file inside a `.zip` matches no `find`. The archives themselves are named
+after the model listing, never after the character:
+
+| character | archive in Downloads |
+|---|---|
+| Alcina Dimitrescu | `alcina-dimitrescu-resident-evil-village.zip` → `source/Alcina102.blend` |
+| Gordon Freeman | `valve-gordon-freeman-model.zip` → `source/Valve_Gordon_Freeman.fbx` |
+| Sayuri | `sayuri-dans.zip` |
+| Alice Ivy | `alice-ivy-animated-by-jungle-jim.zip` |
+| Heels | `topless-sexy-girl-with-heels.zip` → `source/untitled.zip` |
+| The Rock | `the-rock.zip` → `source/The_Rock.7z` |
+| Steve | `the-perfect-steve-rigged.zip` |
+| Mickey Mouse | `talking.zip` |
+
+**So search for the CONTAINER, not the content**, and sort by modification time: the whole set was
+pulled within a few hours of 2026-11-07, so one known archive's timestamp finds all the others.
+That is how the rest were located after this was challenged.
+
+The consequence is not small. Everything below about the blend fix being unreachable was reasoned
+from a false premise: these characters **can** be rebuilt, which means they can have real alpha
+blending from the corrected exporter rather than the lowered cutoff that was installed instead.
+The cutoff builds are a stopgap, and the rebuild is the fix.
+
+What remains true is the `.vrm` half: `%USERPROFILE%\Documents\YARG-Characters\` holds 25 `.vrm`
+files covering about 22 of the 65, and the three relevant ones are older than what is installed.
 
 **Three have a `.vrm` and all three are OLDER than what is installed.** `identify_build.py`:
 
@@ -2847,6 +2875,36 @@ already proportioned correctly, it was not needed at all.
 moved. `fit_joints.py` shipped with `bone_fit.py` as its verification — "how far is each bone from
 the mesh it carries" — which rewards exactly what the centroid method does, and so could never
 have caught this. A verification derived from the same idea as the fix agrees with the fix.
+
+### Rebuilding him found a step that was documented and never written down
+
+His archive is `the-rock.zip` in Downloads, holding `source/The_Rock.7z`, so he can be rebuilt.
+The first rebuild reproduced the **original defect verbatim** — a skeleton spanning 4.4726 m for
+a 1.96 m mesh with the feet 1.7011 m below the floor — because the first of the two documented
+corrections exists in no script. His row says "scale the rest skeleton about the hips (already
+correct at 0.573 of height) anchored on feet-on-floor" and then "`fit_joints.py` does both".
+It does not; it only moves joints. The scale was done by hand, once, and was therefore not
+repeatable. It is `scale_rig.py` now, and run on a fresh build it measures the documented numbers
+back out: hips at 0.5725 of height, factor 0.3978.
+
+**And then the fit turned out not to be needed at all.** Three builds, measured and rendered:
+
+| build | shoulders | reach | upperarm | rendered |
+|---|---|---|---|---|
+| population median | 0.249 | 0.938 | 0.181 | — |
+| **scale only** | **0.276** | **0.931** | 0.160 | **correct** — deltoids, biceps, hands with fingers |
+| scale + corrected fit | 0.295 | 1.272 | 0.344 | arms smeared into thin tapered tubes, hands flattened |
+| installed (fit incl. shoulder) | 0.548 | 1.268 | 0.208 | gorilla arms |
+
+The scale alone puts every segment on the population median and leaves the geometry intact. The
+fit, even with the shoulder excluded, moves rest bones out from under the skinned mesh and
+smears the arms — the same "limbs stretched into spikes" symptom the fit was written to cure.
+
+So the claim this whole apparatus rests on — *"the rig is not uniformly wrong; legs and arms are
+off by different factors, so one scale cannot satisfy both"* — **does not survive a rebuild from
+source**. It was measured on a skeleton that had already been scaled by hand to an unrecorded
+factor. One uniform scale about the hips satisfies both, and the evidence for the second stage
+was an artifact of the first stage not being reproducible.
 
 ## Open questions
 

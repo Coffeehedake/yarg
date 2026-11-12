@@ -8,8 +8,14 @@ and `Transparent`, so every authored alpha blend in the project shipped as a
 hard threshold at 0.5. That is fixed in the exporter, and the proper remedy is
 to rebuild the affected characters. For these six it is not available:
 
-  * Sayuri, Alice Ivy and Gordon Freeman have NO source archive and NO `.vrm`
-    on this machine. The archives lived in a session scratchpad that is gone.
+  * ~~Sayuri, Alice Ivy and Gordon Freeman have NO source archive.~~ **WRONG,
+    corrected the same day.** Every source archive is in %USERPROFILE%/Downloads/,
+    named after the model listing rather than the character --
+    `sayuri-dans.zip`, `alice-ivy-animated-by-jungle-jim.zip`,
+    `valve-gordon-freeman-model.zip`. The search looked for the file INSIDE
+    each archive, which is what the recipe rows name, and a file inside a zip
+    matches no `find`. So these three can be rebuilt, which means they can have
+    a real blend instead of the lowered cutoff this tool applies.
   * Heels, Ariel and Alcina Dimitrescu have a `.vrm`, and all three are OLDER
     than what is installed. Measured with `identify_build.py`: Heels 84.6% and
     Ariel 89.7% name overlap with 0 length and 0 rotation mismatches, which is
@@ -21,8 +27,11 @@ to rebuild the affected characters. For these six it is not available:
     on a prefab loaded from a bundle writes a 2,552-byte shell with no meshes.
     See `docs/character-models.md`.
 
-So the change is made where the defect is: the two dozen numbers in the
-installed material that say "threshold this" instead of "blend this". UnityPy
+This tool is therefore a STOPGAP, not the fix. The fix is a rebuild with the
+corrected exporter. What it is still good for: a character whose source really
+is missing, and a change you want to see in the game in one minute rather than
+one rebuild. The change is made where the defect is -- the two dozen numbers in
+the installed material that say "threshold this" instead of "blend this". UnityPy
 rewrites the serialized file directly, which is a different mechanism from
 Unity's bundle builder and does not have its problem -- nothing needs an asset
 path, because nothing is being rebuilt.

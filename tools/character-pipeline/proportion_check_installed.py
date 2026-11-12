@@ -68,8 +68,93 @@ def dist(a, b):
     return math.sqrt(sum((a[i] - b[i]) ** 2 for i in range(3)))
 
 
+def read_vrm(path):
+    """The same humanoid map and world positions, out of a .vrm.
+
+    Worth having because the alternative is finding out after a Unity export,
+    and an export costs minutes where this costs nothing. VRM 1.0 keeps the
+    map at extensions.VRMC_vrm.humanoid.humanBones as camelCase names; they
+    are normalised to Unity's spelling so one set of comparisons serves both.
+    """
+    import json
+    import struct
+    d = open(path, "rb").read()
+    off, g = 12, None
+    while off < len(d):
+        ln, ty = struct.unpack_from("<II", d, off)
+        if ty == 0x4E4F534A:
+            g = json.loads(d[off + 8:off + 8 + ln].decode("utf-8"))
+        off += 8 + ln + ((4 - ln % 4) % 4)
+    if not g:
+        return {}, {}
+    nodes = g.get("nodes", [])
+    parent = {}
+    for i, n in enumerate(nodes):
+        for c in n.get("children", []) or []:
+            parent[c] = i
+
+    def qrot(q, v):
+        x, y, z, w = q
+        tx = 2.0 * (y * v[2] - z * v[1])
+        ty = 2.0 * (z * v[0] - x * v[2])
+        tz = 2.0 * (x * v[1] - y * v[0])
+        return (v[0] + w * tx + (y * tz - z * ty),
+                v[1] + w * ty + (z * tx - x * tz),
+                v[2] + w * tz + (x * ty - y * tx))
+
+    def qmul(a, b):
+        ax, ay, az, aw = a
+        bx, by, bz, bw = b
+        return (aw * bx + ax * bw + ay * bz - az * by,
+                aw * by - ax * bz + ay * bw + az * bx,
+                aw * bz + ax * by - ay * bx + az * bw,
+                aw * bw - ax * bx - ay * by - az * bz)
+
+    # FULL TRS, because the first version skipped rotation on the stated
+    # grounds that "a VRM's rest hierarchy is written with identity rotations".
+    # That is not true of this exporter's output, and the tool's own numbers
+    # said so immediately: The Rock came back with his FEET 0.6 m above his
+    # HEAD and his hand directly above his shoulder. An assumption written
+    # confidently into a comment, disproved by one run of the thing it was
+    # written in.
+    def world(i, seen=None):
+        seen = seen or set()
+        if i in seen:
+            return (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0), (1.0, 1.0, 1.0)
+        seen.add(i)
+        n = nodes[i]
+        t = n.get("translation", [0, 0, 0])
+        q = n.get("rotation", [0, 0, 0, 1])
+        sc = n.get("scale", [1, 1, 1])
+        par = parent.get(i)
+        if par is None:
+            return tuple(t), tuple(q), tuple(sc)
+        pp, pq, ps = world(par, seen)
+        scaled = (t[0] * ps[0], t[1] * ps[1], t[2] * ps[2])
+        r = qrot(pq, scaled)
+        return ((pp[0] + r[0], pp[1] + r[1], pp[2] + r[2]),
+                qmul(pq, q),
+                (ps[0] * sc[0], ps[1] * sc[1], ps[2] * sc[2]))
+
+    hb = (((g.get("extensions") or {}).get("VRMC_vrm") or {})
+          .get("humanoid") or {}).get("humanBones") or {}
+    human, pos = {}, {}
+    for k, v in hb.items():
+        idx = v.get("node") if isinstance(v, dict) else None
+        if idx is None or idx >= len(nodes):
+            continue
+        unity = k[0].upper() + k[1:]
+        bn = nodes[idx].get("name") or ("node%d" % idx)
+        human[unity] = bn
+        pos[bn] = world(idx)[0]
+    return human, pos
+
+
 def measure(path):
-    human, pos = read_rig(path)
+    if path.lower().endswith(".vrm"):
+        human, pos = read_vrm(path)
+    else:
+        human, pos = read_rig(path)
 
     def P(hn):
         bn = human.get(hn)
