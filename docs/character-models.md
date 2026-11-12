@@ -3286,25 +3286,38 @@ spring bones and colliders it gained.
 the rebuild: a 13.4 mm difference on the root and on nothing else, which is consistent with a
 different foot re-seat and is not explained further here.
 
-**Her 1.867 m is not a build defect.** The rebuild targets 1.80 m, verifies 1.8000 m in the scene
-and in the mesh data — and the bundle it exports to measures **1.867 m, exactly as the original
-does**. So the 3.7% excess is introduced somewhere after the `.vrm`, on the Unity side, and a
-rebuild does not change it. The "Jessica Rabbit is 3.7% too tall" row has been looking at the
-wrong end of the pipeline.
+**Her 1.867 m is not a height at all, it is a bounds artifact — and she is the only one.**
+`height_check_installed.py` over all 65 with the documented targets loaded flags exactly one
+character: hers, at +3.7%. The other 51 with a target hit it, 48 of them to within 0.5%. So
+whatever this is, it is hers alone and not something the exporter does to everyone.
+
+What it is: **her REST mesh data spans 1.8672 m while her POSED model measures 1.8000 m.** Both
+numbers are measured — the build prints `VERIFIED scene height 1.8000 m` from the evaluated
+scene, and the `.vrm`'s own POSITION accessors span 1.8672 from floor to crown. Her bind pose
+compresses her by 3.7%, and the sweep reads the rest bounds, because that is what a bundle's
+renderer bounds are. The same 1.8672 is in the `.vrm` behind the ORIGINAL installed build, so it
+is not new and not something the rebuild introduced.
+
+The inference, which is not measured here: the game skins and poses her, so she should stand
+1.80 m in play and the flag is spurious. **Her row in the issue table — "Jessica Rabbit is 3.7%
+too tall" — is therefore measuring the wrong thing**, and nothing about her height needs fixing.
+Confirming it needs her standing next to a 1.80 m character in game.
+
+Worth noting for the sweep itself: four other characters' rest data dips a few millimetres below
+the floor (Batman −8.9 mm, Power Girl −11.5 mm, Link −7.0 mm, Gwen Stacy −6.2 mm) and the
+Xenomorph's by 588 mm, which is his crouch. None of them moves a total enough to flag, and all
+of them still span their target exactly.
 
 ## Open questions
 
 Not answered by the code, and worth measuring before authoring anything expensive:
 
-- **Where does Jessica Rabbit's 3.7% gain its height?** ~~What built the installed Jessica
-  Rabbit~~ is answered — the GLB, see above. What is not is why a `.vrm` that verifies at
-  1.8000 m in both the scene and the mesh data exports to a bundle that measures **1.867 m**,
-  and does so for the original build and the rebuild alike. It is introduced after the `.vrm`,
-  on the Unity side, so it is an exporter question and nothing a rebuild can reach. Nobody has
-  checked whether any other character shares it; `height_check_installed.py` over the set would
-  say, and would also say whether the documented heights it compares against are measuring the
-  same thing.
-
+- ~~**Where does Jessica Rabbit's 3.7% gain its height?**~~ **Answered 2026-11-12, and the
+  answer is that there is no height to explain.** Her REST mesh data spans 1.8672 m while her
+  POSED model measures 1.8000 m; the sweep reads rest bounds, so it reads 1.8672. She is the
+  only one of the 52 with a documented target that misses it. What is left open is one line of
+  confirmation in game — standing her beside a 1.80 m character — and, if that confirms it,
+  deleting the "3.7% too tall" row rather than trying to fix it.
 - **Scale and height — the build side is now measured, the PODIUM side is not.** Nothing
   normalises the model, and as of 2026-11-12 every installed character has been measured out of
   its own bundle: 51 of the 52 with a documented target hit it to within 0.8%, none carries a
