@@ -6139,11 +6139,41 @@ for mat in bpy.data.materials:
         except Exception as _e:
             print("    (could not read the base map's alpha: %s)" % _e)
 
+    # VRM_BLEND_MATERIALS="a;b" -- the third state, named per material.
+    #
+    # Opaque, cutout and blended are three different things and only two of
+    # them had a lever. Gordon Freeman's glasses are why: his `lens` material
+    # carries a base map whose alpha has NO extremes at all (0.0% fully clear,
+    # 0.0% fully solid, median 63/255) -- a uniformly semi-transparent pane,
+    # which is what a lens is. There is no cutoff that expresses that. Masking
+    # it at 0.5 would punch a mottled hole; leaving it opaque, which is what
+    # shipped, drew two solid white rectangles over his eyes.
+    #
+    # Named rather than inferred, and after the same kind of per-material look
+    # that VRM_CUTOUT_MATERIALS needs, because in a game rip an alpha channel
+    # is as likely to be a SPECULAR mask as an opacity map. Gordon has three
+    # alpha channels and only one is opacity: honouring `eye-iris-green.tga`
+    # would make his irises invisible, since its alpha is black exactly on the
+    # iris disc, and honouring `onefreeman` would erase his whole suit, since
+    # its alpha is ~0 everywhere. The way to tell is to ask what the texture is
+    # FOR and whether honouring its alpha would erase that.
+    _blend_names = [s.strip() for s in
+                    os.environ.get("VRM_BLEND_MATERIALS", "").split(";")
+                    if s.strip()]
+    if (not cut and mat.name in _blend_names and base_tex is not None
+            and bsdf is not None and "Alpha" in bsdf.inputs
+            and base_tex.image and base_tex.image.channels == 4):
+        if not bsdf.inputs["Alpha"].links:
+            nt.links.new(base_tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+        blend = True
+        print("    %s: blended on its base map's own alpha, by name"
+              % mat.name)
+
     # Honour the authored blend. Not a guess about what an alpha channel MEANS
     # -- the material was SET to BLEND with that image in its Alpha, and all
     # this does is carry that across. Only when a cutout was not already
     # established, since a dedicated opacity map is the stronger signal.
-    if not cut and _src_blend == "BLEND" and _src_alpha_img is not None             and bsdf is not None and "Alpha" in bsdf.inputs:
+    elif not cut and _src_blend == "BLEND" and _src_alpha_img is not None             and bsdf is not None and "Alpha" in bsdf.inputs:
         _at = None
         if base_tex is not None and base_tex.image == _src_alpha_img:
             _at = base_tex

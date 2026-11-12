@@ -63,7 +63,9 @@ them (`check` measures and prints without changing anything, which is how it was
 `VRM_BREAST_SPRING=0` stops chest bones being sprung and `VRM_BREAST_PARAMS="stiffness,drag,gravity"`
 changes the feel; `VRM_CUTOUT_INFER=1` infers a cutout from a base map's own alpha and
 `VRM_CUTOUT_MATERIALS="a;b;c"` does the same for named materials only, when the inference is right
-about some of a character's materials and wrong about others; `VRM_MTOON_ALL=1` puts every material
+about some of a character's materials and wrong about others; `VRM_BLEND_MATERIALS="a;b"` is the third state, for a
+material whose alpha has no extremes at all and that therefore no cutoff can express — Gordon
+Freeman's glasses lenses; `VRM_MTOON_ALL=1` puts every material
 on the MToon shading model, which is what a character needs when a cutout shares a continuous
 surface with an opaque material (otherwise only the cutouts are MToon and the seam shows);
 `VRM_LIMB_COLLIDERS=0` goes back to a head sphere and a torso capsule alone;
@@ -578,6 +580,44 @@ takes `Material.014_Base_Color` where the installed build took `Material`. Both 
 the renders are identical, and the control build made before today's two edits already shows it —
 so it came from a pipeline change between her 11-09 build and now, not from these.
 
+### The eye hits: one real defect, five that would have done damage
+
+Six of the sweep's hits were eye-adjacent, on The Rock and Gordon Freeman. **One was real.** The
+others are the case this whole section keeps circling, and this time there are numbers for it.
+
+**Gordon Freeman's glasses were two solid white panes over his eyes.** `lens` carries a base map
+whose alpha has **no extremes at all** — 0.0% fully clear, 0.0% fully solid, median 63/255 — which
+is to say a uniformly semi-transparent pane. That is what a lens is, and *no cutoff expresses it*:
+masking at 0.5 would punch a mottled hole, and leaving it opaque is what shipped.
+
+So there is now a third lever, `VRM_BLEND_MATERIALS="a;b"`, the sibling of
+`VRM_CUTOUT_MATERIALS`. Opaque, cutout and blended are three different things and only two of them
+could be asked for. Rebuilt with it: 7,169 triangles unchanged, 4 meshes, 7 materials, and his eyes
+are visible through his glasses on the podium.
+
+**The Rock's `eye_ov` is a false positive.** His eyes render correctly as installed — brown irises,
+clean sclera, no grey disc. Rendering him before touching anything is the only reason nothing was
+changed.
+
+**And three of Gordon's hits would have broken him**, which is worth being exact about because the
+sweep cannot tell and the numbers can:
+
+| map | alpha | what honouring it would do |
+|---|---|---|
+| `lens` | median 63/255, no extremes | **the fix.** A 25%-opaque pane |
+| `eye-iris-green.tga` | median 113/255, black **exactly on the iris disc** | make his irises invisible. The alpha is a specular mask, not opacity |
+| `onefreeman` (two materials) | mean **0.1/255** | erase his entire HEV suit |
+
+The rule that comes out of it: **in a game rip an alpha channel is as likely to be a specular mask
+as an opacity map.** Source engine stores an environment-map mask there as a matter of course, and
+Gordon is a Half-Life 2 model carrying all three kinds at once. The way to tell is not the
+histogram — it is to ask what the texture is FOR and whether honouring its alpha would erase that.
+An alpha that is black precisely where the subject is, is not an opacity map.
+
+Still open on him, and not touched: his irises render pale, which looks like his eye UVs not
+landing on the iris disc in `eye-iris-green.tga` — the same family as Alastor's UV fault, and not
+fixable from the pipeline.
+
 ### `alpha_sweep.py`'s other hits, and which of them to believe
 
 With both tiers, **24 materials across 10 characters**. Sayuri is done; the rest, with what the
@@ -587,8 +627,9 @@ finding:
 | character | material ← map | alpha | reading |
 |---|---|---|---|
 | ~~Alcina~~ | `Material.006` ← `CILIOS`, `Material.005` ← `CABELOO_preto_1` | 87.1% / 88.7% clear | **DONE 2026-11-12.** Both real; see above |
-| The Rock | `Material #30` ← `eye_ov` | 1.2% clear, 84.8% solid | an eye overlay. `build_vrm`'s own comments record a cornea that "shipped alphaMode OPAQUE and became a solid grey disc over the eye" |
-| Gordon Freeman | `eye_r`, `eye_l` ← `eye-iris-green.tga`, `lens` | 7.5% / 0.0% clear | same shape: eyes and a lens |
+| ~~The Rock~~ | `Material #30` ← `eye_ov` | 1.2% clear, 84.8% solid | **CHECKED 2026-11-12: false positive.** His eyes render correctly as installed |
+| ~~Gordon Freeman~~ | `lens` | 0.0% clear, 0.0% solid | **DONE 2026-11-12.** His lenses were solid white panes; now blended at 25%. See above |
+| Gordon Freeman | `eye_r`, `eye_l` ← `eye-iris-green.tga` | 7.5% clear | **do not touch.** The alpha is black exactly on the iris disc — a specular mask. Honouring it makes his irises invisible |
 | Killer Clown | `eyes` ← `eyes_base_color` | 95.3% clear | over the cap; a mask would erase them |
 | Gordon Freeman | `HEV`, `HEV_Mesh` ← `onefreeman` | **99.9% clear** | do not touch. An alpha that is essentially all transparent erases the mesh |
 | Yoda | two materials | 0.0% and 65.9% clear | unexamined |
@@ -1153,7 +1194,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Clone troopers | mixamo | 1.83 | |
 | Jinx | ue4 | 1.68 | braids and bangs already in the rig |
 | Shrek | mayajnt | 2.10 | |
-| Gordon Freeman | valvebiped | 1.80 | |
+| Gordon Freeman | valvebiped | 1.80 | **As installed 2026-11-12:** build from `m2/source/Valve_Gordon_Freeman.fbx`, textures `m2/textures`, with `VRM_BLEND_MATERIALS="lens"` — his glasses lenses shipped opaque and drew as two solid white panes over his eyes. 7,169 triangles, 4 meshes, 7 materials. Do NOT add `eye-iris-green.tga` or `onefreeman` to that list: both alphas are specular masks, and honouring them hides his irises and erases his suit |
 | Joker / Miku | maxbiped | 1.85 / 1.58 | |
 | Tenna | rigify_def | 1.80 | exclude `^(Floor\|Lights\|Sign)` |
 | Sophia | rp | 1.70 | |
