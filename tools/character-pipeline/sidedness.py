@@ -27,6 +27,31 @@ and culls perfectly well.
 
 The verdict is per MATERIAL and a material spans pieces, so a material is drawn
 double-sided when a meaningful share of its AREA sits in sheet pieces.
+
+TWO ATTRIBUTIONS, UNIONED -- added 2026-11-13 after this check disagreed with the
+exporter on two of 34 flips and was WRONG BOTH TIMES.
+
+  BY PIECE     the original: build connected pieces across a whole mesh and ask
+               what share of a material's area lands in sheet pieces.
+  BY MATERIAL  build pieces from THAT MATERIAL'S OWN FACES only.
+
+They differ exactly where a decal shares a surface with a solid. Sayuri's
+`Moles` is 12 triangles whose vertices coincide with her body, so by piece they
+weld into a 25,648-face BODY piece -- a closed body, "not a sheet", 0.0% -- while
+by material they are a 12-triangle patch at open 4.75, solid 0.0161, a sheet at
+100%. An isolated geometry-only render settles it: culled, her moles DISAPPEAR
+COMPLETELY. Vegeta's `Material_46` is the same shape of error and loses 12.79%
+of its silhouette from behind when culled.
+
+A union is the right combination rather than a replacement, because each
+attribution UNDERCOUNTS on its own and neither overcounts: measured over all 34
+flips the exporter was vindicated by render every time, by-piece missed 2 and
+by-material missed 4 (Alice Ivy's `Teeth`, Ariel's three `Brows`). Taking either
+as sufficient can therefore only move toward the render-confirmed answer.
+
+None of which makes this an arbiter. Use `isolate.py` for anything disputed: it
+replaces the material with a matte stand-in and asks whether culling the faces
+loses geometry a viewer could see, which is the only question that matters.
 """
 import sys, math, collections
 import bpy, bmesh
@@ -95,10 +120,87 @@ for o in [x for x in bpy.data.objects if x.type == "MESH"]:
             if sheet: mat_sheet[mn] += a
             detail[mn].append((a, openness, solidity, sheet, len(grp)))
 
+# ---- second attribution: each material's OWN faces, as connected pieces ----
+Q = 10000.0   # 0.1 mm, the exporter's WeldQuant
+
+def by_material():
+    tri = collections.defaultdict(list)
+    for o in [x for x in bpy.data.objects if x.type == "MESH"]:
+        me = o.data
+        for poly in me.polygons:
+            if poly.material_index >= len(o.material_slots): continue
+            slot = o.material_slots[poly.material_index].material
+            if slot is None: continue
+            vs = [o.matrix_world @ me.vertices[i].co for i in poly.vertices]
+            for k in range(1, len(vs)-1):
+                tri[slot.name].append((vs[0], vs[k], vs[k+1]))
+    out = {}
+    for name, tris in tri.items():
+        ids = {}; T = []
+        for a, b, c in tris:
+            t = []
+            for v in (a, b, c):
+                key = (round(v.x*Q), round(v.y*Q), round(v.z*Q))
+                if key not in ids: ids[key] = len(ids)
+                t.append(ids[key])
+            T.append((t, (a, b, c)))
+        adj = collections.defaultdict(set)
+        for i, (t, _g) in enumerate(T):
+            for k in range(3): adj[tuple(sorted((t[k], t[(k+1)%3])))].add(i)
+        parent = list(range(len(T)))
+        def find(a):
+            while parent[a] != a: parent[a] = parent[parent[a]]; a = parent[a]
+            return a
+        for _e, fs in adj.items():
+            fs = sorted(fs)
+            for f in fs[1:]:
+                ra, rb = find(fs[0]), find(f)
+                if ra != rb: parent[ra] = rb
+        groups = collections.defaultdict(list)
+        for i in range(len(T)): groups[find(i)].append(i)
+        inv = {v: k for k, v in ids.items()}
+        sheet_a = 0.0; total_a = 0.0
+        for _r, fs in groups.items():
+            if len(fs) < MIN_FACES: continue
+            edge = collections.Counter(); area = 0.0; cen = Vector((0,0,0))
+            for i in fs:
+                t, (a, b, c) = T[i]
+                for k in range(3): edge[tuple(sorted((t[k], t[(k+1)%3])))] += 1
+                ar = (b-a).cross(c-a).length/2.0
+                area += ar; cen += (a+b+c)/3.0*ar
+            if area <= 0: continue
+            cen /= area
+            vol = 0.0
+            for i in fs:
+                _t, (a, b, c) = T[i]
+                vol += (a-cen).dot((b-cen).cross(c-cen))/6.0
+            blen = 0.0
+            for (p_, q_), n in edge.items():
+                if n != 1: continue
+                pa = Vector([x/Q for x in inv[p_]]); pb = Vector([x/Q for x in inv[q_]])
+                blen += (pa-pb).length
+            openness = blen/math.sqrt(area); solidity = abs(vol)/(area**1.5)
+            total_a += area
+            if openness > OPEN_MIN and solidity < SOLID_MIN: sheet_a += area
+        out[name] = (sheet_a/total_a) if total_a > 0 else 0.0
+    return out
+
+own = by_material()
+
 print("MATERIAL VERDICTS for %s" % src.replace("\\","/").split("/")[-1])
-for mn in sorted(mat_area, key=lambda m: -mat_sheet[m]/max(mat_area[m],1e-9)):
-    share = mat_sheet[mn] / max(mat_area[mn], 1e-9)
-    worst = max(detail[mn], key=lambda d: d[0])
-    print("VERDICT %-30s %-13s sheet-area %5.1f%%  (largest piece: %d faces, open %.2f, solid %.4f)"
+for mn in sorted(set(mat_area) | set(own),
+                 key=lambda m: -max(mat_sheet[m]/max(mat_area[m],1e-9), own.get(m, 0.0))):
+    piece_share = mat_sheet[mn] / max(mat_area[mn], 1e-9) if mn in mat_area else 0.0
+    own_share = own.get(mn, 0.0)
+    share = max(piece_share, own_share)
+    note = ""
+    if (piece_share >= AREA_SHARE) != (own_share >= AREA_SHARE):
+        note = "  [by-piece %.1f%% vs by-material %.1f%% -- UNION applied]" % (100*piece_share, 100*own_share)
+    if detail[mn]:
+        worst = max(detail[mn], key=lambda d: d[0])
+        where = "(largest piece: %d faces, open %.2f, solid %.4f)" % (worst[4], worst[1], worst[2])
+    else:
+        where = "(no piece above the %d-triangle minimum by piece)" % MIN_FACES
+    print("VERDICT %-30s %-13s sheet-area %5.1f%%  %s%s"
           % (mn[:30], "DOUBLE-SIDED" if share >= AREA_SHARE else "culled",
-             100*share, worst[4], worst[1], worst[2]))
+             100*share, where, note))
