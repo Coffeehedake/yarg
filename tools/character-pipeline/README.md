@@ -1800,10 +1800,12 @@ decision is readable in the build log and an override says so.
 
 ### Rolling it onto the installed roster, 2026-11-13
 
-**53 of 65 rebuilt and installed. 1 double-sided material on the roster became 30, across 14
-characters.** `{None: 141, 2.0: 398, 0.0: 1}` -> `{None: 141, 2.0: 369, 0.0: 30}`. Alastor, Alcina
-Dimitrescu, Alice Ivy, Ariel, Heels, Judy Hopps, Peach, Power Girl, Sayuri, Scott Hall,
-Spider-Man, The Rock, Vegeta and Yui Suzukaze each gained between one and six.
+**56 of 65 rebuilt and installed. 1 double-sided material on the roster became 34, across 17
+characters.** `{None: 141, 2.0: 398, 0.0: 1}` -> `{None: 141, 2.0: 365, 0.0: 34}`. Alastor, Alcina
+Dimitrescu, Alice Ivy, Ariel, Heels, Iron Man Mark 85, Jessica Rabbit, Judy Hopps, Peach,
+Power Girl, Sayuri, Scott Hall, Spider-Man, Spider-Man PS, The Rock, Vegeta and Yui Suzukaze each
+gained between one and six. The 141 with no `_Cull` at all are MToon materials, which carry
+sidedness inside the VRM extension instead.
 
 **Alastor is the control and he passed with nothing set.** His is the only hand-made cull decision
 on this roster -- `Eyes.001` double-sided, `Head.001` single-sided on purpose -- and his rebuild
@@ -1853,7 +1855,7 @@ every Transform's bone name, position and rotation (`verify_rebuild.py`). Cull-o
 installed; anything else did not. Mesh data is deliberately absent: UnityPy reports verts=0 for a
 `.yargchar`, and that zero looks like an answer.
 
-#### The six that were not installed, and why each
+#### The six held back, and what happened to them
 
 | character | installed -> rebuild | the difference |
 |---|---|---|
@@ -1865,10 +1867,41 @@ installed; anything else did not. Mesh data is deliberately absent: UnityPy repo
 | Spider-Man PS | 0 -> **1** | the same no-shine change |
 
 The first three cost nothing: their rebuild produces exactly the sidedness they already carry, so
-skipping them is correct rather than a compromise. **Measure that before calling a skip harmless**
--- the other three forgo real double-sided materials, and they are all the same shape of problem:
-the exporter has moved on since those characters were built, so sidedness cannot be applied to
-them without applying those changes too.
+skipping them is correct rather than a compromise, and they stay on their installed builds.
+**Measure that before calling a skip harmless** -- the other three forgo real double-sided
+materials, and they are the same shape of problem: the exporter has moved on since those
+characters were built, so sidedness cannot be applied without applying those changes too. On
+Jay's call the last three WERE installed, once each had been shown to differ in nothing beyond
+`_Cull` and those named changes.
+
+#### Pair materials by what they USE, not by name and not by order
+
+Verifying those three needed a pairing that survives the rename, and the obvious two both fail:
+
+- **ORDER fails silently.** UnityPy enumerates objects in file order, which is not material index
+  order. Pairing by position matched `JessicaRabbit_2` against `JessicaRabbit_5` and reported
+  sixteen differences on a character that has one. A pairing that invents differences is worse
+  than none, because every one reads as a regression.
+- **TEXTURE KEYS fail where textures are duplicated.** Jessica has 11 materials and only 6
+  distinct texture-assignment keys, so five were lost and her double-sided count came back 0 -> 0
+  instead of 0 -> 1.
+
+So each is used only where it is valid: texture keys for Iron Man, whose names were rewritten;
+names for the other two, whose names already agree. With that, all three differ in nothing but
+`_Cull` and the no-shine set.
+
+#### Iron Man had four candidate sources and only texture SIZE could separate them
+
+`IronManMark85.vrm`, `-full`, `-tex1k` and `-trim` all pass the rig and material-count gates and
+all score 100% on texture names, because the names are identical in every one. The bundle carries
+each texture's dimensions, and that settles it: the installed build is thirteen textures at
+**1024x1024**, which `-tex1k` and `-trim` match while `.vrm` is 2048 and `-full` is 4096. Choosing
+either of those would have doubled or quadrupled his texture memory with nothing to show for it.
+
+`-trim` is then ruled out on geometry -- 173,451 triangles against `-tex1k`'s 639,859, a 3.7x
+difference -- and the rebuild from `-tex1k` lands within **0.113%** of the installed bundle's size,
+where several megabytes of index and vertex data would otherwise be missing. **Check texture
+dimensions whenever a model has resolution variants**; nothing else in the selection sees them.
 
 #### A stale output file fails a build and reads as a model fault
 
