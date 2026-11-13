@@ -43,11 +43,45 @@ by material they are a 12-triangle patch at open 4.75, solid 0.0161, a sheet at
 COMPLETELY. Vegeta's `Material_46` is the same shape of error and loses 12.79%
 of its silhouette from behind when culled.
 
-A union is the right combination rather than a replacement, because each
-attribution UNDERCOUNTS on its own and neither overcounts: measured over all 34
-flips the exporter was vindicated by render every time, by-piece missed 2 and
-by-material missed 4 (Alice Ivy's `Teeth`, Ariel's three `Brows`). Taking either
-as sufficient can therefore only move toward the render-confirmed answer.
+A DECAL IS NOT A PATCH, and that distinction is what makes the union safe. On
+its own, by-material attribution reintroduces the exact bug the exporter was
+fixed for: Ariel's `Ears`, `Irises` and `Lips` are patches of a CLOSED HEAD, and
+measured on their own faces alone they look like open sheets -- the same three
+materials that were the signature of the per-submesh bug in `YargCharExporter`.
+Unioned naively it added six such false positives across 227 materials (those
+three, Alcina's `Material.007` and `.013`, Sayuri's `Eyelashes`).
+
+The discriminator is whether the material's own boundary edges are ALSO boundary
+edges of the whole mesh:
+
+  A DECAL  lies ON a surface. Its rim is free in the mesh too -- nothing else
+           uses those edges. Sayuri's moles, Vegeta's Material_46.
+  A PATCH  is part of a surface. Its rim is shared with the neighbouring
+           material, so in the whole mesh those edges are used twice and the
+           surface is closed. Ariel's lips, ears and irises.
+
+So by-material may only rescue a material whose own-face rim is genuinely open
+in the full mesh.
+
+WHERE THAT LEAVES IT, measured over all 227 materials of the 17 characters that
+carry a flip -- not over the 34 flips alone, which can only ever show one
+direction of error:
+
+  224 of 227 agree with the exporter.
+  0   undercounts: everything the exporter calls a sheet, this now calls a sheet.
+  3   disagreements, and an isolated render says the EXPORTER is wrong on two:
+
+    Sayuri   `Eyelashes`      check 69.9%, exporter 0.0%  -- render: CLOSED,
+                              0.00% lost in all three views. The check is
+                              overcounting; these lashes are modelled as solid
+                              volume, not cards. Known residual defect.
+    Alcina   `Material.007`   check 100%,  exporter 0.0%  -- render: 1.42% lost
+    Alcina   `Material.013`   check 100%,  exporter 0.0%  -- render: 2.05% lost
+                              from behind. The EXPORTER is undercounting these
+                              two; they are genuine sheets it culls.
+
+That last pair is a defect in `YargCharExporter.cs`, not here, and it could only
+surface by comparing every material rather than only the ones it flipped.
 
 None of which makes this an arbiter. Use `isolate.py` for anything disputed: it
 replaces the material with a matte stand-in and asks whether culling the faces
@@ -125,13 +159,19 @@ Q = 10000.0   # 0.1 mm, the exporter's WeldQuant
 
 def by_material():
     tri = collections.defaultdict(list)
+    mesh_edge = collections.Counter()      # edge usage across the WHOLE mesh
+    def wkey(v):
+        return (round(v.x*Q), round(v.y*Q), round(v.z*Q))
     for o in [x for x in bpy.data.objects if x.type == "MESH"]:
         me = o.data
         for poly in me.polygons:
+            vs = [o.matrix_world @ me.vertices[i].co for i in poly.vertices]
+            ks = [wkey(v) for v in vs]
+            for i in range(len(ks)):
+                mesh_edge[tuple(sorted((ks[i], ks[(i+1) % len(ks)])))] += 1
             if poly.material_index >= len(o.material_slots): continue
             slot = o.material_slots[poly.material_index].material
             if slot is None: continue
-            vs = [o.matrix_world @ me.vertices[i].co for i in poly.vertices]
             for k in range(1, len(vs)-1):
                 tri[slot.name].append((vs[0], vs[k], vs[k+1]))
     out = {}
@@ -174,14 +214,20 @@ def by_material():
             for i in fs:
                 _t, (a, b, c) = T[i]
                 vol += (a-cen).dot((b-cen).cross(c-cen))/6.0
-            blen = 0.0
+            blen = 0.0; free = 0; rim = 0
             for (p_, q_), n in edge.items():
                 if n != 1: continue
-                pa = Vector([x/Q for x in inv[p_]]); pb = Vector([x/Q for x in inv[q_]])
+                ka, kb = inv[p_], inv[q_]
+                pa = Vector([x/Q for x in ka]); pb = Vector([x/Q for x in kb])
                 blen += (pa-pb).length
+                rim += 1
+                # Free in the WHOLE mesh, not just within this material: that is
+                # what separates a decal lying on a surface from a patch of one.
+                if mesh_edge.get(tuple(sorted((ka, kb))), 0) <= 1: free += 1
             openness = blen/math.sqrt(area); solidity = abs(vol)/(area**1.5)
             total_a += area
-            if openness > OPEN_MIN and solidity < SOLID_MIN: sheet_a += area
+            decal = rim > 0 and free >= rim * 0.5
+            if openness > OPEN_MIN and solidity < SOLID_MIN and decal: sheet_a += area
         out[name] = (sheet_a/total_a) if total_a > 0 else 0.0
     return out
 
