@@ -43,6 +43,25 @@ if kept == 0:
     raise SystemExit("ABORT: no faces use material %r" % want)
 print("  ISOLATED %s: %d face(s)" % (want, kept))
 
+# Replace the material with a plain matte grey. The question here is whether
+# the GEOMETRY has back faces a viewer can see, and the source shader can defeat
+# that test outright: Vegeta's Material_46 is Metallic 1.0 / Roughness 0.0, a
+# perfect mirror, which renders BLACK under sun lamps with no environment to
+# reflect. Six black frames read as "no verdict" when the geometry was fine all
+# along. Culling is a property of the material slot, so the stand-in carries it.
+neutral = bpy.data.materials.new("isolate_neutral")
+neutral.use_nodes = True
+bsdf = next(n for n in neutral.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+bsdf.inputs["Base Color"].default_value = (0.62, 0.62, 0.62, 1.0)
+bsdf.inputs["Metallic"].default_value = 0.0
+bsdf.inputs["Roughness"].default_value = 0.6
+neutral.blend_method = "OPAQUE"
+for o in [x for x in bpy.data.objects if x.type == "MESH"]:
+    o.data.materials.clear()
+    o.data.materials.append(neutral)
+    for pz in o.data.polygons:
+        pz.material_index = 0
+
 objs = [o for o in bpy.data.objects if o.type == "MESH"]
 lo = [1e18]*3; hi = [-1e18]*3
 for o in objs:
@@ -80,9 +99,7 @@ VIEWS = {"f": ((cx, cy - span*3, cz), (1.5708, 0, 0)),
          "b": ((cx, cy + span*3, cz), (1.5708, 0, 3.14159)),
          "s": ((cx + span*3, cy, cz), (1.5708, 0, 1.5708))}
 for tag, cull in (("cull", True), ("nocull", False)):
-    for m in bpy.data.materials:
-        try: m.use_backface_culling = cull
-        except Exception: pass
+    neutral.use_backface_culling = cull
     for vn, (loc, rot) in VIEWS.items():
         cam.location = loc; cam.rotation_euler = rot
         sc.render.filepath = "%s-%s-%s.png" % (stem, vn, tag)

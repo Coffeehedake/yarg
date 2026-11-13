@@ -42,28 +42,59 @@ for want in argv[1:]:
             if k not in ids: ids[k] = len(ids)
             t.append(ids[k])
         T.append((t, (a, b, c)))
-    edge = defaultdict(int)
-    area = 0.0; cen = mathutils.Vector((0, 0, 0))
-    for t, (a, b, c) in T:
-        for i in range(3):
-            e = tuple(sorted((t[i], t[(i+1) % 3])))
-            edge[e] += 1
-        ar = (b - a).cross(c - a).length / 2.0
-        area += ar; cen += (a + b + c) / 3.0 * ar
-    if area <= 0: print("%-34s ZERO AREA" % want); continue
-    cen /= area
-    vol = 0.0
-    for _t, (a, b, c) in T:
-        vol += (a - cen).dot((b - cen).cross(c - cen)) / 6.0
-    bnd = sum(1 for e, n in edge.items() if n == 1)
-    blen = 0.0
-    inv = {v: k for k, v in ids.items()}
-    for (p, q), n in edge.items():
-        if n != 1: continue
-        pa = mathutils.Vector([x / Q for x in inv[p]]); pb = mathutils.Vector([x / Q for x in inv[q]])
-        blen += (pa - pb).length
-    openness = blen / math.sqrt(area) if area > 0 else 0.0
-    solidity = abs(vol) / (area ** 1.5) if area > 0 else 0.0
-    print("%-34s faces=%-6d area=%.5f  boundary edges=%-5d  open=%.2f  solid=%.4f  -> %s"
-          % (want, len(T), area, bnd, openness, solidity,
-             "SHEET" if (openness > 1.5 and solidity < 0.02) else "not a sheet"))
+    # Split into CONNECTED PIECES first. Lumping a material's faces together
+    # corrupts both numbers when they are not connected: several separate closed
+    # blobs share one centroid, so their signed volumes partly cancel and the
+    # boundary of all of them is divided by the area of all of them. The
+    # exporter and sidedness.py both work per piece, so this must too.
+    adj = defaultdict(set)
+    for i, (t, _g) in enumerate(T):
+        for k in range(3):
+            adj[tuple(sorted((t[k], t[(k+1) % 3])))].add(i)
+    parent = list(range(len(T)))
+    def find(a):
+        while parent[a] != a: parent[a] = parent[parent[a]]; a = parent[a]
+        return a
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb: parent[ra] = rb
+    for e, fs in adj.items():
+        fs = sorted(fs)
+        for f in fs[1:]: union(fs[0], f)
+    pieces = defaultdict(list)
+    for i in range(len(T)): pieces[find(i)].append(i)
+
+    print("%-30s %d face(s) in %d connected piece(s)" % (want, len(T), len(pieces)))
+    sheet_area = 0.0; total_area = 0.0; rows = []
+    for _r, fs in sorted(pieces.items(), key=lambda kv: -len(kv[1])):
+        edge = defaultdict(int); area = 0.0; cen = mathutils.Vector((0, 0, 0))
+        for i in fs:
+            t, (a, b, c) = T[i]
+            for k in range(3): edge[tuple(sorted((t[k], t[(k+1) % 3])))] += 1
+            ar = (b - a).cross(c - a).length / 2.0
+            area += ar; cen += (a + b + c) / 3.0 * ar
+        if area <= 0: continue
+        cen /= area
+        vol = 0.0
+        for i in fs:
+            _t, (a, b, c) = T[i]
+            vol += (a - cen).dot((b - cen).cross(c - cen)) / 6.0
+        blen = 0.0
+        inv = {v: k for k, v in ids.items()}
+        for (p_, q_), n in edge.items():
+            if n != 1: continue
+            pa = mathutils.Vector([x / Q for x in inv[p_]]); pb = mathutils.Vector([x / Q for x in inv[q_]])
+            blen += (pa - pb).length
+        openness = blen / math.sqrt(area)
+        solidity = abs(vol) / (area ** 1.5)
+        is_sheet = openness > 1.5 and solidity < 0.02
+        total_area += area
+        if is_sheet: sheet_area += area
+        rows.append((len(fs), area, openness, solidity, is_sheet))
+    for n, area, op, so, sh in rows[:8]:
+        print("   piece %-6d faces area=%.6f  open=%5.2f  solid=%.4f  %s"
+              % (n, area, op, so, "SHEET" if sh else "-"))
+    if len(rows) > 8: print("   ... %d more piece(s)" % (len(rows) - 8))
+    share = 100.0 * sheet_area / total_area if total_area else 0.0
+    print("   => sheet-area %.1f%%  -> %s  (exporter flips at >= 20%%)"
+          % (share, "DOUBLE-SIDED" if share >= 20.0 else "culled"))

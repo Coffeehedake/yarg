@@ -1950,18 +1950,57 @@ and sharing its vertex positions welds into the body in one and stays a small pa
 Sayuri's 12-face mole patch against a 25,648-face body piece. **On Sayuri the exporter is right**:
 culled, her moles disappear completely.
 
-**Vegeta is the one open question.** `matgeom.py` measures a material's own faces with no rendering
-at all, and his `Material_46` comes out **open 7.79, solid 0.0648** -- more than three times
-`SolidMin` -- against Sayuri's `Moles` at open 4.75, solid 0.0161 and Scott Hall's `Hall_Vest` at
-2.59 / 0.0182, both of which the render confirms are sheets. So two independent readings call it
-NOT a sheet and the exporter calls it one, and the render that would break the tie produced a black
-frame. It is left double-sided and flagged rather than reverted on an unresolved measurement.
+#### SETTLED: all 34 flips are correct, and neither static cross-check is trustworthy
+
+Vegeta's `Material_46` is a sheet. Three things had to be fixed before that could be seen, and
+each had produced a confident wrong answer:
+
+- **The isolated render was defeated by the material itself.** `Material_46` is `Metallic 1.0,
+  Roughness 0.0` -- a perfect mirror -- which renders BLACK under sun lamps with no environment to
+  reflect. Six black frames read as "no verdict" while the geometry was fine throughout.
+  `isolate.py` now replaces every material with a matte grey stand-in and carries the culling flag
+  on that, so the render tests GEOMETRY and a shader cannot defeat it. Vegeta then comes back at
+  **12.79% from behind**, against Sayuri's `Moles` at 20.15% as the control.
+- **`matgeom.py` was lumping disconnected faces into one piece.** `Material_46` is a symmetric
+  left/right PAIR of 380-triangle pieces; measured as one set their signed volumes partly cancel
+  about a shared centroid and solidity came out **0.0648**, three times the threshold. Split per
+  connected piece -- which is what the exporter and `sidedness.py` both do -- each piece is
+  open 5.74 / solid 0.0191 and open 5.28 / solid 0.0189, both sheets, **100.0% sheet area, the
+  exporter's number exactly**.
+- **`sidedness.py`'s two disagreements have two different causes**, and neither is the exporter's.
+  On Sayuri the glTF importer merges every mesh into a single 91,632-face object, so
+  `remove_doubles` welds her 12-face mole decal into a **25,648-face body piece** -- a closed body,
+  hence "not a sheet". On Vegeta the pieces are found correctly (2 x 190 quads) but the metrics
+  land on the far side of `SOLID_MIN`: 0.0268 against 0.0191.
+
+**Checked across all 34 flips rather than four characters this time**, `matgeom.py` agrees with the
+exporter on **30 of 34** -- including Sayuri and Vegeta, now both 100.0%. The four it disagrees on
+are different ones, and the render settles every one of them in the EXPORTER's favour:
+
+| material | exporter | `matgeom.py` | isolated render |
+|---|---|---|---|
+| Alice Ivy `Teeth` | 100.0% | 0.0% | **4.86% from behind -- sheet** |
+| Ariel `Brows01` | 30.4% | 18.6% | **2.65%, all three views -- sheet** |
+| Ariel `Brows02` | 37.5% | 17.7% | **2.37% -- sheet** |
+| Ariel `Brows03` | 36.4% | 18.1% | **2.37% -- sheet** |
+
+Ariel's three brows sit just under the 20% threshold on `matgeom`'s attribution and just over it on
+the exporter's, which is the same sensitivity the threshold work already found in solidity. Her
+brows were visibly affected in the whole-figure render too -- they are the two red arcs in the
+contact sheet -- so the exporter's side of that line is the correct one.
+
+**So: 34 of 34 flips are right, and the two Blender implementations each undercount in their own
+way** -- `sidedness.py` by 2, `matgeom.py` by 4. Neither is a reliable arbiter on its own. The
+shader-independent isolated render is, because it asks the only question that matters: does
+culling this material's own faces lose geometry a viewer could see? Use `isolate.py` for anything
+disputed, and treat a static sheet-area figure as a proposal.
 
 #### Three zeros in a row, each of which looked like an answer
 
 Worth listing together, because the same shape kept recurring in one afternoon:
 
-1. **A trailing ``** meant the last-named material of every character was never released, so the
+1. **A trailing `
+`** meant the last-named material of every character was never released, so the
    ten characters with one material had identical pairs -- including the control.
 2. **Blender's default 0.1 m near clip** swallowed Sayuri's 1.5 cm mole patch whole: the camera sat
    4.6 cm away, the frame came out empty, and the pair diffed to 0.00%, which read as "closed
