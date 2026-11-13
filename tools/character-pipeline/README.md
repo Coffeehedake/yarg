@@ -1902,7 +1902,8 @@ same code released 33 other materials and nine of those characters moved.
 
 Two things the check got wrong first, both of which produced a convincing zero:
 
-- **A trailing `` silently disabled it.** The material list was written with Windows newline
+- **A trailing `
+` silently disabled it.** The material list was written with Windows newline
   translation, so `read` left a carriage return on the LAST name of every line. Ten characters
   have exactly one named material, so for those **nothing at all was released** and the pair was
   identical by construction -- including Alastor, whose 0.000% would have read as the control
@@ -1911,6 +1912,67 @@ Two things the check got wrong first, both of which produced a convincing zero:
 - **A head-framed camera cannot show a material that is not on a head.** Spider-Man PS's
   webshooter is on his wrist and showed only once a whole-body view was added, so a view that
   finds nothing is reported per view rather than per character.
+
+#### The eight that showed nothing were OCCLUDED, not wrong -- and the cross-check is not roster-wide
+
+Chasing the zeros found something worth more than the renders did. `isolate.py` deletes every face
+that does not use the flipped material and renders what is left from front, back and side with
+culling on and off. If that pair differs, the geometry really does have back faces a viewer can
+see and the full-figure zero was something standing in front of it.
+
+| material | culled vs not, isolated | reading |
+|---|---|---|
+| Power Girl `mesh1` | **23.10%** from behind | a genuine sheet, hidden by her body |
+| Scott Hall `Hall_Vest` | 10.00% from the front | ditto |
+| Scott Hall `..._Hall_Teeth` | 9.72% from behind | teeth, inside a closed mouth |
+| The Rock `Object015` | 8.18% from behind | |
+| Sayuri `Moles` | **vanishes entirely when culled** (luminance 0-1 against 0-108) | |
+| Spider-Man `Model001_Material003.001` | 1.62% | |
+| Jessica Rabbit `Material.007` | 1.49% | |
+| Vegeta `Material_46` | no verdict -- all six frames rendered black | **unresolved, see below** |
+
+**So the measurement was right and the renders were the thing that was misleading.** A static
+camera in front of a dressed figure cannot see a vest lining, the inside of a mouth, or a mole
+decal's back face; culling would still lose all of them the moment the character turns.
+
+**`sidedness.py` and the exporter do NOT agree across the roster.** Of the 34 flips, two are flat
+contradictions -- not rounding:
+
+| | exporter | `sidedness.py` |
+|---|---|---|
+| Sayuri `Moles` | 100.0% | **0.0%** |
+| Vegeta `Material_46` | 100.0% | **0.0%** |
+
+The earlier "68 of 68 materials agree" was measured on **four characters** and does not generalise;
+treat it as evidence about those four. The cause is that the exporter builds connected pieces
+within a MESH while `sidedness.py` builds them across the whole scene, so a decal lying on a body
+and sharing its vertex positions welds into the body in one and stays a small patch in the other --
+Sayuri's 12-face mole patch against a 25,648-face body piece. **On Sayuri the exporter is right**:
+culled, her moles disappear completely.
+
+**Vegeta is the one open question.** `matgeom.py` measures a material's own faces with no rendering
+at all, and his `Material_46` comes out **open 7.79, solid 0.0648** -- more than three times
+`SolidMin` -- against Sayuri's `Moles` at open 4.75, solid 0.0161 and Scott Hall's `Hall_Vest` at
+2.59 / 0.0182, both of which the render confirms are sheets. So two independent readings call it
+NOT a sheet and the exporter calls it one, and the render that would break the tie produced a black
+frame. It is left double-sided and flagged rather than reverted on an unresolved measurement.
+
+#### Three zeros in a row, each of which looked like an answer
+
+Worth listing together, because the same shape kept recurring in one afternoon:
+
+1. **A trailing ``** meant the last-named material of every character was never released, so the
+   ten characters with one material had identical pairs -- including the control.
+2. **Blender's default 0.1 m near clip** swallowed Sayuri's 1.5 cm mole patch whole: the camera sat
+   4.6 cm away, the frame came out empty, and the pair diffed to 0.00%, which read as "closed
+   geometry, the flip buys nothing" -- the exact opposite of the truth. Clip planes are now scaled
+   to the subject.
+3. **The guard against that** printed nothing, because Blender's bundled Python has no PIL and the
+   runner's grep filtered its line out anyway. `grep -c EMPTY` returning 0 meant the check had not
+   run, not that no frame was empty.
+
+A zero is only worth something next to a non-zero produced by the same code. Every table above has
+one.
 
 #### Pair materials by what they USE, not by name and not by order
 
