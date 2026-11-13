@@ -95,3 +95,58 @@ five also carry a `_MetallicGlossMap`, so the 1.0 is a multiplier on a real
 map, which is the correct setup. A sweep of all 65 for metallic > 0.2 with no
 metal map returns **zero characters**. His darkness is something else and he
 needs a render; he has no `.vrm`, so that means extracting his archive.
+
+
+## One root cause under several of them: the bundle draws single-sided geometry
+
+Every `.vrm` this pipeline writes marks its materials **`doubleSided: true`**. Measured on the
+twelve reported characters that still have one: Alice Ivy 22 of 22, Heels 21 of 21, Thanos 5 of
+5, The Rock 21 of 21, Gadget 6 of 6, Miku 1 of 1, Peach 16 of 16, Killer Clown 4 of 4, Shadow 5
+of 5, Pomni 13 of 13, Jessica Rabbit 10 of 10, Alcina 13 of 13. **Not one false.**
+
+None of it survives the export, and `YargCharExporter.cs` says why in its own comment:
+
+> `// A fresh URP/Lit culls back faces. The source materials are Standard, which has no cull`
+> `// property to read, so the glTF doubleSided flag is [lost].`
+> `// YARG_CULL_OFF_MATERIALS draws just those materials double-sided; everything else stays culled.`
+
+The escape hatch has to be named per material, per build, and almost nobody ever did. Across the
+65 installed characters when this was measured: **398 materials at `_Cull 2` and exactly ONE at
+0.**
+
+Thin, single-layer geometry — hair ribbons, skirt panels, capes, lashes — has no back face to
+fall back on. From the wrong side it is simply not drawn. That reads as **"missing pieces"**, or
+as hair **"clipping through"** a hat when what is actually happening is the near surface being
+culled away so you see what is behind it.
+
+### And it is exactly why no render here ever caught it
+
+Blender honours `doubleSided`, so a render of the `.vrm` shows a character that is whole. **The
+bundle the game loads is a different object from the one I have been looking at all day.**
+
+Miku is the clean proof, because her whole character is one material. Rendered from her `.vrm`
+her twintails are continuous ribbons. Rendered with backface culling forced on — which is what
+the bundle does — they break into pieces, exactly as reported.
+
+`cullrender.py` in the scratchpad is that comparison, and `patch_cull_off.py` is the repair:
+`_Cull 2 → 0` in the installed bundle, the same in-place UnityPy route as the alpha patchers,
+with a read-back that proves only the named materials changed.
+
+**`--all` is defensible here and not a shortcut.** The source declares every one of these
+materials double-sided, so turning culling off restores what the model asked for rather than
+inventing something. On a closed solid mesh it changes nothing visible, because the back faces
+are hidden by the front ones anyway.
+
+### Done, and what is left
+
+**Twelve characters patched and installed** — all of the reported ones that have a `.vrm` to
+confirm the source intent, plus Miku. Backups in
+`C:\dev\_tmp\yarg-char-backup6-11-13-precull`.
+
+**262 materials across 48 other characters are still single-sided.** They carry exactly the same
+latent fault and nobody has complained about them yet. Flipping them is one command and fully
+reversible, but it touches most of the roster, so it is left as a decision rather than taken.
+
+**The real fix is in the exporter**, which should read `doubleSided` out of the `.vrm` and set
+`_Cull` from it instead of needing a hand-written list. Every character built from now on will
+otherwise arrive single-sided again.
