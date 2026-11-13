@@ -158,6 +158,36 @@ The `--all` flag is gone from `patch_cull_off.py`; it refuses to run without `--
 warranted** — reading `doubleSided` out of the `.vrm` would propagate an upstream default to the
 whole roster, which is the thing that was nearly shipped.
 
+### The fix: the exporter measures it
+
+`YargCharExporter.cs` now decides sidedness **per material, from the geometry**, and reads the
+file's `doubleSided` flag not at all. Two scale-invariant numbers per connected piece of surface
+— openness (`boundary/sqrt(area)`) and solidity (`|V|/area^1.5`) — and a piece is a sheet when it
+is both open and encloses nothing. A material is drawn double-sided when at least 20% of its area
+sits in sheet pieces. `YARG_CULL_OFF_MATERIALS` and the new `YARG_CULL_ON_MATERIALS` override it
+either way. The full reasoning, the thresholds and the sensitivity data are in
+`tools/character-pipeline/README.md` under "Single- and double-sided, measured rather than
+flagged".
+
+It names **20 of 265 materials (7.5%)** across the 37 characters that have a `.vrm` — eyelashes,
+brows, hair cards, eye planes — and reproduces Alastor's hand-made answer (`Eyes.001`
+double-sided, `Head.001` not) **with no environment variable set**.
+
+Verified rather than assumed:
+
+- The same rule is implemented twice — `sidedness.py` in Blender and the exporter in C# — and the
+  two were compared on four characters: **68 materials, all 68 agreeing.** That check earned its
+  place immediately. The first C# version built connected pieces per SUBMESH rather than per
+  mesh, so a material border counted as a boundary and Ariel's ears, irises and lips — patches of
+  a closed head — came out double-sided. Seven disagreements, now none.
+- The exported bundles carry it: Alastor 1 of 4 materials double-sided, Alice Ivy 3 of 22,
+  Ariel 5 of 26, Peach 6 of 16. Exactly the predicted counts.
+
+**This changes what is BUILT from now on. The 65 installed characters were not rebuilt**, so they
+still carry whatever `_Cull` their original export gave them — 398 culled and Alastor's one
+exception. Rebuilding the roster is a separate decision and would pull in every other pipeline
+change since each character was last built.
+
 ### What this costs, which is why it is not free to "just turn it on"
 
 Double-sided doubles the fragments rasterised for that material, lights back faces with normals

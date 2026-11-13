@@ -27,6 +27,233 @@ public static class YargCharExporter
         return null;
     }
 
+    // ---- Does this material's geometry HAVE a back face? -------------------
+    //
+    // Decided by MEASURING the triangles, not by reading the glTF doubleSided
+    // flag. That flag is almost always true -- across the third-party sources
+    // here, 60 materials true, 0 false, 5 absent -- because a Blender glTF
+    // export writes `doubleSided = not use_backface_culling` and Blender
+    // defaults that off. A field that is true because of an upstream default
+    // is not a declaration, and on 2026-11-13 reading it as one nearly put the
+    // whole roster double-sided. It is not read here, in either direction: an
+    // ABSENT flag is equally just a different tool's default (Batman's rips),
+    // so it cannot be trusted as a veto either.
+    //
+    // Two scale-invariant numbers per connected piece of surface, vertices
+    // welded by position so a UV seam does not split a piece:
+    //
+    //   OPENNESS  boundary_length / sqrt(area). An edge used by one triangle
+    //             is a boundary. A solid with a wrist hole scores near zero;
+    //             a single-layer sheet is boundary all the way round. A flat
+    //             disc is 2*sqrt(pi) = 3.5.
+    //   SOLIDITY  |signed volume| / area^1.5 about the piece's own centroid.
+    //             A sphere is 0.094, a limb-shaped cylinder 0.058, anything
+    //             enclosing nothing is about 0. This is what separates a CAPE
+    //             (large, few boundary edges for its area, but no volume) from
+    //             a TORSO.
+    //
+    // BOTH must say sheet. Openness alone condemns every solid with a hole;
+    // solidity alone condemns a closed paper-thin slab, which has a real back
+    // face and culls perfectly well.
+    //
+    // Both ratios are dimensionless, so vertices are used in their own local
+    // space and no transform is applied. That holds for uniform scale; a
+    // non-uniformly scaled object would distort them, and none here is.
+    //
+    // A material spans pieces and _Cull is per material, so a material is
+    // drawn double-sided when a meaningful share of its AREA sits in sheets.
+
+    // Thresholds. Alastor is the one character whose sidedness was decided by
+    // hand and shipped, so he is the test: Eyes.001 must come out double-sided
+    // and Head.001 must not. See docs/reported-faults-2026-11-12.md.
+    // Tuned against 3,971 connected pieces across the 37 characters that have a
+    // `.vrm`, then sensitivity-tested rather than picked at one point:
+    //
+    //   OpenMin    the ROBUST one. Openness is strongly bimodal -- 822 pieces
+    //              below 0.1 and a large mass above 3, with a sparse valley
+    //              between -- and anything in 1.0..2.0 gives the IDENTICAL set
+    //              of material verdicts. 1.5 sits mid-plateau.
+    //   SolidMin   the SENSITIVE one, and the reason both tests are needed. It
+    //              rejects pieces that are open but still voluminous (a hollow
+    //              head shell with eye and mouth openings), which openness alone
+    //              calls a sheet: dropping it names 93-147 of 265 materials and
+    //              FAILS Alastor, whose Head.001 is single-sided on purpose.
+    //              Solidity is not bimodal, so this cut is a judgement; 0.02
+    //              gives 20 materials, 0.025 gives 31 and 0.03 gives 48. Err
+    //              LOW. Culled is the status quo that ships 52 characters with
+    //              no reported fault, and a wrongly double-sided material hides
+    //              inverted winding instead of showing it.
+    //
+    // The test is Alastor, the only character whose sidedness was decided by
+    // hand and shipped: Eyes.001 must come out double-sided and Head.001 must
+    // not. These values reproduce that, and name 20 of 265 materials (7.5%) --
+    // eyelashes, brows, hair cards and eye planes.
+    private const float OpenMin = 1.5f;     // boundary/sqrt(area) above this: open
+    private const float SolidMin = 0.02f;   // |V|/A^1.5 below this: encloses nothing
+    private const float SheetAreaShare = 0.20f;
+    private const int MinPieceFaces = 12;
+    private const float WeldQuant = 10000f; // 0.1 mm
+
+    /// Measure, per material, how much of its area sits in open sheet pieces.
+    private static Dictionary<Material, float> SheetShareByMaterial(GameObject root)
+    {
+        var area = new Dictionary<Material, double>();
+        var sheet = new Dictionary<Material, double>();
+
+        foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+        {
+            Mesh mesh = r is SkinnedMeshRenderer smr ? smr.sharedMesh
+                : r.GetComponent<MeshFilter>() != null ? r.GetComponent<MeshFilter>().sharedMesh
+                : null;
+            if (mesh == null) continue;
+            if (!mesh.isReadable)
+            {
+                // Say so. A silent skip here is the worst outcome available: the
+                // material measures as 0% sheet, comes out culled like everything
+                // else, and the whole feature does nothing on that character with
+                // no sign in the log that it did not run.
+                Debug.LogWarning($"[YARGCHAR] sidedness: mesh '{mesh.name}' is not readable, "
+                                 + "its materials cannot be measured and will stay culled");
+                continue;
+            }
+
+            var verts = mesh.vertices;
+            // Weld by quantised position: the import splits vertices at UV seams,
+            // and an unwelded seam reads as a boundary, which would make every
+            // textured solid look like a sheet.
+            var weld = new int[verts.Length];
+            // Keyed on the three quantised coordinates themselves, NOT on a hash
+            // of them. A hash collision here would weld two vertices that are
+            // nowhere near each other, joining pieces that do not touch and
+            // destroying exactly the boundary count this is here to measure --
+            // and it would do it silently, on one character, at random.
+            var keyToId = new Dictionary<(long, long, long), int>(verts.Length);
+            for (int v = 0; v < verts.Length; v++)
+            {
+                var key = ((long)Mathf.Round(verts[v].x * WeldQuant),
+                           (long)Mathf.Round(verts[v].y * WeldQuant),
+                           (long)Mathf.Round(verts[v].z * WeldQuant));
+                if (!keyToId.TryGetValue(key, out var id)) { id = keyToId.Count; keyToId[key] = id; }
+                weld[v] = id;
+            }
+
+            // Connected pieces are found across the WHOLE mesh, every submesh at
+            // once, and only then is each piece's area split between the materials
+            // on it. Doing it per submesh instead would cut a piece wherever one
+            // material meets another and count that cut as BOUNDARY -- so a face
+            // material on a closed head, bordered by a scalp material, would read
+            // as an open sheet and be drawn double-sided. Same reason the Blender
+            // side welds across materials.
+            var mats = r.sharedMaterials;
+            var faceMat = new List<Material>();
+            var faceTri = new List<int>();
+            for (int sub = 0; sub < mesh.subMeshCount; sub++)
+            {
+                var mat = sub < mats.Length ? mats[sub] : null;
+                var tris = mesh.GetTriangles(sub);
+                for (int t = 0; t + 2 < tris.Length; t += 3)
+                {
+                    faceMat.Add(mat);
+                    faceTri.Add(tris[t]); faceTri.Add(tris[t + 1]); faceTri.Add(tris[t + 2]);
+                }
+            }
+            int faceCount = faceMat.Count;
+            if (faceCount == 0) continue;
+
+            var edgeFaces = new Dictionary<long, List<int>>(faceCount * 3);
+            for (int f = 0; f < faceCount; f++)
+                for (int e = 0; e < 3; e++)
+                {
+                    int a = weld[faceTri[f * 3 + e]], b = weld[faceTri[f * 3 + (e + 1) % 3]];
+                    long key = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+                    if (!edgeFaces.TryGetValue(key, out var lst)) edgeFaces[key] = lst = new List<int>(2);
+                    lst.Add(f);
+                }
+
+            var parent = new int[faceCount];
+            for (int f = 0; f < faceCount; f++) parent[f] = f;
+            int Find(int x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+            void Union(int x, int y) { int rx = Find(x), ry = Find(y); if (rx != ry) parent[rx] = ry; }
+            foreach (var kv in edgeFaces)
+                for (int k = 1; k < kv.Value.Count; k++) Union(kv.Value[0], kv.Value[k]);
+
+            var pieceArea = new Dictionary<int, double>();
+            var pieceCentroid = new Dictionary<int, Vector3>();
+            var pieceFaces = new Dictionary<int, int>();
+            var faceArea = new double[faceCount];
+            for (int f = 0; f < faceCount; f++)
+            {
+                Vector3 p0 = verts[faceTri[f * 3]], p1 = verts[faceTri[f * 3 + 1]], p2 = verts[faceTri[f * 3 + 2]];
+                double a = 0.5 * Vector3.Cross(p1 - p0, p2 - p0).magnitude;
+                faceArea[f] = a;
+                int rt = Find(f);
+                pieceArea.TryGetValue(rt, out var pa); pieceArea[rt] = pa + a;
+                pieceCentroid.TryGetValue(rt, out var pc);
+                pieceCentroid[rt] = pc + (p0 + p1 + p2) / 3f * (float)a;
+                pieceFaces.TryGetValue(rt, out var pf); pieceFaces[rt] = pf + 1;
+            }
+            foreach (var key in new List<int>(pieceCentroid.Keys))
+                pieceCentroid[key] = pieceCentroid[key] / (float)Math.Max(pieceArea[key], 1e-12);
+
+            var pieceVol = new Dictionary<int, double>();
+            for (int f = 0; f < faceCount; f++)
+            {
+                int rt = Find(f);
+                var c = pieceCentroid[rt];
+                Vector3 p0 = verts[faceTri[f * 3]] - c, p1 = verts[faceTri[f * 3 + 1]] - c, p2 = verts[faceTri[f * 3 + 2]] - c;
+                pieceVol.TryGetValue(rt, out var pv);
+                pieceVol[rt] = pv + Vector3.Dot(p0, Vector3.Cross(p1, p2)) / 6.0;
+            }
+
+            var pieceBoundary = new Dictionary<int, double>();
+            foreach (var kv in edgeFaces)
+            {
+                if (kv.Value.Count != 1) continue;   // shared by two faces: interior
+                int f = kv.Value[0], rt = Find(f);
+                int a2 = (int)(kv.Key >> 32), b2 = (int)(kv.Key & 0xffffffffL);
+                float len = 0f;
+                for (int e = 0; e < 3; e++)
+                {
+                    int va = weld[faceTri[f * 3 + e]], vb = weld[faceTri[f * 3 + (e + 1) % 3]];
+                    if ((va == a2 && vb == b2) || (va == b2 && vb == a2))
+                        len = (verts[faceTri[f * 3 + e]] - verts[faceTri[f * 3 + (e + 1) % 3]]).magnitude;
+                }
+                pieceBoundary.TryGetValue(rt, out var pb); pieceBoundary[rt] = pb + len;
+            }
+
+            // Which pieces are sheets, then attribute every face's area to its own
+            // material -- a piece can carry several.
+            var sheetPiece = new Dictionary<int, bool>();
+            foreach (var kv in pieceArea)
+            {
+                double a = kv.Value;
+                if (a <= 0 || pieceFaces[kv.Key] < MinPieceFaces) { sheetPiece[kv.Key] = false; continue; }
+                pieceBoundary.TryGetValue(kv.Key, out var bl);
+                pieceVol.TryGetValue(kv.Key, out var vol);
+                double openness = bl / Math.Sqrt(a);
+                double solidity = Math.Abs(vol) / Math.Pow(a, 1.5);
+                sheetPiece[kv.Key] = openness > OpenMin && solidity < SolidMin;
+            }
+            for (int f = 0; f < faceCount; f++)
+            {
+                var mat = faceMat[f];
+                if (mat == null) continue;
+                int rt = Find(f);
+                if (pieceFaces[rt] < MinPieceFaces) continue;
+                area.TryGetValue(mat, out var ma); area[mat] = ma + faceArea[f];
+                if (sheetPiece[rt]) { sheet.TryGetValue(mat, out var ms); sheet[mat] = ms + faceArea[f]; }
+            }
+        }
+
+        var share = new Dictionary<Material, float>();
+        foreach (var kv in area)
+        {
+            sheet.TryGetValue(kv.Key, out var s);
+            share[kv.Key] = (float)(s / Math.Max(kv.Value, 1e-12));
+        }
+        return share;
+    }
+
     public static void ExportAll()
     {
         int failures = 0;
@@ -112,6 +339,11 @@ public static class YargCharExporter
                     Debug.Log($"[YARGCHAR] {outName}: mic-grip bones {gripOk}/6");
 
                     var urp = Shader.Find("Universal Render Pipeline/Lit");
+                    // One verdict per MATERIAL, measured across EVERY renderer that
+                    // uses it, before the conversion loop below -- that loop dedupes
+                    // by material, so it only ever sees the first renderer's share
+                    // of a material's geometry and could not decide this itself.
+                    var sheetShare = SheetShareByMaterial(instance);
                     var remapped = new Dictionary<Material, Material>();
                     int fixedCount = 0;
                     int cutoutCount = 0;
@@ -136,16 +368,29 @@ public static class YargCharExporter
                             var nm = new Material(urp) { name = src.name + "_urp" };
                             if (baseMap != null) { nm.SetTexture("_BaseMap", baseMap); nm.SetTexture("_MainTex", baseMap); }
                             nm.SetColor("_BaseColor", col);
-                            // A fresh URP/Lit culls back faces. The source materials are Standard,
-                            // which has no cull property to read, so the glTF doubleSided flag is
-                            // lost on import and single-sided sheets (a hair fringe, an ear, an eye
-                            // plane) vanish from the side their normals face away from: Alastor's mask
-                            // showed through his fringe. YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001"
-                            // draws just those materials double-sided; everything else stays culled.
-                            // Double-sided everywhere tints the lighting, so name them, do not blanket.
+                            // A fresh URP/Lit culls back faces, and the Standard material it
+                            // was imported as has no cull property to carry the source's
+                            // intent, so single-sided sheets -- a hair fringe, an ear, an eye
+                            // plane -- vanish from the side their normals face away from.
+                            // Alastor's mask showed through his fringe that way. The decision
+                            // is MEASURED from the geometry by SheetShareByMaterial above, per
+                            // material; see the comment on it for why the file's own
+                            // doubleSided flag is not read.
+                            // YARG_CULL_OFF_MATERIALS / YARG_CULL_ON_MATERIALS override it
+                            // either way, for a judgement the measurement gets wrong.
+                            sheetShare.TryGetValue(src, out var share);
+                            bool doubleSided = share >= SheetAreaShare;
                             var cullOff = Environment.GetEnvironmentVariable("YARG_CULL_OFF_MATERIALS");
+                            var cullOn = Environment.GetEnvironmentVariable("YARG_CULL_ON_MATERIALS");
+                            string why = doubleSided ? "measured sheet" : "measured solid";
                             if (!string.IsNullOrEmpty(cullOff) && Array.IndexOf(cullOff.Split(';'), src.name) >= 0)
-                                nm.SetFloat("_Cull", 0f);
+                            { doubleSided = true; why = "forced by YARG_CULL_OFF_MATERIALS"; }
+                            else if (!string.IsNullOrEmpty(cullOn) && Array.IndexOf(cullOn.Split(';'), src.name) >= 0)
+                            { doubleSided = false; why = "forced by YARG_CULL_ON_MATERIALS"; }
+                            if (doubleSided) nm.SetFloat("_Cull", 0f);
+                            Debug.Log($"[YARGCHAR] {outName}: sidedness {src.name} "
+                                      + $"sheet-area {share * 100f:F1}% -> "
+                                      + (doubleSided ? "DOUBLE-SIDED" : "culled") + $" ({why})");
                             // A flat toon character does not want URP's default shine: the sky
                             // reflection and specular on every sheet read as a cool purple tint and
                             // blown-out highlights (Alastor in game). Name the materials to flatten.
@@ -159,7 +404,6 @@ public static class YargCharExporter
                                 nm.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
                                 nm.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
                             }
-                            Debug.Log($"[YARGCHAR] {outName}: material {src.name} cull={nm.GetFloat("_Cull")}");
                             // An untextured near-black material is an outline shell. URP/Lit
                             // gives it a specular sheen that shows as pale lines along edges
                             // (Alastor's fingers), so strip the shine.

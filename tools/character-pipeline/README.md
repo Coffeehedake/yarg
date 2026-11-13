@@ -85,8 +85,11 @@ debugging aid — renders of it tell you whether a fault is yours or the exporte
 `VRM_NO_TPOSE=1`, `VRM_DROP_SOLIDIFY=1` (inverted-hull outlines), `HAIR_ANCHOR` / `HAIR_SEGS` /
 `HAIR_STRANDS` for the hair rigger.
 
-**2. VRM → .yargchar** (Unity 6000.3.5f2). Copy `YargCharExporter.cs` from this folder into
-`<fork>/Assets/__TempExport/Editor/`, run it, then delete that folder. It lives here, not under
+**2. VRM → .yargchar** (Unity 6000.3.5f2). Copy `YargCharExporter.cs` **and
+`YargCharHandRender.cs`** from this folder into `<fork>/Assets/__TempExport/Editor/`, run it,
+then delete that folder. Both: the exporter calls into the hand renderer, and copying only the
+exporter fails the whole batch with `error CS0103: The name 'YargCharHandRender' does not exist`
+— a compile error, so nothing is written and the Unity exit code is the only sign. It lives here, not under
 `Assets/`, so that Unity does not compile it into every build — and an `Assets/__TempExport/`
 left lying around is one `git add -A` away from entering the fork:
 
@@ -1727,10 +1730,73 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | `VRM_FLIP_FACES="Mesh:z<0.9;Mesh2:z<0.15"` | build | reverses the winding and the split normals of every face of the named mesh below that height (metres). For clothing modelled inside-out behind an outline hull. Check with the share of faces pointing away from the local body axis |
 | `VRM_ORIENT_OUTWARD="Body.001@0.25"` | build | for each mesh, named material and driving bone, flips the WHOLE group (winding and split normals) when fewer than that share of its faces point away from the bone. Whole groups only, so mixed groups (a double-layered coat) are left alone. Runs after `VRM_FLIP_FACES`. Measure first with `facing_check.py` |
 | `VRM_ORIENT_CONSISTENT="Body.001;Head.001;Eyes.001"` | build | the better one. Orients whole CONNECTED PIECES (faces joined by shared edges, vertices welded by position): propagates one winding through each piece, then decides it as a whole, by SIGNED VOLUME for a closed piece (exact, needs no bone) and by the driving-bone vote only for an open sheet. Replaces `VRM_ORIENT_OUTWARD`, whose group flips cut across pieces and left 3% winding conflicts (patches missing from gloves and cuffs). Judges pieces of any size, joined across every material of the mesh (nearest-neighbour weld, 0.1 mm); `VRM_ORIENT_DEBUG=1` prints each small piece's decision. Known miss: a closed 3 cm solid beside Alastor's eyes stays inside-out |
-| `YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001"` | export | draws the named materials double-sided. The source `Standard` material has no cull property, so the glTF `doubleSided` flag is lost on import and single-sided sheets (hair fringe, ears, eye planes) vanish from behind |
+| `YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001"` | export | **override**: forces the named materials double-sided. The exporter now MEASURES sidedness per material (see "Single- and double-sided" below), so this is only for a judgement the measurement gets wrong |
+| `YARG_CULL_ON_MATERIALS="Hair"` | export | **override** the other way: forces the named materials back-face culled |
 | `YARG_NO_SHINE_MATERIALS="Body.001;..."` or `*` | export | smoothness, metallic, specular and environment reflections off. Partly overridden for materials with a metallic map (the exporter sets `_Metallic` 1 afterwards) |
 | `YARG_SHELL_NO_SHADOW=1` | export | an untextured near-black material stops casting shadows. Made no visible difference on Alastor |
 | `YARG_SHADOWS=1` | hand render | soft shadows on the render light |
+
+## Single- and double-sided, measured rather than flagged
+
+A fresh URP/Lit culls back faces. The Standard material the `.vrm` is imported as has no cull
+property, so nothing carries the source's intent across, and a single-layer sheet — a hair
+fringe, an ear, an eye plane — vanishes from the side its normals face away from. That is how
+Alastor's mask showed through his fringe.
+
+**The exporter decides this per material by measuring the triangles.** Two scale-invariant
+numbers per connected piece of surface, vertices welded by position so a UV seam does not split
+a piece:
+
+| | | |
+|---|---|---|
+| **openness** | `boundary_length / sqrt(area)` | an edge used by one triangle is a boundary. A solid with a wrist hole scores near zero; a single-layer sheet is boundary all the way round. A flat disc is `2*sqrt(pi)` = 3.5 |
+| **solidity** | `abs(signed volume) / area^1.5` about the piece's own centroid | a sphere is 0.094, a limb-shaped cylinder 0.058, anything enclosing nothing about 0 |
+
+A piece is a sheet when `openness > 1.5` **and** `solidity < 0.02`, and a material is drawn
+double-sided when at least 20% of its area sits in sheet pieces.
+
+**Both tests are needed, which is not obvious and was measured.** Openness alone names 93–147 of
+265 materials — a blanket by another road — and gets Alastor's `Head.001` wrong, which is
+single-sided on purpose. What solidity rejects is the piece that is *open but still voluminous*:
+a hollow head shell with eye and mouth openings, which openness alone calls a sheet.
+
+**The glTF `doubleSided` flag is NOT read, in either direction.** Across the third-party sources
+here it is 60 true, 0 false, 5 absent, because a Blender glTF export writes
+`doubleSided = not use_backface_culling` and Blender defaults that off. A field that is true
+because of an upstream default is not a declaration. An absent one is equally just a different
+tool's default (the MultiVersus rips), so it is no good as a veto either. Reading it as intent
+is what nearly put the whole roster double-sided on 2026-11-13; see
+`docs/reported-faults-2026-11-12.md`.
+
+### How the thresholds were chosen
+
+Measured over **3,971 connected pieces across the 37 characters that have a `.vrm`**, then
+sensitivity-tested rather than picked at one point:
+
+- **openness is the robust knob.** It is strongly bimodal — 822 pieces below 0.1, a large mass
+  above 3, a sparse valley between — and *any* value in 1.0–2.0 gives the identical set of
+  material verdicts. 1.5 sits mid-plateau.
+- **solidity is the sensitive one.** It is not bimodal, so the cut is a judgement: 0.02 names 20
+  materials, 0.025 names 31, 0.03 names 48. **Err low.** Culled is the status quo that ships 52
+  characters with no reported fault, and a wrongly double-sided material *hides* inverted winding
+  instead of showing it — Alastor's eyes were inverted and the note on him records them as
+  "hidden by the double-sided material".
+- **the area share is mild**: 10% names 33, 20% names 20, 30% names 18, 50% names 15.
+
+**The test is Alastor**, the only character whose sidedness was decided by hand and shipped:
+`Eyes.001` must come out double-sided and `Head.001` must not. The chosen values reproduce that,
+and name **20 of 265 materials (7.5%)** across the roster — eyelashes, brows, hair cards and eye
+planes, which is what the category is supposed to contain.
+
+### Checking it
+
+`sidedness.py` is the same rule in Blender (`blender --background --python sidedness.py --
+file.vrm`). It exists so the exporter's C# can be cross-checked against an independent
+implementation on the same characters: a transcription slip in the welding, the edge keys or the
+union-find would not crash, it would just quietly shift which materials come out double-sided.
+`openness.py` prints the raw open/closed split per piece. The exporter logs
+`sidedness <material> sheet-area N% -> DOUBLE-SIDED|culled (why)` for every material, so the
+decision is readable in the build log and an override says so.
 
 ## Known per-model arguments
 
