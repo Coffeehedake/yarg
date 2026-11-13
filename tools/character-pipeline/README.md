@@ -1874,6 +1874,44 @@ characters were built, so sidedness cannot be applied without applying those cha
 Jay's call the last three WERE installed, once each had been shown to differ in nothing beyond
 `_Cull` and those named changes.
 
+#### What the change actually LOOKS like: one clear win, and eight that show nothing
+
+Rendered before and after for all 17, from four angles -- head front, head side, whole-body front,
+whole-body side -- with `cullpair.py`. A plain render of a `.vrm` shows neither state, because
+Blender honours the file's own `doubleSided` and draws no gaps at all, so BEFORE forces culling on
+every material and AFTER releases exactly the 34 the exporter measured. EEVEE_NEXT honours
+`use_backface_culling`; **Cycles ignores it**, and would have reported no difference anywhere.
+
+| | characters | largest change |
+|---|---|---|
+| clearly improved | **Alcina Dimitrescu** | **2.230%** -- the hair at the back of her head goes from sparse see-through wisps to a solid mass |
+| visibly improved | Ariel, Judy Hopps, Peach | 0.542% (her brows and hair curls), 0.037% (eyelash arc), 0.030% |
+| a few pixels | Alice Ivy, Heels, Iron Man Mark 85, Spider-Man PS, Yui Suzukaze | 0.006% or less -- a lash line, an eye slit, a webshooter |
+| **nothing in any of the four views** | Jessica Rabbit, Power Girl, Sayuri, Scott Hall, Spider-Man, The Rock, Vegeta | 0.0000% |
+
+**Half the flips make no visible difference from a static camera, and that is not evidence they
+are wrong.** A sheet only shows its missing back face when that face is turned toward the viewer;
+Scott Hall's flipped material is his vest and The Rock's is an unnamed body part, either of which
+may only present a back face once the character leans or turns. What the renders do settle is that
+the *measured* benefit is concentrated in a handful of characters rather than spread across the
+roster, which is worth knowing before anyone spends more on sidedness.
+
+**Alastor is the control and came back 0.0000% on all four views**, as he must -- his eyes already
+shipped double-sided, so there was nothing to release. That zero is only trustworthy because the
+same code released 33 other materials and nine of those characters moved.
+
+Two things the check got wrong first, both of which produced a convincing zero:
+
+- **A trailing `` silently disabled it.** The material list was written with Windows newline
+  translation, so `read` left a carriage return on the LAST name of every line. Ten characters
+  have exactly one named material, so for those **nothing at all was released** and the pair was
+  identical by construction -- including Alastor, whose 0.000% would have read as the control
+  passing. Only the script's own "unmatched material name" warning caught it. It now strips
+  whitespace, and the released count is asserted against the roster: 34 of 34, no mismatches.
+- **A head-framed camera cannot show a material that is not on a head.** Spider-Man PS's
+  webshooter is on his wrist and showed only once a whole-body view was added, so a view that
+  finds nothing is reported per view rather than per character.
+
 #### Pair materials by what they USE, not by name and not by order
 
 Verifying those three needed a pairing that survives the rename, and the obvious two both fail:
