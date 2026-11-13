@@ -1,46 +1,59 @@
 # -*- coding: utf-8 -*-
-"""Draw a material double-sided again, in the INSTALLED .yargchar.
+"""Change a NAMED material's back-face culling in the INSTALLED .yargchar.
 
-    python patch_cull_off.py <in.yargchar> (--all | --materials "A;B") [--out X]
+    python patch_cull_off.py <in.yargchar> --materials "A;B" [--on] [--out X]
         [--dry-run]
 
-WHY THIS EXISTS, AND WHY IT EXPLAINS SEVERAL REPORTED FAULTS AT ONCE.
+Default draws the named materials DOUBLE-SIDED (`_Cull` 2 -> 0). `--on` is the
+inverse (0 -> 2) and exists so a flip is reversible without a backup.
 
-Every `.vrm` this pipeline writes marks its materials **`doubleSided: true`** --
-measured: Miku 1 of 1, Killer Clown 4 of 4, Pomni 13 of 13, Heels 21 of 21,
-Peach 16 of 16. The exporter cannot carry that across, and says so itself:
+NAME THEM. DO NOT BLANKET. The exporter has said so in its own comment since
+Alastor was built -- "Double-sided everywhere tints the lighting, so name them,
+do not blanket" -- and on 2026-11-13 this tool was used with an `--all` flag
+against twelve characters anyway, on an argument that does not hold. The flag is
+gone. What follows is why, so it is not re-derived into existence.
 
-    // A fresh URP/Lit culls back faces. The source materials are Standard,
-    // which has no cull property to read, so the glTF doubleSided flag is
-    // [lost]. YARG_CULL_OFF_MATERIALS draws just those materials
-    // double-sided; everything else stays culled.
+THE ARGUMENT THAT FAILED. Every `.vrm` measured for the twelve reported
+characters declared `doubleSided: true`, with not one false, while the installed
+set had 398 materials culled and one not. That was read as the exporter losing a
+deliberate signal. Two measurements say otherwise:
 
-So the escape hatch has to be named per material, per build, and almost nobody
-ever has. Across the 65 installed characters: **398 materials at `_Cull 2`
-(single-sided) and exactly ONE at 0.**
+  1. THE PIPELINE DOES NOT LOSE IT. Batman's source GLB omits `doubleSided`
+     (glTF defaults it false) and `Batman.vrm` omits it too -- 2 materials,
+     0 true. `BatmanNoT.vrm` and `bat-regress.vrm` the same. So "every .vrm
+     this pipeline writes is double-sided" was false; it was true only of the
+     twelve characters looked at, and generalised from there.
 
-Thin, single-layer geometry -- hair ribbons, skirt panels, capes, lashes -- has
-no back face to fall back on, so from the wrong side it simply is not drawn.
-That reads as "missing pieces", or as hair "clipping through" a hat when what
-you are really seeing is the near surface culled away.
+  2. THE SOURCES ARE NOT DECLARING ANYTHING. Across the third-party sources on
+     hand: 60 materials true, 0 false, 5 absent. A Blender glTF export writes
+     `doubleSided = not use_backface_culling`, and Blender defaults that to
+     off, so a model exported by someone who never touched the setting comes
+     out `true`. A field that is almost always true because of a default
+     upstream carries very little, and nothing like enough to flip a roster on.
 
-AND IT IS WHY NO RENDER HERE EVER CAUGHT IT. Blender honours `doubleSided`, so
-a render of the `.vrm` shows a character that is whole. The bundle the game
-loads is a different object. Measured on Miku, whose whole character is one
-material: rendered from her `.vrm` her twintails are continuous ribbons;
-rendered with culling forced on -- which is what the bundle does -- they break
-into pieces, exactly as reported.
+An unbroken run of one value across every measurement is the signature of a
+default, not of a declaration -- and the way to tell them apart is a control,
+which is what Batman is here.
 
-THE REAL FIX IS IN THE EXPORTER, which should read `doubleSided` out of the
-`.vrm` and set `_Cull` from it rather than needing a list. This edits the
-bundle in place, which is the same UnityPy route `patch_alpha_blend.py` and
-`patch_alpha_cutout.py` take, and it does not need a rebuild.
+WHAT IS ACTUALLY TRUE. Culling does break thin single-layer geometry, and Miku's
+twintails measurably come apart under it. But "this material renders wrong when
+culled" has two causes and they want opposite fixes:
 
-`--all` IS DEFENSIBLE HERE and not a shortcut: the source declares every one of
-these materials double-sided, so turning culling off restores what the model
-asked for rather than inventing something. It costs a little fill rate, and on
-a closed solid mesh it changes nothing visible because the back faces are
-hidden by the front ones anyway.
+  - OPEN SHEETS (hair cards, a cape, a skirt panel, lashes) have no back face.
+    They genuinely need `_Cull 0`, named here.
+  - A CLOSED PIECE THAT IS INSIDE-OUT needs its winding fixed, not its culling
+    disabled. `VRM_ORIENT_CONSISTENT` does that at build time.
+
+Double-siding the second kind HIDES the bug rather than fixing it, and that has
+already happened once on this roster: Alastor's eyes were inverted, 0% facing
+the front, and the note records them as "hidden by the double-sided material".
+`facing_check.py` separates the two -- a closed piece has a signed volume and an
+open sheet does not -- so run it before naming anything here.
+
+AND IT COSTS. Double-sided doubles the fragments rasterised for that material,
+lights back faces with normals pointing the wrong way (the "tints the lighting"
+in the exporter comment), and makes a blended material show its own interior.
+On a rhythm game drawing four characters and a crowd, that is not free.
 """
 import json
 import os
@@ -79,10 +92,13 @@ def main():
     out = opt("--out") or (os.path.splitext(src)[0] + ".cull0.yargchar")
     named = [x.strip() for x in (opt("--materials") or "").split(";")
              if x.strip()]
-    do_all = "--all" in argv
+    cull_on = "--on" in argv
+    want = 2.0 if cull_on else 0.0
     dry = "--dry-run" in argv
-    if not named and not do_all:
-        print("ABORT: pass --all or --materials. This tool does not guess.")
+    if not named:
+        print("ABORT: --materials is required. There is no --all: a blanket "
+              "flip was tried on 2026-11-13 and the measurement behind it did "
+              "not hold. Run facing_check.py and name the open sheets.")
         return 2
 
     env = UnityPy.load(src)
@@ -101,7 +117,7 @@ def main():
             continue
         tt = obj.read_typetree()
         name = tt.get("m_Name", "?")
-        if not do_all and name not in named:
+        if name not in named:
             continue
         sp = tt["m_SavedProperties"]
         fl = {a: b for a, b in sp["m_Floats"]}
@@ -111,20 +127,22 @@ def main():
             # silently doing nothing.
             skipped.append("%s (no _Cull float -- MToon?)" % name)
             continue
-        if fl.get("_Cull") == 0.0:
-            skipped.append("%s (already double-sided)" % name)
+        if fl.get("_Cull") == want:
+            skipped.append("%s (already %s)"
+                           % (name, "culled" if cull_on else "double-sided"))
             continue
         floats = []
         for pair in sp["m_Floats"]:
             k, v = pair[0], pair[1]
-            nv = 0.0 if k == "_Cull" else v
+            nv = want if k == "_Cull" else v
             floats.append((k, nv) if isinstance(pair, tuple) else [k, nv])
         sp["m_Floats"] = floats
         obj.save_typetree(tt)
         done.append(name)
 
-    print("  double-sided: %d material(s)%s"
-          % (len(done), (" -- " + ", ".join(done[:8])) if done else ""))
+    print("  %s: %d material(s)%s"
+          % ("back-face culled" if cull_on else "double-sided", len(done),
+             (" -- " + ", ".join(done[:8])) if done else ""))
     if skipped:
         print("  left alone: %d (%s)" % (len(skipped), "; ".join(skipped[:4])))
     if not done:

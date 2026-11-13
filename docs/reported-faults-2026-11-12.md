@@ -97,56 +97,82 @@ metal map returns **zero characters**. His darkness is something else and he
 needs a render; he has no `.vrm`, so that means extracting his archive.
 
 
-## One root cause under several of them: the bundle draws single-sided geometry
+## RETRACTED: "one root cause under several of them: single-sided geometry"
 
-Every `.vrm` this pipeline writes marks its materials **`doubleSided: true`**. Measured on the
-twelve reported characters that still have one: Alice Ivy 22 of 22, Heels 21 of 21, Thanos 5 of
-5, The Rock 21 of 21, Gadget 6 of 6, Miku 1 of 1, Peach 16 of 16, Killer Clown 4 of 4, Shadow 5
-of 5, Pomni 13 of 13, Jessica Rabbit 10 of 10, Alcina 13 of 13. **Not one false.**
+**This section claimed back-face culling explained several of the thirteen faults, and it is
+wrong. The twelve characters it was applied to are reverted, hash-verified, and the roster is
+back to 398 materials culled and the one deliberate exception (Alastor's `Eyes.001`). Jay called
+it before any of the checks below were run.**
 
-None of it survives the export, and `YargCharExporter.cs` says why in its own comment:
+The claim was: every `.vrm` the pipeline writes declares `doubleSided: true` — twelve characters,
+not one false — while the installed bundles are almost all culled, so the exporter must be losing
+a deliberate signal, and restoring it is the fix. `patch_cull_off.py` was given an `--all` flag
+and run across twelve characters. Four measurements take it apart.
 
-> `// A fresh URP/Lit culls back faces. The source materials are Standard, which has no cull`
-> `// property to read, so the glTF doubleSided flag is [lost].`
-> `// YARG_CULL_OFF_MATERIALS draws just those materials double-sided; everything else stays culled.`
+**1. The pipeline does not lose the flag.** Batman's source GLB omits `doubleSided`, which glTF
+defaults to false, and `Batman.vrm` omits it too — 2 materials, 0 true. `BatmanNoT.vrm` and
+`bat-regress.vrm` likewise. So "every `.vrm` this pipeline writes is double-sided" was simply
+untrue. It was true of the twelve characters that were looked at, and generalised from there.
+The twelve were not a sample; they were the ones with a reported fault.
 
-The escape hatch has to be named per material, per build, and almost nobody ever did. Across the
-65 installed characters when this was measured: **398 materials at `_Cull 2` and exactly ONE at
-0.**
+**2. The sources are not declaring anything.** Across the third-party sources on hand:
+**60 materials true, 0 false, 5 absent.** A Blender glTF export writes
+`doubleSided = not use_backface_culling`, and Blender defaults that off, so anything exported by
+someone who never touched the setting arrives `true`. An unbroken run of one value is the
+signature of a default upstream, not of authorship — and a control is the only thing that tells
+those apart, which is what Batman is.
 
-Thin, single-layer geometry — hair ribbons, skirt panels, capes, lashes — has no back face to
-fall back on. From the wrong side it is simply not drawn. That reads as **"missing pieces"**, or
-as hair **"clipping through"** a hat when what is actually happening is the near surface being
-culled away so you see what is behind it.
+**3. The geometry says culling cannot cause the reported faults.** `facing_check.py` has been in
+this repo the whole time and answers this directly. Alice Ivy, whose hair is reported detached:
+all four hair materials **100% outward, 0% winding conflicts, 0 inside-out pieces**. Culling
+cannot detach correctly-wound outward geometry. Killer Clown: 0 inside-out. Miku: 78% outward,
+0% winding conflicts, 0 inside-out, and her twintails measure as **closed solids**, not sheets.
 
-### And it is exactly why no render here ever caught it
+**4. The one positive result does not reproduce.** The Miku comparison that was offered as proof
+— continuous from the `.vrm`, broken into pieces with culling forced on — was re-run with the
+same script on the same file. The two renders differ by **0.3% of pixels**, scattered edge
+slivers, with the twintails continuous in both. Whatever was shown before, this does not show it.
 
-Blender honours `doubleSided`, so a render of the `.vrm` shows a character that is whole. **The
-bundle the game loads is a different object from the one I have been looking at all day.**
+### What is actually true, and the rule that follows
 
-Miku is the clean proof, because her whole character is one material. Rendered from her `.vrm`
-her twintails are continuous ribbons. Rendered with backface culling forced on — which is what
-the bundle does — they break into pieces, exactly as reported.
+Culling does break thin single-layer geometry, because a sheet has no back face. But a material
+that renders wrong under culling has two possible causes and they want **opposite** fixes:
 
-`cullrender.py` in the scratchpad is that comparison, and `patch_cull_off.py` is the repair:
-`_Cull 2 → 0` in the installed bundle, the same in-place UnityPy route as the alpha patchers,
-with a read-back that proves only the named materials changed.
+| What it is | How to tell | Fix |
+|---|---|---|
+| An open sheet — hair card, cape, skirt panel, lash | boundary edges > 0; no signed volume | `YARG_CULL_OFF_MATERIALS`, named |
+| A closed piece wound inside-out | boundary edges 0; **negative** signed volume | `VRM_ORIENT_CONSISTENT` at build time |
 
-**`--all` is defensible here and not a shortcut.** The source declares every one of these
-materials double-sided, so turning culling off restores what the model asked for rather than
-inventing something. On a closed solid mesh it changes nothing visible, because the back faces
-are hidden by the front ones anyway.
+Double-siding the second kind **hides** the bug instead of fixing it, and that has already
+happened once here: Alastor's eyes were inverted, 0% facing the front, and the note on him records
+them as *"hidden by the double-sided material"*. So run `facing_check.py` first and name what it
+finds.
 
-### Done, and what is left
+`YargCharExporter.cs` had already written the conclusion, in the comment right above the escape
+hatch, before any of this started:
 
-**Twelve characters patched and installed** — all of the reported ones that have a `.vrm` to
-confirm the source intent, plus Miku. Backups in
-`C:\dev\_tmp\yarg-char-backup6-11-13-precull`.
+> `// Double-sided everywhere tints the lighting, so name them, do not blanket.`
 
-**262 materials across 48 other characters are still single-sided.** They carry exactly the same
-latent fault and nobody has complained about them yet. Flipping them is one command and fully
-reversible, but it touches most of the roster, so it is left as a decision rather than taken.
+The `--all` flag is gone from `patch_cull_off.py`; it refuses to run without `--materials`, and
+`--on` is the inverse so a named flip is reversible without a backup. **No exporter change is
+warranted** — reading `doubleSided` out of the `.vrm` would propagate an upstream default to the
+whole roster, which is the thing that was nearly shipped.
 
-**The real fix is in the exporter**, which should read `doubleSided` out of the `.vrm` and set
-`_Cull` from it instead of needing a hand-written list. Every character built from now on will
-otherwise arrive single-sided again.
+### What this costs, which is why it is not free to "just turn it on"
+
+Double-sided doubles the fragments rasterised for that material, lights back faces with normals
+pointing the wrong way, and makes a blended material show its own interior. YARG draws four
+characters and a crowd at a frame rate a rhythm game has to hold. A blanket flip also removes the
+signal that finds real winding bugs: every inside-out piece on the roster would start looking
+correct, and the next one would be undiagnosable.
+
+### Where this leaves the thirteen
+
+Unchanged. The culling story explained none of them, so Alice Ivy's hair, Miku's hair, Killer
+Clown's and Pomni's hair, Peach's dress, Jessica's dress, The Rock's arms, the Spartan's leg,
+Gadget's rigging, Shadow's eyes, Thanos's darkness and Alcina's textures are all still open, and
+most of them look like weighting or spring-bone faults rather than material state. One genuine
+lead did come out of the geometry pass: **Pomni has one inside-out piece**, 168 faces of
+`PomniFace` at z 1.16–1.20, which is head height and is where her hair is reported to clip
+through. That is a `VRM_ORIENT_CONSISTENT` candidate, and it is the kind of thing a blanket
+double-side would have buried.
