@@ -1798,6 +1798,92 @@ union-find would not crash, it would just quietly shift which materials come out
 `sidedness <material> sheet-area N% -> DOUBLE-SIDED|culled (why)` for every material, so the
 decision is readable in the build log and an override says so.
 
+### Rolling it onto the installed roster, 2026-11-13
+
+**53 of 65 rebuilt and installed. 1 double-sided material on the roster became 30, across 14
+characters.** `{None: 141, 2.0: 398, 0.0: 1}` -> `{None: 141, 2.0: 369, 0.0: 30}`. Alastor, Alcina
+Dimitrescu, Alice Ivy, Ariel, Heels, Judy Hopps, Peach, Power Girl, Sayuri, Scott Hall,
+Spider-Man, The Rock, Vegeta and Yui Suzukaze each gained between one and six.
+
+**Alastor is the control and he passed with nothing set.** His is the only hand-made cull decision
+on this roster -- `Eyes.001` double-sided, `Head.001` single-sided on purpose -- and his rebuild
+ran with no `YARG_CULL_OFF_MATERIALS` at all: `Eyes.001` measured 100.0% sheet area and came back
+double-sided, `Head.001` measured 0.0% and stayed culled. His bundle is identical to his backup.
+
+#### The newest file bearing a character's name is NOT its source
+
+This is the part that cost the most and generalises furthest. Picking each `.yargchar`'s source
+`.vrm` by modification date is wrong, and wrong in a way that silently swaps a character:
+
+| character | newest by name | what it scored | what actually built it |
+|---|---|---|---|
+| Alice Ivy | `hair/out/Alice Ivy.vrm` | **89.2%** rig overlap | seven others at 98.7% |
+| Power Girl | `pass2/Power Girl.vrm` | 450 nodes against 431 | `withcols/Power Girl.vrm`, 99.5% |
+| The Rock | `withcols/The Rock.vrm` | bone lengths wrong | `rockbuild/rock-final.vrm`, 0 and 0 |
+| Prix | `pass2/Prix.vrm` | 2 rotations wrong | `prix/Prix-lens.vrm` |
+| Sayuri, Scott Hall, Jessica Rabbit, Alcina, Ariel, Jinx, Heels | newest | — | an older file in every case |
+
+Three readings settle it, two of them hard gates, and `select_source.py`'s losers are printed so
+the pass means something:
+
+- **RIG** -- `identify_build.py`'s own rule, >90% shared bone names with no length off by more than
+  0.5 mm and no rotation off by more than 1 degree. **Use its 90, not a stricter number.** A 95%
+  threshold rejected Pomni at 92.5% -- the duplicate-name artefact that file already documents and
+  that had already cost her two rounds -- along with Steve, Mannequin and Gwen Stacy, every one of
+  them with zero length and zero rotation mismatches.
+- **MATERIAL COUNT** -- the exporter renames every material to `<Character>_<n>`, so the bundle
+  keeps no trace of the source's names, but the count survives exactly. Measured over the whole
+  roster this gate changed exactly one pick -- Thanos, `ThanosT.vrm` to `Thanos.vrm` -- and
+  narrowed the field everywhere else (Heels 9 surviving candidates to 1). A gate that rejects
+  without changing an answer is still doing its job; it is the reason the answer can be trusted.
+- **TEXTURE NAMES**, for ranking only. Unity's VRM importer duplicates a texture two materials
+  share (`__UNIGLTF__DUPLICATED__3`) and appends `.normal` / `.standard` by usage, so the counts
+  legitimately differ -- The Rock's 6 images become 21 textures -- and only the stripped names
+  compare. Peacemaker has none in either, which is agreement and not a zero.
+
+**The Clone Troopers are crossed.** `CloneP2` builds the 501st and `CloneP1` builds Shiny, each
+MATCHing its own and failing the other at 30 bone lengths. The names invite the opposite guess.
+
+#### The gate that made the rollout safe
+
+The exporter's only intended change is `_Cull`, so every rebuild was compared against the
+hash-verified backup on everything UnityPy can read -- object type counts, each material's floats,
+colours, keywords, render queue, tags and texture slots with `_Cull` removed, texture names, and
+every Transform's bone name, position and rotation (`verify_rebuild.py`). Cull-only differences
+installed; anything else did not. Mesh data is deliberately absent: UnityPy reports verts=0 for a
+`.yargchar`, and that zero looks like an answer.
+
+#### The six that were not installed, and why each
+
+| character | installed -> rebuild | the difference |
+|---|---|---|
+| Shrek | 0 -> 0 double-sided | rebuild loses a cutout (`TransparentCutout` -> `Opaque`). The only rig-matching source has no MASK material; the four `alpha3` files that do differ at **60 rotations** |
+| Skeleton Mage | 0 -> 0 | rebuild makes a material transparent that ships opaque, and only one source exists |
+| Gadget Hackwrench | 0 -> 0 | 179 -> 185 nodes and a texture lost. Her `.vrm` is not what is installed, as her row above already says |
+| Iron Man Mark 85 | 0 -> **2** | his installed materials are named `Arc Reactor_urp`, `Glass_urp` -- an **older exporter**, before the `<Character>_<n>` rename. No source choice fixes that |
+| Jessica Rabbit | 0 -> **1** | rebuild applies `_SpecularHighlights 0` / `_EnvironmentReflections 0` that the installed build never had |
+| Spider-Man PS | 0 -> **1** | the same no-shine change |
+
+The first three cost nothing: their rebuild produces exactly the sidedness they already carry, so
+skipping them is correct rather than a compromise. **Measure that before calling a skip harmless**
+-- the other three forgo real double-sided materials, and they are all the same shape of problem:
+the exporter has moved on since those characters were built, so sidedness cannot be applied to
+them without applying those changes too.
+
+#### A stale output file fails a build and reads as a model fault
+
+Gadget Hackwrench failed the first batch with `IOException: Cannot create a file when that file
+already exists`, from `File.Move` in `BackgroundHelper.Export`. **Nothing to do with her model** --
+her six materials had already measured 0.0% sheet area and been culled before the throw.
+`BackgroundHelper` builds a MacOS metal shader bundle into the temp cache and moves it to
+`Assets\<name>_metal.bytes`, and a stale one from three days earlier was sitting there; `File.Move`
+will not overwrite. Delete `Assets\<name>.yargchar_metal.bytes` (and its `.meta`) in the SCRATCH
+project and the export succeeds. The `_metal_*.mat` clones the exporter normally deletes itself
+leak too, because the throw happens first.
+
+The batch reported **exit 1** for this one failure out of 58. Verify the artefact, not the exit
+code -- the other 57 were written and correct.
+
 ## Known per-model arguments
 
 | Character | rig | height | notes |
