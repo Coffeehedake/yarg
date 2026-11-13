@@ -3733,7 +3733,7 @@ every row came back `keys=?`. **The sweep's own per-row output is what caught it
 alone would have said "33 files examined, 0 mappable" and looked exactly like a clean result.
 The second pass was written fresh rather than patched.
 
-## Shrek's hem IS a real opacity map, and it still is not installed
+## Shrek's torn hem, and why it shipped as a bundle patch rather than a rebuild
 
 Shrek was reachable after all (his `.vrm` is in the scratchpad root and reports **MATCH** against
 his bundle), and he is the strongest of the 14 bimodal candidates: his texture is literally named
@@ -3741,34 +3741,66 @@ his bundle), and he is the strongest of the 14 bimodal candidates: his texture i
 238-vertex mesh. A small card, a perfectly bimodal alpha, and a name that says what it is.
 
 **And this time the render says yes.** As installed, the bottom of his tunic is a clean straight
-cut. Honoured, it gains a **ragged, frayed hem** — which is how Shrek's tunic looks. 1.78% of the
-frame changes, all of it at the hem.
+cut. Honoured, it gains a **ragged, frayed hem** — which is how Shrek's tunic looks.
 
 So the previous section's conclusion needs narrowing. *"The histogram cannot distinguish an
 opacity map from a specular mask"* still holds — Gadget's `Hair` looked identical by every number
 and was wrong. What is now also true is that **one of the five tested is right**, so the
 candidates are not all noise and the render is the only thing that sorts them.
 
-### Why he is not installed anyway
+### Getting a CUTOUT out of `honour_alpha.py` took two goes
 
-`honour_alpha.py` asks for a CUTOUT and the file comes out `alphaMode: BLEND`. The VRM exporter
-reads `mtoon1.alpha_mode` when that block is enabled and falls back to Blender's `blend_method`
-otherwise — and its fallback maps `CLIP` to `BLEND`, not `MASK`. `build_vrm.py` knows this and
-turns `mtoon1.enabled` on for exactly this reason.
+Asking for CLIP produced `alphaMode: BLEND`. The VRM exporter reads `mtoon1.alpha_mode` when that
+block is enabled and otherwise falls back to Blender's `blend_method`, whose `CLIP` it maps to
+`BLEND` rather than `MASK`. `build_vrm.py` turns `mtoon1.enabled` on for exactly this reason.
 
-Turning it on here does not work either: with mtoon1 live the exporter writes **its** base colour
-factor and **its** texture slot, neither of which this tool sets, and the result is a flat
-`baseColorFactor [0.8, 0.8, 0.8, 1.0]` hem with **no fringe at all** — the cutout gone and the
-tunic 20% darker. That is the documented MToon trap, met from the other side.
+Turning it on alone made it worse: with mtoon1 live the exporter writes **its** base colour
+factor and **its** texture slot, and the tool set neither. The hem came out
+`baseColorFactor [0.8, 0.8, 0.8, 1.0]` with **no fringe at all** and a tunic 20% darker — a
+cutout clipping against a texture slot that was empty. Filling both (factor white, slot pointed
+at the same image, as `build_vrm.py` does) gives `MASK`, `cutoff 0.5`,
+`baseColorFactor [1,1,1,1]`, and a fringe with **crisp strand edges** rather than the blend's
+soft ones.
 
-**A blended skirt card is not safe to ship on a guess.** A skirt is a cylinder, so the back of the
-fringe and the front are the same material with no z-write between them, which is precisely the
-card-against-card sorting this project has already paid for on hair. One static front-on render
-cannot see it, and the angled renders that would have come out mis-framed.
+### But the rebuild was not the way to ship it
 
-So: **the finding is recorded and the change is not made.** What it needs is for `honour_alpha.py`
-to wire the base texture into the mtoon1 slot and carry the base colour factor across, which is
-the same plumbing `build_vrm.py` does; then it can be shipped as the cutout it should be.
+The `.vrm` was right and everything around it was not. Measured against his installed bundle, the
+round-tripped file differs on **60 bone orientations** — and not at the angles that would make it
+harmless. The documented benign signature is exact 90s and 180s on bones whose roll is arbitrary,
+which is what Sayuri's 25 and Jessica Rabbit's 31 were. Shrek's spread across **5, 7, 11, 12, 15,
+16, 21… degrees**, with only eight at 90° and one at 180°, every bone POSITION identical.
+
+A Blender round trip re-derives bone orientation, and Shrek has never had one: his `.vrm` and his
+bundle agree exactly today. **Trading a verified-identical rig for a frayed hem is not a trade
+worth making on a character nobody can check in game.**
+
+### `patch_alpha_cutout.py` changes the one material and nothing else
+
+A bundle cannot be rebuilt by Unity, but it **can** be rewritten by UnityPy — the same route
+`patch_alpha_blend.py` takes for the opposite conversion. The new tool is its sibling, and two
+things about it are worth stating:
+
+**The state is copied, not invented.** Every value is read out of a material that is already a
+working cutout in an installed bundle — Heels' `Heels_17`, her high heels. `_AlphaClip 0→1`,
+`_AlphaToMask` added at 1, queue `-1→2450`, `+_ALPHATEST_ON`, `RenderType: Opaque →
+TransparentCutout`. `_Surface 0`, `_SrcBlend 1`, `_DstBlend 0`, `_ZWrite 1` and `_Cutoff 0.5` are
+already right on an opaque material and are left alone: **a cutout IS an opaque surface that
+clips**, which is exactly why it carries none of a blend's sorting cost.
+
+**It reads the file back and proves what did not change.** 3 materials, **1 changed (`Shrek_1`)**,
+0 gone, 0 added.
+
+Result, installed: `cutout=1 opaque=2`, **0 UNUSED** where he had 1, census untouched
+(`clips=6 ctrl=1 humanoid=52 fingers=30 meshes=1`) — and `identify_build.py` against his own
+`.vrm` still reports **MATCH, 0 length and 0 rotation mismatches**. The skeleton was never
+touched, which was the whole point.
+
+One more thing it cost: `env.file.save()` writes the bundle **uncompressed**, and Shrek went from
+2,231,724 bytes to 8,768,715 — a four-fold file for a one-material change. `patch_alpha_blend.py`
+has always passed `packer="original"`; copying the call is cheaper than rediscovering why. With
+it, 2,193,999 bytes, within 1.7% of the original.
+
+Across the set: **44 `UNUSED` candidates over 20 characters → 43 over 19.**
 
 ## Aiko was never unrecoverable either, and that makes three of three
 
@@ -3835,7 +3867,8 @@ Each one produced a plausible-looking result rather than an error:
 | 2 | Windows Python given an MSYS `/c/...` path wrote the file list where bash could not see it | **`0 file(s) examined`** |
 | 3 | the list carried Windows backslashes, so `basename` could not strip and Blender got a mangled path | `Error: Please select a file`, 14 rows `UNREADABLE` |
 | 4 | Python's text mode turned every `
-` into `
+` into `
+
 `, so each path ended in a carriage return | identical to 3, and the fix for 3 did not touch it |
 
 The fifth attempt built the list **in bash**, so nothing crossed the Windows/MSYS boundary at

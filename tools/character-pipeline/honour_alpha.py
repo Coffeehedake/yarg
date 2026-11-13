@@ -111,7 +111,27 @@ for n in names:
             mt.alpha_mode = "MASK" if mode == "CLIP" else "BLEND"
             if mode == "CLIP":
                 mt.alpha_cutoff = 0.5
-            extra = ", mtoon1 ON, alpha_mode=%s" % mt.alpha_mode
+            # ONCE mtoon1 IS LIVE THE EXPORTER WRITES ITS BLOCK, NOT THE
+            # PRINCIPLED NODE'S. Its base colour factor starts at 0.8 grey, so
+            # a material that was simply textured comes out 20% darker than it
+            # went in -- measured on Shrek, whose whole tunic dimmed. With a
+            # base texture the factor's job is to not interfere: white.
+            # build_vrm.py writes exactly this, for the same reason.
+            try:
+                mt.pbr_metallic_roughness.base_color_factor = (1.0, 1.0, 1.0,
+                                                               1.0)
+            except Exception as _e:                     # noqa: BLE001
+                print("  (could not set mtoon1 base_color_factor: %s)" % _e)
+            # And point mtoon1's own texture slot at the same image. The
+            # exporter reads THIS slot, not the node the Principled BSDF uses,
+            # and a MASK with no texture in it clips against nothing -- which
+            # is a cutout that silently does nothing at all.
+            try:
+                mt.pbr_metallic_roughness.base_color_texture.index.source =                     tex.image
+            except Exception as _e:                     # noqa: BLE001
+                print("  (could not set mtoon1 base_color_texture: %s)" % _e)
+            extra = ", mtoon1 ON, alpha_mode=%s, factor white, texture %s" % (
+                mt.alpha_mode, tex.image.name)
     except Exception as e:                              # noqa: BLE001
         extra = ", (no mtoon1 block: %s)" % e
     done.append("%s (%s, %s%s)" % (n, tex.image.name, mode, extra))

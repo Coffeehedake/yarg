@@ -1309,6 +1309,12 @@ right.
 - `collider_group_check.py <dir|vrm...>` — does every collider reach the group that guards the
   chains? The builder's log is not an answer: it said "10 in one group" for three characters
   whose exported group held six. Exits non-zero on an orphan, so it works in a pre-commit check
+- `patch_alpha_cutout.py <yargchar> --materials "Name"` — turn an OPAQUE material into a
+  cutout IN THE INSTALLED BUNDLE, the sibling of `patch_alpha_blend.py`. For when the
+  material is right and a rebuild is not: Shrek's torn hem needed this because the Blender
+  round trip that produces the `.vrm` changes 60 bone orientations on a character whose rig
+  matches his bundle exactly. The state is COPIED from a real cutout (Heels' `Heels_17`),
+  not invented, and it reads the file back to prove only the named material changed
 - `uv_alpha.py <vrm...>` — what would ACTUALLY disappear if a material honoured its
   texture's alpha? Samples the alpha at the material's own vertex UVs, not across the
   whole atlas, because an atlas's unused regions are clear and lie outside every UV island
@@ -1744,7 +1750,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | Jessica Rabbit | rigify_plain | 1.80 | exclude `^(Icosphere\|Object_12\|Object_13\|Object_15\|Object_17\|Object_19\|Object_21)$` — see her row in the recipe table below. The blend-era `^(BezierCurve\|Cylinder\|Cube)` recorded here until 2026-11-12 matches nothing in the GLB she is actually built from |
 | Clone troopers | mixamo | 1.83 | |
 | Jinx | ue4 | 1.68 | braids and bangs already in the rig |
-| Shrek | mayajnt | 2.10 | |
+| Shrek | mayajnt | 2.10 | **As installed 2026-11-12:** `t_Shrek_alpha_c` (material `Shrek_1` in the bundle) is a CUTOUT, applied with `patch_alpha_cutout.py` rather than by rebuilding — it is a real opacity map, 40.8% clear and 0.0% mid under its own UVs on a 238-vertex card, and honouring it gives his tunic the ragged hem it should have. **Do not ship this by rebuilding**: the Blender round trip changes 60 bone orientations at arbitrary angles, and his `.vrm` and bundle otherwise agree exactly |
 | Gordon Freeman | valvebiped | 1.80 | **As installed 2026-11-12:** build from `m2/source/Valve_Gordon_Freeman.fbx`, textures `m2/textures`, with BOTH of these or he loses something — `VRM_BLEND_MATERIALS="lens"` (his glasses lenses shipped opaque and drew as two solid white panes over his eyes) and `VRM_VISEME="aa=gordon_freeman/AU26ZR+AU26ZL,ee=gordon_freeman/AU12R+AU12L,ih=gordon_freeman/AU12R+AU12L@0.7,oh=gordon_freeman/AU18R+AU18L.001,ou=gordon_freeman/AU18R+AU18L.001@0.75"`. **His shape keys are FACS action units and match none of the automatic patterns**, so without that map a rebuild drops all 32 of them and binds nothing — which is exactly what happened on the first rebuild, silently, with every census count unchanged. 7,169 triangles, 4 meshes, 7 materials, 12 morph targets, 5/5 bound. Do NOT add `eye-iris-green.tga` or `onefreeman` to the blend list: both alphas are specular masks, and honouring them hides his irises and erases his suit. **2026-11-12, second pass: he needed no rebuild at all** — his `.vrm` already carried `alphaMode: BLEND` on `lens` and the fault was entirely the exporter's, so his installed bundle is a straight re-export of that same `.vrm`. That was also the safer route: a rebuild is what dropped his 32 FACS keys the first time. His lens now renders as glass you can see his eyes through, where it had been a speckled hard mask |
 | Joker / Miku | maxbiped | 1.85 / 1.58 | |
 | Tenna | rigify_def | 1.80 | exclude `^(Floor\|Lights\|Sign)` |
