@@ -586,6 +586,31 @@ through every later stage instead of jumping:
 has to be baked into rest and then scaled, and that path does not currently handle it. So the flag
 is NOT in the tree -- the cause is settled and the fix is not.
 
+**Why the obvious fix aborts, and what it would really take.** With the pose kept the build stops
+at the height gate -- mesh DATA 1.2844 m against a 1.3000 m target -- and the abort blames "a
+scale hiding in an object transform", which is not what is happening. The built-in `VRM_DEBUG`
+report says plainly:
+
+```
+DBG armature world_scale=(1.0,1.0,1.0)  bone[0]=root rest_len=1.0568  pose==rest: False
+```
+
+Every object scale is 1.0. The pose simply was not baked -- and `bake_pose_to_rest` cannot bake
+it, because it decides there is something to bake by testing each bone's `matrix_basis` against
+identity. A Rigify DEF bone has an IDENTITY basis and is deformed by CONSTRAINTS, so the test
+sees nothing while the rig is bent.
+
+**That residual is always there.** Built normally, with the pose reset, `pose==rest` is `False`
+too -- the data lands at 1.2987 against 1.3000, 0.1% out, comfortably inside the 1% gate. Keeping
+the pose makes the same residual twelve times bigger, 1.2% out, and the gate fires. The gate is
+right; the bake is what is incomplete.
+
+So the fix is to bake when the EVALUATED pose differs from rest rather than when a basis is
+non-identity -- a small change to one test, and one that would alter the build of **every
+character with a constraint-driven rig**, which is most of the roster. That wants its own session
+with the blast radius measured first, the way the hips threshold and the decal rule were. It is
+not a patch to tack onto the end of an evening.
+
 **Five wrong stages, each costing a rebuild**, before a relative trace with a few extra probes
 found it in two. The probes are the cheap part. Add them FIRST.
 
