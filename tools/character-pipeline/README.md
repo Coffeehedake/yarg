@@ -550,6 +550,35 @@ What is left, and why each is left:
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
 
+### The teeth are still in the wrong PLACE, and moving the bind earlier does not fix it
+
+Binding them to the mouth instead of the shoulder (below) fixed what MOVES them. It did not move
+them: isolating the `teeth` material and rendering it shows a plate hanging below her chin,
+outside her mouth, with her actual mouth a small smile above it. The same band is in the REST
+pose, so no animation is involved, and it is in builds that predate all of this.
+
+**A measurement that looked like the answer and was not.** The teeth-to-eye gap is 9.09% of her
+height in the source `.blend` and 12.42% in every build, so her eyes rise 0.061 during the build
+while her teeth rise 0.017. Unweighted geometry does not follow a pose bake, so the obvious
+reading is that the teeth were left behind -- and the obvious fix is to bind stray geometry
+BEFORE the T-pose step rather than after it.
+
+**That was tried and the gap did not move: still 12.42%.** Whatever displaces them happens earlier
+than the T-pose section, and the change was reverted since it bought nothing. Two possibilities
+remain and neither is settled:
+
+- something earlier in the build moves the face relative to the teeth (the first pose bake is at
+  the very top of the file, long before the humanoid map exists, so the binding cannot simply be
+  moved there), or
+- **the source model is simply like that** and the gap difference is her head straightening out of
+  an authored pose, which would be correct rather than a fault.
+
+The control that would separate them is a render of the SOURCE's teeth in isolation. Three
+attempts at it framed the back and top of her head instead of her face -- her source faces the
+opposite way and its proportions differ -- and it is still owed. **Do that first next time**: if
+the source shows the same plate under her chin, the pipeline never moved them and this whole line
+of enquiry is closed.
+
 ### Teeth at the collar: stray geometry must ask its NEIGHBOURS
 
 Gadget Hackwrench's teeth hung at her throat. The cause was in her build log all along:
