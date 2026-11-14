@@ -169,7 +169,6 @@ def fit(arm, ext, MAP, bone_names, log=print):
     # stops hair driving through the face, where an ejecting one is a visible
     # catastrophe. Err small, again, and for the same reason.
     guard = []
-    head_guard = []
     for sp in sb.springs:
         if re.search(CHEST, getattr(sp, "vrm_name", "") or "", re.I):
             continue
@@ -193,30 +192,6 @@ def fit(arm, ext, MAP, bone_names, log=print):
             b = arm.data.bones.get(j.node.bone_name)
             if b is not None:
                 guard.append(b.head_local)
-        # ... but the HEAD SPHERE is guarded against the anchors as well.
-        #
-        # Skipping the anchor is right for a capsule: the Xenomorph's tail is
-        # rooted ON his spine, so guarding it shrank his torso capsule to zero.
-        # A head sphere is the opposite case. An anchor buried deep in it means
-        # the sphere has swallowed the hair roots, and the chain's FIRST
-        # SIMULATED joint then sits right on the surface with no room: Gadget
-        # Hackwrench's `HairSpring_0_3_0` sat 0.101 m inside a 0.1997 sphere --
-        # on a character 0.80 tall -- leaving its child 0.0136 m of clearance,
-        # so any motion pushed it back inside and ejected it. Her hair splayed
-        # into two wings. Her sphere was that big because it is fitted to head
-        # geometry and her EARS are part of her head, which pulled the centre
-        # 0.26 above her head bone.
-        #
-        # Measured over eleven built characters, guarding anchors here changes
-        # three: Gadget to 59% of her radius, Peach 92%, Sayuri 93%, and the
-        # other eight not at all. Shrinking is the direction this file already
-        # argues for -- a small collider still stops hair driving through the
-        # face, an ejecting one is a visible catastrophe.
-        js = list(sp.joints)
-        if js:
-            b = arm.data.bones.get(js[0].node.bone_name)
-            if b is not None:
-                head_guard.append(b.head_local)
 
     def _seg_dist(p, a, b):
         ab = b - a
@@ -291,18 +266,7 @@ def fit(arm, ext, MAP, bone_names, log=print):
             ctr = Vector((sum(v.x for v in hv) / len(hv),
                           sum(v.y for v in hv) / len(hv),
                           sum(v.z for v in hv) / len(hv)))
-            _r = _pct([(v - ctr).length for v in hv], 0.5)
-            # Clear the chain anchors as well as the simulated joints; see the
-            # note beside `head_guard` above for why this one differs.
-            if head_guard:
-                _near = min((g - ctr).length for g in head_guard)
-                if _near < _r:
-                    log("  head sphere %.4f -> %.4f: a spring ANCHOR sits "
-                        "%.4f from the head centre, and a sphere that swallows "
-                        "the roots leaves the first simulated joint on its "
-                        "surface" % (_r, _near, _near))
-                    _r = _near
-            add(hb, "Sphere", ctr, _r)
+            add(hb, "Sphere", ctr, _pct([(v - ctr).length for v in hv], 0.5))
 
     # TORSO -- a capsule down the spine stops long hair sinking into the back,
     # which a head sphere alone cannot do.

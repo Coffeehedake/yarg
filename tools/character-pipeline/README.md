@@ -550,6 +550,43 @@ What is left, and why each is left:
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
 
+### RETRACTED: "a head sphere that swallowed the hair roots"
+
+The head-sphere change below was made, shipped and then REVERTED. It did not fix the splaying,
+and shrinking her sphere 0.1997 -> 0.1187 is the likely cause of hair then clipping through her
+head. The real cause of the splaying was not the hair at all -- see the next section. Kept here
+because the measurement in it is sound and the conclusion drawn from it was not.
+
+### Her EARS are rigged to her FOREARMS, and the pipeline does it
+
+What looked like hair splaying into wings is her EARS being dragged out sideways. Four bones
+drive 1,459 vertices of ear at head height (z 1.03-1.08) and are parented to her FOREARMS:
+
+| bone | verts | geometry centre | parent |
+|---|---|---|---|
+| `DEF-ear.L.003` / `.R.003` | 543 / 552 | z +1.078 | **DEF-forearm.L / .R** |
+| `DEF-ear.L.004` / `.R.004` | 182 / 182 | z +1.029 | **DEF-forearm.L / .R** |
+| the other six `DEF-ear.*` | 1,915-2,558 | z 1.08-1.23 | `DEF-spine.006` (head) |
+
+**The pipeline creates this.** They are orphans in her source, and the orphan repair adopts each
+to the humanoid bone whose HEAD is nearest the orphan's own head. Her ear chain's bone heads sit
+nearer her forearm than her skull, because at rest her arms are out in the T-pose. It passes
+every static check for the same reason.
+
+**Four fixes were tried and all four failed. None is in the tree.** Recorded so they are not
+tried again:
+
+| attempt | why it failed |
+|---|---|
+| distance RATIO, centroid-to-parent against centroid-to-nearest-bone | flags ordinary face bones on every character -- 13 on Gadget, 14 on Jinx -- and misses the two that are wrong, because a small bone always has another small bone near it |
+| NEAREST-HUMANOID classifier on the geometry centroid | same noise: broad regions have centroids near limb bones. Flagged capes, skirts and chest bones everywhere |
+| NAME-FAMILY majority vote | correct on the built file (flags exactly the four, clean on six other characters) but useless where it has to run: before export the siblings hang off Rigify CONTROL bones like `ear.L`, which have `use_deform` off and are not written. Voting for them put the ears on `root` |
+| adopt by WEIGHTED CENTROID instead of bone head | made things worse -- moved `DEF-chin` onto `DEF-shoulder.L`. The humanoid bone HEADS are poor reference points for "which part is this" |
+
+The family vote is still the most promising: it discriminates perfectly on the exported file. It
+needs the sibling's first ancestor that SURVIVES export, resolved through the Rigify control
+bones rather than stopping at them.
+
 ### A head sphere that swallowed the hair roots
 
 With the hips fixed her head stayed on her neck -- and her hair then splayed into two wings out
