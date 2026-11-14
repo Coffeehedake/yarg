@@ -2698,10 +2698,80 @@ be.
 `partbind.py <file.vrm> [material]` says which bones actually drive it and how
 many of its vertices carry no weight at all.
 
-**What is still open.** Why the teeth come forward 8.6% of height at the pose
-reset while measuring as unmoved in absolute terms. The next thing to try is
-not another fix: it is `partsize.py` on the Body material alone at each trace
-stage, to see whether the FACE moves back rather than the teeth moving forward.
+**Answered, the same day, by `VRM_TRACE_PART`.** The teeth never move. Their
+mesh DATA sits `(+0.0012,-0.0589,+0.0024)` from its own neighbouring vertices at
+import and `(+0.0012,-0.0598,+0.0024)` before export -- nine tenths of a
+millimetre apart, which is the 1.7% rescale and nothing else. Flat at every
+stage.
+
+What changes is the POSE. Evaluated with the armature modifier alone, the same
+comparison reads `(-0.0199,+0.0281,+0.0571)` at import and
+`(+0.0012,-0.0589,+0.0024)` from the next stage onward. So:
+
+> **Her model is only correct POSED.** In the file's own pose her teeth sit 2.8 cm
+> BEHIND the mouth skin around them, where teeth belong. In the rest shape they
+> sit 5.9 cm in FRONT of it -- out through her lip. The rest pose of that mesh is
+> not a shape anyone sculpted, and the build ships it because an action is
+> attached and the reset fires.
+
+This is the case already written up for Alcina Dimitrescu -- "a static pose can
+be the model's SHAPE" -- with the one difference that hid it: hers has no action
+attached, so the reset never ran. Gadget's does, so it does.
+
+**`VRM_TRACE_PART="<material>"` is what answers this**, and it is worth reaching
+for before any theory. It anchors the part to its OWN neighbours -- the nearest
+400 vertices of the same mesh that are not part of it, fixed by index at the
+first stage -- rather than to a second material, which is what let a measurement
+of her TEETH actually be reporting her EYES. And it prints the part twice at
+every stage: DATA, the base mesh through the object transform, which is what
+ships, and EVAL, after the armature. A stage that changes EVAL alone moved the
+POSE; one that changes DATA rewrote the geometry. That one distinction is the
+whole answer here, and five fixes were written without it.
+
+Two things it needs to be honest about, both of which it prints:
+
+- It evaluates with **only the armature modifier on**. With a Subdivision in the
+  way the vertex count changes, the same indices are not the same vertices, and
+  the first run of this said "nothing to compare" six times over -- correctly,
+  and uselessly.
+- Comparing centroids **stage to stage within one run** is sound in a way that
+  comparing them across two FILES is not: the topology is fixed, so the same
+  vertices are averaged every time. When that stops being true the vertex count
+  changes, and it re-anchors and says so rather than quietly averaging a
+  different set.
+
+**Why the bake did not stick, and the fix.** `armature_apply` writes the
+evaluated pose into rest and leaves the constraints in place, so the depsgraph
+drives the bones straight back off the new rest and the geometry just written
+back no longer matches them. That is why keeping her pose baked 628 bones, still
+failed the height gate by 1.25%, baked another 326, and still failed: each pass
+undid the one before it. `bake_pose_to_rest` now settles the constraints --
+visual transform applied, constraints removed -- immediately before
+`armature_apply`. The build already does exactly this further down, on the
+grounds that a driven bone cannot be posed and the exported skeleton has no use
+for a control rig; doing it at the bake as well costs nothing where no bake
+happens.
+
+With that in, `VRM_KEEP_POSE=1` on Gadget **no longer aborts** -- 1.3069 m
+against a 1.3000 m target, inside the gate -- and her teeth move from
+`(+0.0012,-0.0589,+0.0024)` to `(+0.0214,-0.0302,+0.0614)` against a target of
+`(-0.0199,+0.0281,+0.0571)`. The vertical is now right (0.0614 against 0.0571),
+the forward error is halved, and the sideways error doubles. Not an install: it
+also leaves her bind pose arms-down, 0.64 m wide against 0.91 m T-posed.
+
+**Blast radius, measured.** The settle only runs inside `bake_pose_to_rest`, so
+only for a rig that BOTH bakes a pose AND carries bone constraints:
+
+| | bakes | settle fires | result |
+|---|---|---|---|
+| Gadget, default | no | no | **byte-identical** to before the change |
+| Alcina | 12 bones | no | 2.9000 m, as before |
+| Anakin | 49 bones | no | 1.8500 m, as before |
+| Prix | no | no | 1.7000 m, as before |
+
+Both characters the README names as bake cases bake without a single constrained
+pose bone between them, so the new code never executes. It fired exactly once in
+this whole exercise: on Gadget, with the opt-in knob set.
 
 ### Straighten an arm JOINT BY JOINT
 

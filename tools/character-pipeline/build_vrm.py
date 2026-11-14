@@ -363,6 +363,115 @@ def trace(stage):
     # needs no shared origin, no scale and no facing, and it showed the real
     # signal is HORIZONTAL: 0.011 in front of her eyes in the source, 0.124 in
     # the build.
+    # VRM_TRACE_PART="<material>" answers the question VRM_TRACE_OFFSET cannot:
+    # of two parts that have drifted apart, WHICH ONE MOVED.
+    #
+    # An offset between two materials says they separated and not who did it,
+    # and on Gadget Hackwrench that mattered: her teeth measured as having moved
+    # forward out of her face when what had actually moved was her eyes, which
+    # are bone-parented to a control bone whose pose gets cleared. Three fixes
+    # were written for the wrong part before that came out.
+    #
+    # So anchor the part to its OWN NEIGHBOURS -- the nearest few hundred
+    # vertices of the same mesh that are not part of it -- fixed BY INDEX at the
+    # first stage and followed through the build. A neighbour set cannot drift
+    # off on its own the way a second material can.
+    #
+    # Comparing centroids stage to stage is sound in a way comparing them across
+    # two FILES is not: within one run the topology is fixed, so the same
+    # vertices are being averaged every time. The moment that stops being true
+    # -- a subdivision applied, meshes joined -- the vertex count changes, and
+    # this says so and re-anchors rather than quietly averaging a different set.
+    #
+    # Reports the part twice over, which is the discriminator worth having:
+    # DATA is the base mesh through the object transform, which is what ships,
+    # and EVAL is after modifiers and the pose. A stage that changes EVAL alone
+    # has moved the POSE; one that changes DATA has rewritten the geometry.
+    _part = os.environ.get("VRM_TRACE_PART")
+    if _part:
+        _part = _part.strip().lower()
+        bpy.context.view_layer.update()
+        _deps = bpy.context.evaluated_depsgraph_get()
+        _host = None
+        for ob in bpy.data.objects:
+            if ob.type != "MESH":
+                continue
+            _mi = [i for i, sl in enumerate(ob.material_slots)
+                   if sl.material and _part in sl.material.name.lower()]
+            if _mi:
+                _host = (ob, _mi)
+                break
+        if _host is None:
+            print("  PART   %-22s no mesh carries a material matching %r"
+                  % (stage, _part))
+        else:
+            _ob, _mi = _host
+            _me = _ob.data
+            _pv = set()
+            for _p in _me.polygons:
+                if _p.material_index in _mi:
+                    _pv.update(_p.vertices)
+            _pv = sorted(_pv)
+            _anch = getattr(trace, "_anchor", None)
+            if _anch is None or _anch[0] != _ob.name or _anch[1] != len(_me.vertices):
+                _c = sum((_me.vertices[_i].co for _i in _pv),
+                         Vector()) / max(1, len(_pv))
+                _rest = [_v.index for _v in _me.vertices if _v.index not in set(_pv)]
+                _rest.sort(key=lambda _i: (_me.vertices[_i].co - _c).length_squared)
+                trace._anchor = (_ob.name, len(_me.vertices), _rest[:400])
+                _anch = trace._anchor
+                print("  PART   %-22s anchored on %s: %d %r verts against their "
+                      "%d nearest neighbours in the same mesh (%d verts total)"
+                      % (stage, _ob.name, len(_pv), _part, len(_anch[2]),
+                         len(_me.vertices)))
+            _nb = _anch[2]
+
+            def _box(_src, _idx, _mw):
+                _pts = [_mw @ _src[_i].co for _i in _idx if _i < len(_src)]
+                if not _pts:
+                    return None, None
+                _lo = Vector((min(_p[_k] for _p in _pts) for _k in range(3)))
+                _hi = Vector((max(_p[_k] for _p in _pts) for _k in range(3)))
+                return (_lo + _hi) / 2.0, _hi - _lo
+
+            _mw = _ob.matrix_world
+            _dc, _ds = _box(_me.vertices, _pv, _mw)
+            _nc, _ns = _box(_me.vertices, _nb, _mw)
+            # Evaluate with ONLY the armature modifier on, the way
+            # bake_pose_to_rest does. A Subdivision ahead of it changes the
+            # vertex count, and then the same indices are not the same vertices
+            # and there is nothing to compare -- which is exactly what the first
+            # run of this printed, six times, saying nothing. A deform modifier
+            # cannot change the count, so with the rest switched off the
+            # evaluated mesh lines up with the base one vertex for vertex.
+            _saved = [(_md, _md.show_viewport) for _md in _ob.modifiers]
+            for _md, _ in _saved:
+                if _md.type != "ARMATURE":
+                    _md.show_viewport = False
+            _deps = bpy.context.evaluated_depsgraph_get()
+            _ev = _ob.evaluated_get(_deps)
+            _em = _ev.to_mesh()
+            _same = len(_em.vertices) == len(_me.vertices)
+            _ec, _es = _box(_em.vertices, _pv, _ev.matrix_world) if _same else (None, None)
+            _enc, _ = _box(_em.vertices, _nb, _ev.matrix_world) if _same else (None, None)
+            _ev.to_mesh_clear()
+            for _md, _flag in _saved:
+                _md.show_viewport = _flag
+            bpy.context.view_layer.update()
+            _d = _dc - _nc
+            print("  PART   %-22s DATA %s-vs-neighbours (%+.4f,%+.4f,%+.4f) "
+                  "|d|=%.4f  size=(%.4f,%.4f,%.4f)"
+                  % (stage, _part, _d.x, _d.y, _d.z, _d.length, _ds.x, _ds.y, _ds.z))
+            if _ec is not None:
+                _de = _ec - _enc
+                print("  PART   %-22s EVAL %s-vs-neighbours (%+.4f,%+.4f,%+.4f) "
+                      "|d|=%.4f  size=(%.4f,%.4f,%.4f)"
+                      % (stage, _part, _de.x, _de.y, _de.z, _de.length,
+                         _es.x, _es.y, _es.z))
+            else:
+                print("  PART   %-22s EVAL -- modifiers change the vertex count, "
+                      "so the same indices are not the same vertices" % stage)
+
     _pair = os.environ.get("VRM_TRACE_OFFSET")
     if _pair and "," in _pair:
         _a, _b = [x.strip().lower() for x in _pair.split(",", 1)]
@@ -709,6 +818,30 @@ def bake_pose_to_rest(why):
     bpy.ops.object.select_all(action="DESELECT")
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.mode_set(mode="POSE")
+    # Settle the CONSTRAINTS before making this the rest pose, or the bake does
+    # not stick. armature_apply writes the evaluated pose into rest and leaves
+    # the constraints in place, so the depsgraph immediately drives the bones
+    # off the new rest again and the geometry just written back no longer
+    # matches where the bones are. Gadget Hackwrench showed it as a build that
+    # baked 628 bones and still failed the height gate by 1.25%, then baked
+    # another 326 and still failed: each pass was undoing the one before it.
+    #
+    # Applying the visual transform and dropping the constraints is not an
+    # extra liberty -- the build already does exactly this further down, on the
+    # grounds that a driven bone cannot be posed and the exported skeleton has
+    # no use for a control rig. Doing it here as well costs nothing where no
+    # bake happens, because this function has already returned by then.
+    _cons = [pb for pb in arm.pose.bones if pb.constraints]
+    if _cons:
+        bpy.ops.pose.select_all(action="SELECT")
+        bpy.ops.pose.visual_transform_apply()
+        for _pb in arm.pose.bones:
+            for _c in list(_pb.constraints):
+                _pb.constraints.remove(_c)
+        bpy.ops.pose.select_all(action="DESELECT")
+        bpy.context.view_layer.update()
+        print("  settled and removed constraints on %d pose bones first, so the "
+              "bake is not undone the moment it lands" % len(_cons))
     bpy.ops.pose.armature_apply()
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.context.view_layer.update()
