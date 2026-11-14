@@ -544,11 +544,43 @@ What is left, and why each is left:
 |---|---|---|
 | Kaiser Aufhänger (36), Adachi Rei (2) | 38 | downloaded bundles, not built here. Kaiser's own author covered his arms and torso and not his legs |
 | Aiko, Scott Hall, Shadow | 11 | **zero colliders** — the original collider rollout never reached them, and no `.vrm` for any of them survives on this machine |
-| Gadget Hackwrench, Pomni | 4 | they have a `.vrm`, but `identify_build.py` says it is **not what is installed** (57 and 5 rotation mismatches). Installing it would swap the character, which is the trap this project has already been caught by twice |
+| ~~Gadget Hackwrench, Pomni~~ | ~~4~~ | **BOTH VERDICTS WERE STALE.** Pomni's 5 mismatches were the duplicate-name artefact, fixed above. Gadget's 57 were real -- of the `rollout/out` and `withcols` files. **Four newer `.vrm` files match her installed rig at 0 length and 0 rotation mismatches**, and two already carry the limb colliders. Rebuilt and installed 2026-11-13; see below |
 | ~~Xenomorph~~ | ~~5~~ | **DONE 2026-11-12** — his source FBX survived. See below |
 
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
+
+### Gadget Hackwrench was excluded on a verdict that had gone stale
+
+Reported in game as a mess: her head and hair dragged off the body. She was not broken by anything
+recent -- her installed file was byte-identical to its backup -- she had simply never received the
+limb-collider rollout, because `identify_build.py` said her `.vrm` was not what is installed.
+
+That was true of the two files it was run on and false of the set. Measured against all seven
+candidates:
+
+| | names | length | rotation | |
+|---|---|---|---|---|
+| `rollout/out`, `withcols` | 98.9%, 95.7% | 0 | **57** | the files the old verdict judged |
+| `alpha3/Gadget-all`, `alpha3/Gadget-hair` | 95.7% | 0 | **0** | MATCH |
+| `gadget/rt-Gadget`, `guardtest/Gadget Hackwrench` | 94.1% | 0 | **0** | MATCH, and already collider-fitted |
+
+Her installed bundle carried **2 colliders and 2 of 4 chains unguarded** -- both hair chains, out
+by her arms with nothing to catch them -- against 10 and 0 for every character the rollout did
+reach. Rebuilt from `guardtest/Gadget Hackwrench.vrm`: **10 colliders, 0 unguarded**, and humanoid
+coverage 44 -> 50 bones because the installed build was missing her entire LITTLE FINGER chain
+(fingers 24 -> 30).
+
+**Re-run a stale verdict before building on it.** A row saying "this file is not what is
+installed" is a measurement of the files that existed when it was written.
+
+One difference needed adjudicating rather than waving through, and it is the Gordon Freeman
+pattern again: the installed bundle put the `Body` skin map on her TEETH, which no source `.vrm`
+asks for -- all three candidates give that material no base-colour texture and an authored grey of
+0.8. The loose fallback had reached for the only other map in the folder. The rebuild drops it.
+
+With her in, the only unguarded chains left on the roster are **38 across 2 characters**, Kaiser
+Aufhanger and Adachi Rei, both downloaded bundles that were never built here.
 
 ### The Xenomorph: his tail is on his spine, so he had no torso collider
 
