@@ -2857,6 +2857,50 @@ for _slot in ("upper_chest", "chest"):
               % (_slot, _c))
         del MAP[_slot]
 
+# 2b. A HIPS THAT SITS ON THE FLOOR.
+#
+#    The hips are found as the junction of a spine and two legs, which is right
+#    whenever the legs hang off the pelvis. Where they hang off the ARMATURE
+#    ROOT instead, the only bone that qualifies is that root -- and it is on the
+#    floor. Gadget Hackwrench mapped hips to a bone literally called 'root' at
+#    0.6% of her height, against 0.41 to 1.07 for all 142 other built files, and
+#    the nearest healthy rig is at 0.405, so 0.25 separates them with room.
+#
+#    It passes every static check. The bind pose never consults the humanoid
+#    map, so she rendered perfectly; in game Unity pivots the whole body about a
+#    floor-level hips, which whips the head and her hair springs turn that into
+#    a spike. Her screenshot was read as a collider fault and then as a weighting
+#    fault before this was measured.
+#
+#    The repair below already re-parents the legs onto whatever hips ends up
+#    being, so the only thing needed here is to choose the right bone: the
+#    parent of the mapped spine, which is the pelvis by construction.
+_h, _sp = MAP.get("hips"), MAP.get("spine")
+if _h in bone_names and _sp in bone_names:
+    _zs = [arm.data.bones[b].head_local.z for b in MAP.values() if b in bone_names]
+    _span = (max(_zs) - min(_zs)) if _zs else 0.0
+    if _span > 1e-6:
+        _hf = (arm.data.bones[_h].head_local.z - min(_zs)) / _span
+        if _hf < 0.25:
+            _cand = arm.data.bones[_sp].parent
+            _cf = ((_cand.head_local.z - min(_zs)) / _span) if _cand else -1.0
+            # The candidate must be UNDER the old hips, or re-parenting the legs
+            # onto it would lift them out of the skeleton entirely.
+            _under = _cand is not None and _h in _ancestry(_cand.name)
+            if _cand is not None and _cand.name != _h and _cf >= 0.25 and _under:
+                print("  hips '%s' sits at %.1f%% of height, which is the floor -- "
+                      "promoting '%s' at %.1f%% (the parent of the mapped spine); "
+                      "the legs are re-parented onto it below"
+                      % (_h, 100 * _hf, _cand.name, 100 * _cf))
+                MAP["hips"] = _cand.name
+            else:
+                # Say so rather than shipping a floor-level hips in silence.
+                print("  WARNING hips '%s' sits at %.1f%% of height, which looks like "
+                      "the armature root, and no better candidate was found "
+                      "(parent of spine: %s at %.1f%%, under old hips: %s)"
+                      % (_h, 100 * _hf, _cand.name if _cand else None,
+                         100 * _cf, _under))
+
 # 3. Rebuild the humanoid hierarchy where it is missing. Rigify's DEF bones are
 #    driven by constraints in the original rig, so an FBX export of them can
 #    arrive completely FLAT - Tenna's shoulders, upper arms and thighs were all

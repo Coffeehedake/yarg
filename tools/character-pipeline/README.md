@@ -487,7 +487,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Alastor | no eyes; something wrong with the hair | **neither, and not fixable from here.** His materials and textures are correct and the maps are in the built file: `aleyes.png` plainly contains a pink iris with a black pupil. His eye geometry's UVs do not land on it — the eyes render as flat pink ovals and the pupil sits as a stray mark BESIDE the left eye. A source-model UV fault; it needs hand UV work, not a pipeline rule |
 | Elite Terrorist | right hand's fingers crunched | one hand posed, the other not -- the asymmetry the finger-relax check looks for |
 | Batman | every texture misplaced | **does not reproduce.** He has exactly one base colour map, so no pairing can be wrong; his rebuild is identical to the installed build to the triangle (18,818) and renders correctly — grey suit, black cowl and cape, bat symbol, gold belt. His metal/rough both take the ORM atlas, which is what glTF wants (G rough, B metal). Needs re-checking in game before more is spent on it |
-| Gadget Hackwrench | eyeballs and teeth do not move; some hair static | measured: her eyes are bone-parented to `MCH-eye.L/R`, which the export drops because they do not deform, so the weight landed on an invented bone at the root |
+| Gadget Hackwrench | head and hair dragged off the body | **FIXED 2026-11-13, and the cause was none of the three things it was blamed on.** Her `hips` was mapped to a bone literally called `root` at **0.6% of her height**, because her thighs hang off the armature root rather than her pelvis, so the root is the only bone satisfying "the junction of a spine and two legs". Unity then pivots the whole body about a floor-level hips, whipping the head, and her hair springs turn that into a spike. Also true, and separate: her eyes are bone-parented to `MCH-eye.L/R`, which the export drops because they do not deform |
 | Joker | a pistol orbiting him; parts of the suit unrigged | **both fixed.** The pistol is 262 verts on a bone called `Gun_joker`, inside his one mesh with his one material: `VRM_DROP_ISLAND="Joker=Gun_joker"`. The suit was the orphan-bone case |
 | Peach | eyes missing; dress springs so reactive her legs clip through it | **BOTH FIXED 2026-11-11, and neither was what the report implied.** The eyes are the alpha fault: her eye is a STACK of meshes from a Smash rip -- `Peach_eye` is a blank white sclera with no iris, `Peach_Blink_Ottotto` is the iris and `Peach_Blink_VoiceA` is the eyelid-and-lash plate that fills a rectangular hole in `Peach_faceN` -- and all three shipped `OPAQUE`, so the top layer drew as a solid plate. The skirt is NOT too reactive: her skirt chains are stiffer and more damped than her hair's (0.85/0.80 against 0.60/0.45). They are UNGUARDED -- eight of her nine chains hang around her thighs and she had two colliders, both on her torso. See below |
 | Link | eye textures misplaced; still holding the master sword and shield | **both fixed.** His rig has bones named `Sword` and `Shield`, so `VRM_DROP_ISLAND="LinkEquipment=Sword+Shield"` takes 41 islands and leaves `Fourreau`, his scabbard, on his back. His eye material `Material.003` was taking the body atlas while `Eye.png` sat unused beside it |
@@ -549,6 +549,50 @@ What is left, and why each is left:
 
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
+
+### A hips on the floor: three wrong diagnoses before a controlled one
+
+Her head and hair were being dragged off her body in game. It took three attempts, and the two
+failures are worth more than the fix.
+
+**Blamed first on her colliders.** She genuinely had only 2 and 2 of 4 chains unguarded, so that
+was a real defect -- it was just not THIS defect. Fixed, installed, no change in game.
+
+**Then on a collider CONTAINING a spring joint**, the fault her own row already named. A probe
+said `HairSpring_0_3_1` sat 5.4 cm inside her head sphere. It was wrong: the probe built world
+positions by ADDING translations down the node tree, which ignores every rotation and scale. The
+only reason that did not get reported as fact is that the same probe put Peach at 7 violations and
+Batman at 4, and both had been verified clean -- **a control is what caught it.** With proper TRS
+composition: Batman 0, Gadget 0, Peach 1 at 3.4 mm.
+
+**And it was not weighting either**: 0.0% undriven weight on every mesh.
+
+What it was, measured against 147 built rigs: her `hips` is a bone called `root` at **0.6% of her
+height**, where the healthy band is **0.405 to 1.072** and the nearest healthy rig is 0.405. Her
+thighs hang off that root rather than off her pelvis, so the root is the only bone that satisfies
+"the junction of a spine and two legs", and it sits on the floor.
+
+**It passes every static check**, which is why it survived so long: the bind pose never consults
+the humanoid map, so she renders perfectly. Only in game does Unity pivot her whole body about a
+floor-level hips.
+
+`build_vrm.py` now promotes the parent of the mapped spine -- the pelvis by construction -- when
+the chosen hips sits below 25% of height, and only when that candidate is itself a descendant of
+the old hips, since otherwise re-parenting the legs would lift them out of the skeleton. The
+existing repair already re-parents legs onto whatever `hips` becomes. Where no better candidate
+exists it prints a warning instead of shipping a floor-level hips in silence. She now reports:
+
+```
+hips 'root' sits at 0.0% of height, which is the floor -- promoting 'DEF-spine' at 54.1%
+```
+
+Only two of 147 built files trip the threshold: Gadget, and `withcols/Sonic.vrm` at 0.063 -- an
+abandoned variant. The Sonic that is installed comes from `rollout/out` at 0.818, so nothing else
+on the roster changes.
+
+**`cloth_collide.py` does not check containment.** It counts chains with no collider NEAR them,
+which is the opposite failure, so its "0 UNGUARDED" was never a statement about joints inside
+colliders. `inside2.py` is the one that answers that question.
 
 ### Gadget Hackwrench was excluded on a verdict that had gone stale
 
