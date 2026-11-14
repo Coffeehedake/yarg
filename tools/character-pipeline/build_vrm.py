@@ -729,6 +729,133 @@ if _had_anim and not _keep_anim_pose:
                   "model was sculpted in this pose and this is its bind. "
                   "Resetting to rest would move the bones out of the mesh.")
 
+# UNWEIGHTED geometry is authored for the POSE, not for the rest shape, and the
+# reset below is about to throw the pose away underneath it.
+#
+# Gadget Hackwrench is the worked example. 188 of her Body mesh's 4,648
+# vertices carry no weight at all, and they are exactly the 188 vertices of her
+# `teeth` material. Nothing deforms them -- not the armature modifier, not a
+# bake -- so they sit at the same coordinates in the posed file and in the rest
+# shape, while everything around them moves. Measured against their own
+# neighbouring vertices with VRM_TRACE_PART: posed, the teeth are 2.8 cm BEHIND
+# the mouth skin, where teeth belong; at rest they are 5.9 cm in FRONT of it,
+# out through her lip. The rest shape of that mesh is not something anyone
+# sculpted, and the build was shipping it faithfully.
+#
+# So move them into the rest pose rather than leaving them in the posed one.
+# For a vertex that HAS weights the armature computes a skinning matrix M and
+# draws it at M*v; the fix is to give a stray vertex its neighbour's weights and
+# set its rest coordinate to M^-1*v, so that the same M puts it back exactly
+# where the author had it. After the reset the face returns to rest and the
+# teeth travel with it.
+#
+# Two things this is NOT, both tried first and both measured as nothing:
+#  * binding the strays earlier than the pass at the end of the build. Weights
+#    alone change nothing here, because in the default path no stage ever
+#    rewrites the mesh data -- the reset changes the POSE and the data stays as
+#    imported. The .vrm came out with the teeth in exactly the same place.
+#  * keeping the pose instead (VRM_KEEP_POSE=1). It does move the teeth two
+#    thirds of the way home, and it wrecks everything else: the facing detector
+#    reads her feet as 180 degrees off and turns her around, the humanoid map
+#    swaps her arms, and 85 orphan bones adopt the wrong parents -- her brow
+#    bones end up on DEF-upper_arm.L. The render is a balloon head on spindly
+#    spikes.
+#
+# The maths is CHECKED against Blender rather than trusted. Hand-rolling the
+# armature deform is how a previous attempt moved Anakin Skywalker's head half a
+# metre, so this records where each vertex sat before, evaluates the mesh with
+# only the armature modifier afterwards, and prints the worst disagreement. If
+# the inverse is right, every stray vertex lands back within a fraction of a
+# millimetre of where it started.
+if _had_anim and not _keep_anim_pose:
+    bpy.context.view_layer.update()
+    _rb = []
+    for _m in meshes:
+        if not any(_md.type == "ARMATURE" and _md.object is arm
+                   for _md in _m.modifiers):
+            continue
+        _gn = {_g.index: _g.name for _g in _m.vertex_groups}
+        _have, _loose = [], []
+        for _v in _m.data.vertices:
+            _w = [(_g.weight, _gn.get(_g.group)) for _g in _v.groups
+                  if _g.weight > 0.0001 and _gn.get(_g.group) in arm.pose.bones]
+            if _w:
+                _have.append((_v.index, _w))
+            else:
+                _loose.append(_v.index)
+        if not _loose or not _have:
+            continue
+        from mathutils.kdtree import KDTree
+        _kd = KDTree(len(_have))
+        for _n, (_vi, _) in enumerate(_have):
+            _kd.insert(_m.data.vertices[_vi].co, _n)
+        _kd.balance()
+        # Bone matrices in the MESH's own object space: the armature modifier
+        # works through both objects' world transforms, and dropping that factor
+        # is only harmless while the two happen to coincide.
+        _B = _m.matrix_world.inverted() @ arm.matrix_world
+        _Bi = _B.inverted()
+        _bm = {}
+        for _pb in arm.pose.bones:
+            _bm[_pb.name] = _B @ (_pb.matrix @ _pb.bone.matrix_local.inverted()) @ _Bi
+        _was = {_i: _m.data.vertices[_i].co.copy() for _i in _loose}
+        _byb = {}
+        for _i in _loose:
+            _, _n, _ = _kd.find(_m.data.vertices[_i].co)
+            _vi, _w = _have[_n]
+            _tot = sum(_x for _x, _ in _w) or 1.0
+            _M = Matrix(((0,) * 4,) * 4)
+            for _x, _bn in _w:
+                _M += _bm[_bn] * (_x / _tot)
+            try:
+                _m.data.vertices[_i].co = _M.inverted() @ _m.data.vertices[_i].co
+            except ValueError:
+                continue           # a degenerate blend: leave the vertex alone
+            for _x, _bn in _w:
+                _byb.setdefault(_bn, []).append((_i, _x / _tot))
+        for _bn, _vs in _byb.items():
+            _vg = _m.vertex_groups.get(_bn) or _m.vertex_groups.new(name=_bn)
+            for _i, _x in _vs:
+                _vg.add([_i], _x, "REPLACE")
+        _m.data.update()
+        bpy.context.view_layer.update()
+        _dg = bpy.context.evaluated_depsgraph_get()
+        _saved = [(_md, _md.show_viewport) for _md in _m.modifiers]
+        for _md, _ in _saved:
+            if _md.type != "ARMATURE":
+                _md.show_viewport = False
+        _ev = _m.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        _em = _ev.to_mesh()
+        _err = max(((_em.vertices[_i].co - _c).length for _i, _c in _was.items()),
+                   default=0.0) if len(_em.vertices) == len(_m.data.vertices) else None
+        _ev.to_mesh_clear()
+        for _md, _flag in _saved:
+            _md.show_viewport = _flag
+        bpy.context.view_layer.update()
+        _rb.append((_m.name, len(_loose), len(_m.data.vertices),
+                    max(_byb, key=lambda k: len(_byb[k])), _err))
+    for _n, _c, _t, _b, _e in _rb:
+        if _e is None:
+            print("  stray geometry: %s -- %d of %d vertices carried no weight; "
+                  "given their neighbours' and moved into the rest pose (mostly "
+                  "%s). COULD NOT CHECK: a modifier changes the vertex count"
+                  % (_n, _c, _t, _b))
+        elif _e > 1e-4:
+            print("  stray geometry: %s -- %d of %d vertices moved into the rest "
+                  "pose (mostly %s), but the check says the worst of them lands "
+                  "%.4f from where it started, which is too far to trust"
+                  % (_n, _c, _t, _b, _e))
+        else:
+            print("  stray geometry: %s -- %d of %d vertices carried no weight, "
+                  "so they were authored for the POSE and the reset below would "
+                  "have stranded them. Given their neighbours' weights and moved "
+                  "into the rest pose (mostly %s); checked against Blender's own "
+                  "deform, worst vertex lands %.6f from where it started"
+                  % (_n, _c, _t, _b, _e))
+    if not _rb:
+        print("  stray geometry: none -- every vertex of every skinned mesh "
+              "carries a weight, so the reset below moves all of it together")
+
 # Reset the bones ONLY if an animation was actually attached. A static pose in
 # matrix_basis is not a stray animation frame -- it can be the model's SHAPE.
 # Alcina Dimitrescu is 9 feet 6 inches because her pose says so, with no action

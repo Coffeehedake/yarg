@@ -2759,19 +2759,60 @@ against a 1.3000 m target, inside the gate -- and her teeth move from
 the forward error is halved, and the sideways error doubles. Not an install: it
 also leaves her bind pose arms-down, 0.64 m wide against 0.91 m T-posed.
 
-**Blast radius, measured.** The settle only runs inside `bake_pose_to_rest`, so
-only for a rig that BOTH bakes a pose AND carries bone constraints:
+**The fix, and it is three lines of arithmetic.** For a vertex that HAS weights
+the armature computes a skinning matrix M and draws it at `M*v`. A stray vertex
+has no M, so it sits at `v` in both the posed file and the rest shape while
+everything around it moves. Give it its neighbour's weights and set its rest
+coordinate to `M^-1*v`, and the same M puts it back exactly where the author
+had it -- so when the reset returns the face to rest, the teeth travel with it.
 
-| | bakes | settle fires | result |
-|---|---|---|---|
-| Gadget, default | no | no | **byte-identical** to before the change |
-| Alcina | 12 bones | no | 2.9000 m, as before |
-| Anakin | 49 bones | no | 1.8500 m, as before |
-| Prix | no | no | 1.7000 m, as before |
+Runs immediately before the pose reset, and only when that reset is about to
+fire. Measured against their own neighbours, her teeth now land at
+`(-0.0199,+0.0351,+0.0461)` against the authored `(-0.0199,+0.0281,+0.0571)`:
+sideways exact, and the error down from 10.4 cm to 1.3 cm. The sign is right on
+every axis -- the teeth are BEHIND the mouth skin now, not in front of it. The
+residue is the realign and the rescale moving her head a little afterwards.
 
-Both characters the README names as bake cases bake without a single constrained
-pose bone between them, so the new code never executes. It fired exactly once in
-this whole exercise: on Gadget, with the opt-in knob set.
+**The arithmetic is checked, not trusted.** Hand-rolling the armature deform is
+what moved Anakin Skywalker's head half a metre, so the pass records where each
+stray sat, evaluates the mesh afterwards with only the armature modifier on, and
+prints the worst disagreement. On Gadget the worst vertex lands **0.000000** from
+where it started. If that number ever comes back large, or a modifier changes the
+vertex count so it cannot be computed, the pass says so in the log instead of
+reporting success.
+
+**Two things it is NOT**, both tried first and both measured as nothing:
+
+- *Binding the strays earlier than the pass at the end of the build.* Weights
+  alone change nothing, because in the default path no stage rewrites the mesh
+  data at all -- the reset changes the POSE and the data stays as imported. The
+  .vrm came out with the teeth in exactly the same place.
+- *Keeping the pose instead.* It moves the teeth two thirds of the way home and
+  wrecks everything else: the facing detector reads her feet as 180 degrees off
+  and turns her around, the humanoid map swaps her arms, and 85 orphan bones
+  adopt the wrong parents -- her brow bones end up on `DEF-upper_arm.L`. The
+  render is a balloon head on spindly spikes. The pose heuristics downstream all
+  assume a rig near rest, and keeping an action pose breaks every one of them at
+  once.
+
+**Blast radius, measured.** The constraint settle only runs inside
+`bake_pose_to_rest`, and the stray rebind only where an animation is attached AND
+a mesh skinned to the rig has vertices with no weight:
+
+| | bakes | settle fires | rebind fires | result |
+|---|---|---|---|---|
+| Gadget | no | no | yes, 188 verts | **fixed** -- teeth in her mouth |
+| Alcina | 12 bones | no | no | 2.9000 m, byte-identical |
+| Anakin | 49 bones | no | no | 1.8500 m, byte-identical |
+| Prix | no | no | no | 1.7000 m, byte-identical |
+
+Across every build log on this machine, 16 of 40 characters show unweighted
+geometry SOMEWHERE -- but that count comes from the late pass, which looks at
+every mesh including the bone-parented and unskinned ones. The rebind only
+touches a mesh skinned to the rig, which is why it did not fire on three
+characters that the late pass does report. Nothing else was rebuilt, so nothing
+else changed; a character that is rebuilt later and does trip it has the
+self-check above standing in front of it.
 
 ### Straighten an arm JOINT BY JOINT
 
