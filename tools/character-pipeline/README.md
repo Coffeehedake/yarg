@@ -550,7 +550,46 @@ What is left, and why each is left:
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
 
-### FOUND: the CHILD_OF conversion displaces her eyes and her teeth
+### FOUND, exactly: the POSE RESET, and her authored pose is her shape
+
+`VRM_TRACE_OFFSET="teeth,eye"` plus three temporary probes put the jump before the trace at
+"actions settled" -- which is BEFORE the CHILD_OF conversion, before the bone-parent conversion,
+before the T-pose step, before the pose bake and before the shape-key drop. All five had been
+suspected and all five run later.
+
+It is this, at the top of the file:
+
+```python
+if _had_anim and not _keep_anim_pose:
+    for pb in arm.pose.bones:
+        pb.matrix_basis.identity()
+```
+
+Her eyes are bone-parented to `MCH-eye.L/R`, so clearing the pose returns those bones to rest and
+takes her eyes with them, while her face follows the armature modifier and her unweighted teeth
+follow nothing at all. **Her authored pose is her SHAPE** -- the same case as Alcina Dimitrescu,
+whose static pose is why she is 9 feet 6 inches. The difference is that Alcina has no action
+attached, so the automatic test already spares her; Gadget has one, so it does not.
+
+**Proved by forcing the pose to be kept.** The teeth-to-eye offset then holds at the source value
+through every later stage instead of jumping:
+
+| stage | pose reset (shipping) | pose KEPT |
+|---|---|---|
+| after import | -0.0123 | -0.0123 |
+| after CHILD_OF | **-0.1211** | -0.0085 |
+| after realign | -0.1211 | **-0.0123** |
+| after pose bake | -0.1211 | **-0.0123** |
+
+**But keeping the pose is not a one-line fix.** With it set the build ABORTS: *"mesh DATA measures
+1.2844 m but the target is 1.3000 m. A scale is still hiding in an object transform."* A kept pose
+has to be baked into rest and then scaled, and that path does not currently handle it. So the flag
+is NOT in the tree -- the cause is settled and the fix is not.
+
+**Five wrong stages, each costing a rebuild**, before a relative trace with a few extra probes
+found it in two. The probes are the cheap part. Add them FIRST.
+
+
 
 `VRM_TRACE_OFFSET="a,b"` tracks one material group RELATIVE to another at every stage, which a
 whole-mesh box cannot do -- her teeth and her face are the same mesh, so its box moves with the
