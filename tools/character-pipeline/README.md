@@ -550,6 +550,42 @@ What is left, and why each is left:
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
 
+### A head sphere that swallowed the hair roots
+
+With the hips fixed her head stayed on her neck -- and her hair then splayed into two wings out
+to the sides. A second, separate fault, and the shape of it was the clue: symmetric and static
+rather than whipped, which is a chain resting against something too big, not one being flung.
+
+Her head sphere was **0.1997 on a character 0.80 tall**, centred 0.26 ABOVE her head bone,
+because the sphere is fitted to head geometry and her EARS are part of her head. That buried
+`HairSpring_0_3_0` 0.101 m inside it and left the chain's first SIMULATED joint with 0.0136 m of
+clearance, so any motion pushed it back in and ejected it outward.
+
+The guard skips chain anchors, and that is correct for a CAPSULE -- the Xenomorph's tail is rooted
+on his spine, and guarding anchors shrank his torso capsule to zero. **A head sphere is the
+opposite case.** An anchor buried in it means the sphere has swallowed the roots, and the first
+joint that CAN move is then sitting on the surface. So the head sphere now clears the anchors too,
+and says why:
+
+```
+head sphere 0.1997 -> 0.1187: a spring ANCHOR sits 0.1187 from the head centre, and a sphere
+that swallows the roots leaves the first simulated joint on its surface
+```
+
+Blast radius measured over eleven built characters before the change, with the same `CHEST`
+exclusion the guard already applies: **Gadget to 59% of her radius, Peach 92%, Sayuri 93%, and the
+other eight unchanged.** Shrinking is the direction this file already argues for -- a small
+collider still stops hair driving through the face, while an ejecting one is a visible
+catastrophe.
+
+After: her deepest buried anchor goes from 10.1% of height (a hair chain) to 3.1%, and that one is
+`DEF-breast.R`, a chest chain which is unguarded on purpose. No hair anchor is buried, and no
+simulated joint is inside anything.
+
+**Two faults, one screenshot.** The hips put her head on the floor's pivot; the head sphere threw
+her hair outward. Fixing either alone still looked broken, which is why the first three attempts
+read as failures of the fix rather than as a second cause.
+
 ### A hips on the floor: three wrong diagnoses before a controlled one
 
 Her head and hair were being dragged off her body in game. It took three attempts, and the two
