@@ -550,7 +550,44 @@ What is left, and why each is left:
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
 
-### The teeth displacement is REAL and MEASURED, and its cause is still unknown
+### FOUND: the CHILD_OF conversion displaces her eyes and her teeth
+
+`VRM_TRACE_OFFSET="a,b"` tracks one material group RELATIVE to another at every stage, which a
+whole-mesh box cannot do -- her teeth and her face are the same mesh, so its box moves with the
+face and says nothing about the teeth inside it. One run found what three rebuilds could not:
+
+```
+OFFSET after import     teeth - eye = (+0.000,-0.012,-0.116)  |d|=0.117   <- matches the source
+OFFSET after CHILD_OF   teeth - eye = (+0.021,-0.121,-0.158)  |d|=0.200   <- JUMPED
+OFFSET after realign    (unchanged)
+OFFSET after pose bake  (unchanged)
+OFFSET after scale      (unchanged)
+```
+
+**Nothing after CHILD_OF touches it**, which is exactly why binding strays before the pose bake
+and before the T-pose step both changed nothing: by then the damage was three stages old.
+
+Traced against the body, which is neither constraint-driven nor unweighted, both parts move and
+the EYES move most:
+
+| at CHILD_OF | y (forward) | z (up) |
+|---|---|---|
+| **eyes** vs body | -0.129 -> **-0.050**, back 0.079 | +0.383 -> **+0.415**, up 0.032 |
+| teeth vs body | -0.141 -> -0.171, forward 0.030 | +0.267 -> +0.257, down 0.009 |
+
+So her eyes recede into her head and ride up by nearly three times what the teeth move. Her eyes
+are bone-parented to `MCH-eye.L/R` -- the row above has said so all along -- and the conversion
+that turns bone-parenting and CHILD_OF into skinned weights is placing them wrongly. The teeth
+ride along because they are unweighted and in the same mesh.
+
+What this does NOT yet say is which part of that conversion is wrong. That is the next question,
+and it is now a question about forty lines of code rather than about a whole build.
+
+**Three stages were ruled out the expensive way first** -- the T-pose step, subdivision (her Body
+carries Subsurf 2; the source EVALUATED with it reads 0.012, the same as its base mesh) and the
+pose bake -- each costing a full rebuild. Reach for a relative trace BEFORE guessing at stages.
+
+
 
 Measured against her EYES, which is the comparison that works -- it needs no shared origin and no
 assumption about scale or facing:

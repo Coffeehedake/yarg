@@ -352,6 +352,57 @@ def trace(stage):
     Set VRM_TRACE to a mesh-name substring. Chasing a part that ends up in the
     wrong place by reasoning about matrices is how three wrong fixes got
     written; measuring it at every stage says which stage moved it."""
+    # VRM_TRACE_OFFSET="a,b" tracks one material group RELATIVE to another at
+    # every stage, which a whole-mesh box cannot do: Gadget Hackwrench's teeth
+    # and her face are the same mesh, so the box moves with the face and says
+    # nothing about the teeth inside it.
+    #
+    # Measured against the EYES rather than the floor on purpose. The first
+    # attempt at her used absolute z against model height, read as a vertical
+    # drop, and sent three rebuilds chasing the pose bake. Teeth-to-eye offset
+    # needs no shared origin, no scale and no facing, and it showed the real
+    # signal is HORIZONTAL: 0.011 in front of her eyes in the source, 0.124 in
+    # the build.
+    _pair = os.environ.get("VRM_TRACE_OFFSET")
+    if _pair and "," in _pair:
+        _a, _b = [x.strip().lower() for x in _pair.split(",", 1)]
+        bpy.context.view_layer.update()
+        _deps = bpy.context.evaluated_depsgraph_get()
+
+        def _mat_centre(sub):
+            acc = Vector((0.0, 0.0, 0.0))
+            n = 0
+            for ob in bpy.data.objects:
+                if ob.type != "MESH":
+                    continue
+                idx = [i for i, sl in enumerate(ob.material_slots)
+                       if sl.material and sub in sl.material.name.lower()]
+                if not idx:
+                    continue
+                ev = ob.evaluated_get(_deps)
+                me = ev.data
+                if len(me.vertices) != len(ob.data.vertices):
+                    # evaluated mesh differs (a subsurf, say): use its own polys
+                    pass
+                vs = set()
+                for poly in me.polygons:
+                    if poly.material_index in idx:
+                        vs.update(poly.vertices)
+                for i in vs:
+                    acc += ev.matrix_world @ me.vertices[i].co
+                    n += 1
+            return (acc / n, n) if n else (None, 0)
+
+        _ca, _na = _mat_centre(_a)
+        _cb, _nb = _mat_centre(_b)
+        if _ca is not None and _cb is not None:
+            _d = _ca - _cb
+            print("  OFFSET %-22s %s(%d) - %s(%d) = (%+.4f,%+.4f,%+.4f)  |d|=%.4f"
+                  % (stage, _a, _na, _b, _nb, _d.x, _d.y, _d.z, _d.length))
+        else:
+            print("  OFFSET %-22s %s=%d verts %s=%d verts -- nothing to compare"
+                  % (stage, _a, _na, _b, _nb))
+
     want = os.environ.get("VRM_TRACE")
     if not want:
         return
