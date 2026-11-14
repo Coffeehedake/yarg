@@ -649,7 +649,11 @@ public static class YargCharExporter
                     if (!string.IsNullOrEmpty(renderDir))
                     {
                         YargCharHandRender.Render(instance, outName.Replace(" ", ""), renderDir, 0f);
+                        YargCharHandRender.HandIsolate(instance, outName.Replace(" ", ""), renderDir, false);
                         YargCharHandRender.Render(instance, outName.Replace(" ", ""), renderDir, 0.5f);
+                        // after the animated Render the animator is still at 0.5 s, which is
+                        // the whole point: this photographs the pose the game is in.
+                        YargCharHandRender.HandIsolate(instance, outName.Replace(" ", ""), renderDir, true);
                         Debug.Log($"[YARGCHAR] {outName}: hands rendered to {renderDir}");
                         continue;
                     }

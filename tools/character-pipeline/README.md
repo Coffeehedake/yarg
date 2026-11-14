@@ -83,7 +83,13 @@ surface with an opaque material (otherwise only the cutouts are MToon and the se
 `VRM_SAVE_BLEND=<path>` saves the pre-export scene (the single most useful
 debugging aid — renders of it tell you whether a fault is yours or the exporter's),
 `VRM_NO_TPOSE=1`, `VRM_DROP_SOLIDIFY=1` (inverted-hull outlines), `HAIR_ANCHOR` / `HAIR_SEGS` /
-`HAIR_STRANDS` for the hair rigger.
+`HAIR_STRANDS` for the hair rigger;
+**`VRM_EXPORT_POSE=rest`** stops the VRM add-on applying a T-pose estimate of its own on the way
+out — which re-aims every humanoid chain including the FINGERS, and is what flattened Gadget
+Hackwrench's hands (29.9/45.3/29.0/28.3 degrees of knuckle bend in, 0.0 out). It is opt-in on
+purpose: on a rig whose own T-pose step never ran the add-on's estimate is the only thing
+T-posing the character, so the build measures the rest pose and warns when it is not a T-pose.
+See "The VRM add-on applies a T-pose of its OWN" below.
 
 **2. VRM → .yargchar** (Unity 6000.3.5f2). Copy `YargCharExporter.cs` **and
 `YargCharHandRender.cs`** from this folder into `<fork>/Assets/__TempExport/Editor/`, run it,
@@ -1744,7 +1750,14 @@ right.
   pose and rest agree even if both are wrong against the mesh, so it does not replace `bone_fit.py`
 - `YargCharHandRender.cs` — renders both hands INSIDE Unity, at rest and in the animated pose
   (`-renderDir`, with `export_one`-style `-vrmList`; run WITHOUT `-nographics`). Only the animated
-  pose shows a skinning fault, and only because it bakes each skinned mesh first
+  pose shows a skinning fault, and only because it bakes each skinned mesh first.
+  **`-renderDir` renders INSTEAD of exporting** — the block ends in a `continue`, so a run that
+  passes it produces pictures and no `.yargchar` at all, and says nothing about it beyond
+  `ALL DONE, failures=0`. Build the bundle in a second run without it.
+  `HandIsolate` is the part worth reaching for: per-finger `FINGERGAP` measurements and renders of
+  the hand **with every other renderer switched off**, framed on the hand's own axes. Both exist
+  because the plain views could not answer the question — the camera aims at the hand BONE and
+  photographs whatever is in front of it, which on a posed character is a thigh or a sleeve
 - `meshbb.py <blend>` — per-mesh vertex count, world size and materials; how to tell which
   numbered mesh is the eyes before pinning a texture to its material
 - `cloth_collide.py <vrm|dir>` / `cloth_collide_installed.py <yargchar|dir>` — for every spring
@@ -2814,6 +2827,114 @@ characters that the late pass does report. Nothing else was rebuilt, so nothing
 else changed; a character that is rebuilt later and does trip it has the
 self-check above standing in front of it.
 
+### The VRM add-on applies a T-pose of its OWN, and it is what made her hands a mess
+
+2026-11-14, on "her hands are a mess" **in game**. The section below this one
+records that nothing in the build touches Gadget Hackwrench's fingers, and that
+is still true -- `VRM_TRACE_BONE` follows her middle fingertip from import to
+the last line before export and it moves by the 1.7% rescale and nothing else.
+**The trace stopped one step too early.** The add-on moves it afterwards.
+
+`vrm1.humanoid.pose` defaults to `autoPose`, which runs the add-on's
+`set_estimated_humanoid_t_pose`, whose core helper is called
+`_set_bone_direction_to_align_child_bone`. It re-aims every humanoid chain,
+**the fingers included**, and this script had never set the property, so every
+character it has ever built went out through it.
+
+| | pre-export scene | written .vrm |
+|---|---|---|
+| index knuckle | 29.9 deg | **0.0 deg** |
+| middle knuckle | 45.3 deg | **0.0 deg** |
+| ring knuckle | 29.0 deg | **0.0 deg** |
+| thumb knuckle | 28.3 deg | **0.0 deg** |
+| hand bounding box | -- | 122 x 31 x 85 mm, flattened |
+
+Both numbers come from the same build: `VRM_SAVE_BLEND` saves the scene eight
+lines above the export call, and nothing of ours runs in between. Her middle
+fingertip moves 22 mm in the hand's own frame.
+
+**It is not a broken bind, which is why no still render ever showed it.** The
+skin is carried along with the bones: bone-head to skin-centroid stays 13.36 mm
+before and 13.39 mm after, on every finger. The exported hand is simply a
+different hand from the one the artist sculpted -- flattened and splayed.
+
+**What that does in game.** YARG's vocalist clips rotate her finger bones
+55-78 degrees, and `ANIMDELTA` shows the values are identical to Alcina's, bone
+for bone, because it is the same clip retargeted. Yet half a second in, the
+shipped build's fingers are still splayed and straight while a rest-pose build
+of the same character closes into a grip. Identical muscle values, opposite
+results, because the add-on re-aimed each bone and gave it a fresh roll: Unity
+derives the muscle axes from the avatar's bind, so "curl" now turns about an
+axis that is no longer the knuckle's hinge. The renders are
+`measurements/gadget-hand-ingame-SHIPPED` and `-FIXED`.
+
+It is not one character. Over the 105 `.vrm` files on this machine: **85 have a
+knuckle bend of exactly 0.0, two do not** (Pomni, 3.4-5.2 deg) **and 18 carry no
+finger map at all.**
+
+**`VRM_EXPORT_POSE=rest` turns it off, and it is OPT-IN, because the add-on's
+estimate is load-bearing on rigs whose own T-pose step did not run.** Built both
+ways and compared in the written file:
+
+| character | effect of `rest` | why |
+|---|---|---|
+| Gadget | fingers keep 29.9 / 45.3 / 29.0 / 28.3; every other joint within 0.1 deg | her T-pose step ran: arms 0.0 deg off X |
+| Alcina | 3 deg at the hip, nothing else | her T-pose step ran |
+| Anakin | **hip 93.9 -> 26.2 deg** | built `VRM_STANDUP_LEGS=0` |
+| Prix | **elbow 0.0 -> 14.6 deg**, shoulder 1.2 -> 7.6 | a Mixamo rig: the T-pose step prints *nothing* for him, so the add-on was the only thing T-posing him |
+
+Prix is the one to remember. Unity builds the humanoid avatar on the bind pose,
+so shipping him bent would have mis-aimed every muscle axis he has -- the same
+fault as the hands, applied to the whole body.
+
+So the build **measures the rest pose whenever `rest` is asked for** and says
+plainly whether it is a T-pose, joint to joint: upper arm and forearm along X,
+thigh and shin vertical. It passes Gadget and Alcina and fires on Prix
+(`forearm 21.2 deg`) and Anakin (`thigh 77.3 deg, shin 43.6 deg`) -- the same two
+the rebuild flagged, which is what makes it a check rather than a hope.
+
+**The guard got that wrong once first, in the way this file keeps warning
+about.** Its first version asked which way each *bone points* and reported
+Prix's arms as 90.0 degrees off X and his legs as 180.0 off vertical, both
+sides, upper and lower, to the decimal. Numbers that round are not a pose. A
+bone's tail is synthesised wherever the rig does not pin one, so a bone's axis
+is a fact about the importer; the **head of the next joint down** is a fact
+about the model. Measuring joint to joint turned those into 21.2 and 77.3 --
+numbers that match an independent measurement of the same two rigs.
+
+### Two reasons the hand pictures could not answer the question
+
+Both were in the tooling, not the model, and both produced a picture that
+looked like evidence:
+
+- **`YargCharHandRender` frames on the hand BONE and renders the whole
+  character.** Anything between camera and hand is what you photograph: Alcina's
+  animated hand came back as a close-up of her own dress, and Gadget's as her
+  face. `HandIsolate` keeps only the triangles all of whose vertices are weighted
+  to that hand and switches every other renderer off, so nothing can be in the
+  way.
+- **`RecalculateBounds` measures the whole VERTEX ARRAY.** Filtering the
+  triangles does not shrink it, so the first "isolated hand" renders framed a
+  1049 x 1200 x 492 mm box -- her entire body -- and the hand was four pixels
+  across. Bound the kept triangles by hand. The corrected box reads 122 x 31 x 85
+  mm, which is also the measurement that showed the flattening.
+
+`STRIPV` had a third form of the same disease: it looks for finger bones by
+NAME, matching `_L_` plus `Index`/`Mid`/`Pinky`. A Rigify rig calls them
+`DEF-f_index.01.L` and matches none of it, so for every Rigify character that
+check has been reporting nothing wrong **by never looking**. `HandIsolate` asks
+the Animator's humanoid map instead, which is what the game drives and is the
+same question in every naming convention.
+
+Measured, and NOT a defect, each with the control that settled it:
+
+| looked like | control |
+|---|---|
+| `SKINDEV` 300 bone/renderer pairs off, fingers worst at 917 mm | Alcina reads 600 pairs and 2957 mm and is fine |
+| fingers nearly touching: 0.7-0.9 mm between neighbours | Alcina reads 0.3-0.8 mm; the minimum is taken at the web where fingers join, so it is ~0 for everyone |
+| her bind fingers curl 32.5 deg against Alcina's 15.0 | both read 0.0 from the file; the curl came from `fingerpose.py`, which sums bone AXES |
+| a balloon head on thin spikes in the body render | that is her hair, from the front |
+
 ### A .vrm read back into Blender INVENTS half of what you measure
 
 2026-11-14, chasing "her hands are a mess". Three faults were measured in
@@ -2839,6 +2960,12 @@ other end: `DEF-f_middle.03.L` in the hand's frame reads
 `(+0.0183,+0.0858,-0.0063)` at import and `(+0.0186,+0.0872,-0.0064)` before
 export -- the 1.7% rescale and nothing else, at every stage in between. **The
 build does not touch her fingers.**
+
+> That conclusion is correct and it is not the whole answer. The trace ends at
+> the last line before export, and the **VRM add-on re-poses the hand after
+> it**: the same joint is written to the file at `(-0.0101,+0.0995,-0.0026)`.
+> See "The VRM add-on applies a T-pose of its OWN" above. A trace that stops
+> where our code stops cannot see a tool we call.
 
 `VRM_TRACE_BONE="<bone>,<reference bone>"` follows one joint in another bone's
 REST frame at every stage. Rest and not pose on purpose: `bone.matrix_local` is

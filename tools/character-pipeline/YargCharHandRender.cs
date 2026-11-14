@@ -263,4 +263,262 @@ public static class YargCharHandRender
         foreach (var go in baked) Object.DestroyImmediate(go);
         foreach (var smr in hidden) smr.enabled = true;
     }
+
+    // ---------------------------------------------------------------- hands, isolated
+    //
+    // Two faults made the pictures above unable to answer "are her fingers a mess":
+    //
+    //  * the camera frames on the HAND BONE and renders the whole character, so
+    //    anything between the two -- a thigh, a sleeve -- is what you photograph.
+    //    Alcina's animated hand came back as a close-up of her own dress.
+    //  * STRIPV looks for finger bones by NAME, matching "_L_" plus "Index"/"Mid"/
+    //    "Pinky". That is one rig's convention. A Rigify rig calls them
+    //    DEF-f_index.01.L and matches NONE of it, so the check reported nothing
+    //    wrong by never looking. Ask the ANIMATOR instead: the humanoid map is
+    //    what the game drives, and it is the same question in every convention.
+    //
+    // So: group the baked vertices by which finger drives them, measure the GAP
+    // between neighbouring fingers, and render the hand with every other renderer
+    // switched off. A gap is a number and cannot be occluded.
+    static readonly HumanBodyBones[,] LeftChain = new HumanBodyBones[5, 3]
+    {
+        { HumanBodyBones.LeftThumbProximal,  HumanBodyBones.LeftThumbIntermediate,  HumanBodyBones.LeftThumbDistal  },
+        { HumanBodyBones.LeftIndexProximal,  HumanBodyBones.LeftIndexIntermediate,  HumanBodyBones.LeftIndexDistal  },
+        { HumanBodyBones.LeftMiddleProximal, HumanBodyBones.LeftMiddleIntermediate, HumanBodyBones.LeftMiddleDistal },
+        { HumanBodyBones.LeftRingProximal,   HumanBodyBones.LeftRingIntermediate,   HumanBodyBones.LeftRingDistal   },
+        { HumanBodyBones.LeftLittleProximal, HumanBodyBones.LeftLittleIntermediate, HumanBodyBones.LeftLittleDistal },
+    };
+    static readonly HumanBodyBones[,] RightChain = new HumanBodyBones[5, 3]
+    {
+        { HumanBodyBones.RightThumbProximal,  HumanBodyBones.RightThumbIntermediate,  HumanBodyBones.RightThumbDistal  },
+        { HumanBodyBones.RightIndexProximal,  HumanBodyBones.RightIndexIntermediate,  HumanBodyBones.RightIndexDistal  },
+        { HumanBodyBones.RightMiddleProximal, HumanBodyBones.RightMiddleIntermediate, HumanBodyBones.RightMiddleDistal },
+        { HumanBodyBones.RightRingProximal,   HumanBodyBones.RightRingIntermediate,   HumanBodyBones.RightRingDistal   },
+        { HumanBodyBones.RightLittleProximal, HumanBodyBones.RightLittleIntermediate, HumanBodyBones.RightLittleDistal },
+    };
+    static readonly string[] FingerName = { "thumb", "index", "middle", "ring", "little" };
+
+    public static void HandIsolate(GameObject instance, string name, string dir, bool anim)
+    {
+        var animator = instance.GetComponent<Animator>();
+        if (animator == null || animator.avatar == null || !animator.avatar.isHuman) return;
+        string tag = anim ? "anim" : "rest";
+
+        var camGo = new GameObject("__isocam");
+        var cam = camGo.AddComponent<Camera>();
+        cam.orthographic = true;
+        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = new Color(0.40f, 0.40f, 0.45f);
+        cam.nearClipPlane = 0.001f;
+        cam.farClipPlane = 5f;
+        var lightGo = new GameObject("__isolight");
+        var li = lightGo.AddComponent<Light>();
+        li.type = LightType.Directional; li.intensity = 1.3f;
+        lightGo.transform.rotation = Quaternion.Euler(35f, 150f, 0f);
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.55f, 0.55f, 0.60f);
+
+        foreach (bool left in new[] { true, false })
+        {
+            string sideTag = left ? "L" : "R";
+            var hand = animator.GetBoneTransform(left ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+            if (hand == null) continue;
+
+            var bone2f = new System.Collections.Generic.Dictionary<Transform, int>();
+            for (int f = 0; f < 5; f++)
+                for (int j = 0; j < 3; j++)
+                {
+                    var t = animator.GetBoneTransform(left ? LeftChain[f, j] : RightChain[f, j]);
+                    if (t != null && !bone2f.ContainsKey(t)) bone2f[t] = f;
+                }
+
+            // The renderer that actually carries this hand's fingers.
+            SkinnedMeshRenderer host = null; int hostHits = 0;
+            Mesh hostBaked = null; int[] hostGroup = null; Vector3[] hostWorld = null;
+            foreach (var smr in instance.GetComponentsInChildren<SkinnedMeshRenderer>())
+            {
+                if (smr.sharedMesh == null) continue;
+                var mesh = smr.sharedMesh;
+                var bones = smr.bones;
+                var bpv = mesh.GetBonesPerVertex();
+                var all = mesh.GetAllBoneWeights();
+                if (bpv.Length == 0) continue;
+                var grp = new int[bpv.Length];
+                var w = new float[6];
+                int off = 0, hits = 0;
+                for (int i = 0; i < bpv.Length; i++)
+                {
+                    for (int k = 0; k < 6; k++) w[k] = 0f;
+                    int n = bpv[i];
+                    for (int k = 0; k < n; k++)
+                    {
+                        var bw = all[off + k];
+                        var bt = bw.boneIndex < bones.Length ? bones[bw.boneIndex] : null;
+                        if (bt == null) continue;
+                        if (bt == hand) w[5] += bw.weight;
+                        else if (bone2f.TryGetValue(bt, out int fi)) w[fi] += bw.weight;
+                    }
+                    off += n;
+                    int bestF = -1; float bestW = 0.25f;
+                    for (int k = 0; k < 6; k++) if (w[k] > bestW) { bestW = w[k]; bestF = k; }
+                    grp[i] = bestF;                   // 0..4 finger, 5 palm, -1 not this hand
+                    if (bestF >= 0 && bestF < 5) hits++;
+                }
+                if (hits > hostHits)
+                {
+                    var bk = new Mesh();
+                    smr.BakeMesh(bk, true);
+                    var M = Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one);
+                    var vs = bk.vertices;
+                    var wv = new Vector3[vs.Length];
+                    for (int i = 0; i < vs.Length; i++) wv[i] = M.MultiplyPoint3x4(vs[i]);
+                    host = smr; hostHits = hits; hostBaked = bk; hostGroup = grp; hostWorld = wv;
+                }
+            }
+            if (host == null || hostHits == 0)
+            {
+                Debug.Log("[YARGCHAR] FINGERGAP " + name + " " + sideTag + " " + tag +
+                          ": no renderer carries this hand's fingers");
+                continue;
+            }
+
+            // Gap between neighbouring fingers, in the pose as skinned. Measured on a
+            // decimated sample so this stays O(sample^2): the minimum over a sample is an
+            // UPPER bound on the true minimum, so a small number is trustworthy and a
+            // large one is reported as the bound it is.
+            var pts = new System.Collections.Generic.List<Vector3>[5];
+            for (int f = 0; f < 5; f++) pts[f] = new System.Collections.Generic.List<Vector3>();
+            for (int i = 0; i < hostGroup.Length; i++)
+                if (hostGroup[i] >= 0 && hostGroup[i] < 5) pts[hostGroup[i]].Add(hostWorld[i]);
+            const int CAP = 700;
+            for (int f = 0; f < 5; f++)
+                if (pts[f].Count > CAP)
+                {
+                    var keep = new System.Collections.Generic.List<Vector3>(CAP);
+                    float step = pts[f].Count / (float)CAP;
+                    for (int k = 0; k < CAP; k++) keep.Add(pts[f][(int)(k * step)]);
+                    pts[f] = keep;
+                }
+            float handLen = 0f;
+            {
+                var tip = animator.GetBoneTransform(left ? LeftChain[2, 2] : RightChain[2, 2]);
+                if (tip != null) handLen = (tip.position - hand.position).magnitude;
+            }
+            for (int f = 0; f + 1 < 5; f++)
+            {
+                if (pts[f].Count == 0 || pts[f + 1].Count == 0)
+                {
+                    Debug.Log("[YARGCHAR] FINGERGAP " + name + " " + sideTag + " " + tag + ": " +
+                              FingerName[f] + "-" + FingerName[f + 1] + " ABSENT (" +
+                              pts[f].Count + "/" + pts[f + 1].Count + " verts)");
+                    continue;
+                }
+                float best = float.MaxValue;
+                foreach (var a in pts[f])
+                    foreach (var b in pts[f + 1])
+                    {
+                        float d = (a - b).sqrMagnitude;
+                        if (d < best) best = d;
+                    }
+                best = Mathf.Sqrt(best);
+                string pct = handLen > 0f
+                    ? "  (" + (best / handLen * 100f).ToString("F1") + "% of hand length " +
+                      (handLen * 1000f).ToString("F0") + " mm)"
+                    : "";
+                Debug.Log("[YARGCHAR] FINGERGAP " + name + " " + sideTag + " " + tag + ": " +
+                          FingerName[f] + "-" + FingerName[f + 1] + " " +
+                          (best * 1000f).ToString("F1") + " mm" + pct +
+                          "  [" + pts[f].Count + "/" + pts[f + 1].Count + " sampled]");
+            }
+
+            // The hand alone: keep only triangles all three of whose vertices belong to
+            // this hand. Nothing else is in the scene, so nothing else can be in the way.
+            var keepTris = new System.Collections.Generic.List<int>();
+            var tris = hostBaked.triangles;
+            for (int t = 0; t + 2 < tris.Length; t += 3)
+                if (hostGroup[tris[t]] >= 0 && hostGroup[tris[t + 1]] >= 0 && hostGroup[tris[t + 2]] >= 0)
+                { keepTris.Add(tris[t]); keepTris.Add(tris[t + 1]); keepTris.Add(tris[t + 2]); }
+            if (keepTris.Count == 0)
+            {
+                Debug.Log("[YARGCHAR] HANDISO " + name + " " + sideTag + " " + tag +
+                          ": no triangle is wholly this hand");
+                continue;
+            }
+            var iso = new Mesh();
+            iso.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            iso.vertices = hostWorld;                       // already world space
+            iso.triangles = keepTris.ToArray();
+            iso.RecalculateNormals();
+            // NOT RecalculateBounds(): it measures the whole VERTEX ARRAY, and that
+            // is the whole character, because the triangles were filtered but the
+            // vertices were not. The first run framed every "isolated hand" on a
+            // 1049 x 1200 x 492 mm box -- her entire body -- and photographed it.
+            // Bound the kept TRIANGLES instead.
+            var bmin = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var bmax = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+            foreach (int vi in keepTris)
+            {
+                bmin = Vector3.Min(bmin, hostWorld[vi]);
+                bmax = Vector3.Max(bmax, hostWorld[vi]);
+            }
+            iso.bounds = new Bounds((bmin + bmax) * 0.5f, bmax - bmin);
+            var isoGo = new GameObject("__iso");
+            isoGo.AddComponent<MeshFilter>().sharedMesh = iso;
+            var mr = isoGo.AddComponent<MeshRenderer>();
+            var sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            mr.sharedMaterial = new Material(sh);
+
+            var offRend = new System.Collections.Generic.List<Renderer>();
+            foreach (var r in instance.GetComponentsInChildren<Renderer>())
+                if (r.enabled) { r.enabled = false; offRend.Add(r); }
+
+            var c = iso.bounds.center;
+            float rad = Mathf.Max(iso.bounds.extents.magnitude, 0.01f);
+            cam.orthographicSize = rad * 1.25f;
+            Debug.Log("[YARGCHAR] HANDISO " + name + " " + sideTag + " " + tag + ": " +
+                      (keepTris.Count / 3) + " triangles, bounds " +
+                      (iso.bounds.size.x * 1000f).ToString("F0") + "x" +
+                      (iso.bounds.size.y * 1000f).ToString("F0") + "x" +
+                      (iso.bounds.size.z * 1000f).ToString("F0") + " mm");
+
+            // Framed on the hand's OWN axes: across the knuckles, down the fingers, and
+            // the normal of the two. A world-axis view photographs a tilted hand edge-on
+            // and makes any hand read as spikes whatever shape it is.
+            Vector3 along = Vector3.up, across = Vector3.right;
+            {
+                var idx = animator.GetBoneTransform(left ? LeftChain[1, 0] : RightChain[1, 0]);
+                var lit = animator.GetBoneTransform(left ? LeftChain[4, 0] : RightChain[4, 0]);
+                var mid = animator.GetBoneTransform(left ? LeftChain[2, 2] : RightChain[2, 2]);
+                if (mid != null) along = (mid.position - hand.position).normalized;
+                if (idx != null && lit != null && (idx.position - lit.position).sqrMagnitude > 1e-8f)
+                    across = (idx.position - lit.position).normalized;
+            }
+            var palmN = Vector3.Cross(along, across).normalized;
+            if (palmN.sqrMagnitude < 1e-6f) palmN = Vector3.forward;
+            foreach (var v in new[] { ("palm", palmN), ("edge", across), ("tip", along) })
+            {
+                camGo.transform.position = c - v.Item2 * 1f;
+                camGo.transform.rotation = Quaternion.LookRotation(v.Item2, along);
+                var rt = new RenderTexture(600, 600, 24);
+                cam.targetTexture = rt;
+                cam.Render();
+                RenderTexture.active = rt;
+                var tex = new Texture2D(600, 600, TextureFormat.RGB24, false);
+                tex.ReadPixels(new Rect(0, 0, 600, 600), 0, 0);
+                tex.Apply();
+                RenderTexture.active = null;
+                File.WriteAllBytes(Path.Combine(dir, name + "_" + tag + "_" + sideTag + "_iso_" + v.Item1 + ".png"),
+                                   tex.EncodeToPNG());
+                Object.DestroyImmediate(tex);
+                cam.targetTexture = null;
+                rt.Release();
+                Object.DestroyImmediate(rt);
+            }
+
+            foreach (var r in offRend) r.enabled = true;
+            Object.DestroyImmediate(isoGo);
+        }
+        Object.DestroyImmediate(camGo);
+        Object.DestroyImmediate(lightGo);
+    }
 }

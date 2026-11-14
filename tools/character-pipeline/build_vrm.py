@@ -7611,6 +7611,115 @@ if os.environ.get("VRM_COLLIDERS", "1") != "0":
     except Exception as _e:
         print("collider setup failed: %s: %s" % (type(_e).__name__, _e))
 
+# The add-on applies a T-POSE OF ITS OWN on the way out, and it is not ours.
+#
+# `vrm1.humanoid.pose` defaults to "autoPose", which runs the add-on's
+# set_estimated_humanoid_t_pose -- a routine whose core helper is called
+# _set_bone_direction_to_align_child_bone. It straightens every humanoid chain,
+# the FINGERS included, and it had never been set here, so every character
+# built by this script has gone out through it.
+#
+# Measured on Gadget Hackwrench, whose fingers are visibly curled in the model:
+# the pre-export scene saved by VRM_SAVE_BLEND two lines below carries her
+# authored knuckle bends of 29.9 / 45.3 / 29.0 / 28.3 degrees, and the .vrm
+# written from that very scene reads 0.0 on all four. Her middle fingertip
+# moves 22 mm in the hand's own frame. The SKIN is carried along with the
+# bones -- bone-to-skin-centroid stays 13.36 mm before and 13.39 mm after -- so
+# this is not a broken bind, and no static render shows it. It is simply a
+# different hand from the one the artist sculpted, and the game then bends the
+# fingers a further 55-78 degrees from there.
+#
+# This matters because the T-pose step above is already ours and is deliberate:
+# it puts the upper arm along X and then the forearm, joint by joint, and it
+# leaves fingers alone on purpose. The add-on's estimate is a second, blunter
+# pass over the top of it.
+#
+# VRM_EXPORT_POSE=rest exports the rest pose this script has prepared, unchanged.
+# Left at "auto" by default until the blast radius across the roster is measured
+# -- the arms are currently straightened by BOTH passes, and only one of them is
+# known to be careful about it.
+#
+# It is NOT safe to switch on for everyone, and the roster says so. Built both
+# ways, comparing the shoulder/elbow/ankle/hip angles in the written file:
+#
+#   Alcina   unchanged but for 3 deg at the hip       -- her own T-pose step ran
+#   Gadget   unchanged, fingers keep 29.9/45.3/29.0   -- her own T-pose step ran
+#   Anakin   hip 93.9 -> 26.2 deg                     -- built with STANDUP_LEGS=0
+#   Prix     elbow 0.0 -> 14.6 deg, shoulder 1.2 -> 7.6
+#
+# Prix is the lesson. He is a Mixamo rig and the T-pose step above prints
+# nothing for him at all, so the add-on's estimate was the ONLY thing putting
+# him in a T-pose; take it away and his elbow keeps a 14.6 degree bend, which
+# Unity then builds the avatar on. Anakin is the same story at the hip, by way
+# of VRM_STANDUP_LEGS=0.
+#
+# So the rule is: use rest only where this script's own T-pose step has already
+# done the job, and the guard below is what says whether it has.
+_xpose = os.environ.get("VRM_EXPORT_POSE", "auto").lower()
+if _xpose == "rest":
+    try:
+        _h = ext.vrm1.humanoid
+        _h.pose = "restPositionPose"
+        print("export pose: restPositionPose - the add-on's own T-pose estimate "
+              "is OFF, so the rest pose prepared above is what gets written")
+    except Exception as _e:
+        print("could not set the export pose: %s: %s" % (type(_e).__name__, _e))
+
+    # Whatever the rest pose IS, is now what ships. Measure it rather than
+    # assume it: the add-on is no longer there to tidy up behind us.
+    # JOINT TO JOINT, in world space -- never along a bone's own axis.
+    #
+    # The first version of this check asked which way each bone POINTS, and
+    # reported Prix's arms as 90.0 degrees off X and his legs as 180.0 off
+    # vertical: both sides, upper and lower, to the decimal. Numbers that round
+    # are not a pose. A bone's tail is synthesised wherever the rig does not pin
+    # one, so "which way the bone points" is a fact about the importer, while
+    # the HEAD of the next joint down is a fact about the model. Same trap that
+    # made a round-tripped .vrm look as though its fingers had been straightened
+    # when only their invented axes had changed.
+    _R = arm.matrix_world
+
+    def _head(_slot):
+        _n = MAP.get(_slot)
+        if not _n or _n not in bone_names:
+            return None
+        return _R @ arm.data.bones[_n].head_local
+
+    def _dev(_from, _to, _axis):
+        _a, _b = _head(_from), _head(_to)
+        if _a is None or _b is None:
+            return None
+        _v = _b - _a
+        if _v.length < 1e-9:
+            return None
+        _c = max(-1.0, min(1.0, _v.normalized().dot(_axis)))
+        return math.degrees(math.acos(_c))
+
+    _X, _nX = Vector((1, 0, 0)), Vector((-1, 0, 0))
+    _down = Vector((0, 0, -1))
+    _bad = []
+    for _s, _ax in (("left", _X), ("right", _nX)):
+        for _a, _b, _want, _lim, _label in (
+                ("%s_upper_arm" % _s, "%s_lower_arm" % _s, _ax, 15.0, "upper arm"),
+                ("%s_lower_arm" % _s, "%s_hand" % _s, _ax, 15.0, "forearm"),
+                ("%s_upper_leg" % _s, "%s_lower_leg" % _s, _down, 20.0, "thigh"),
+                ("%s_lower_leg" % _s, "%s_foot" % _s, _down, 25.0, "shin")):
+            _d = _dev(_a, _b, _want)
+            if _d is not None and _d > _lim:
+                _bad.append("%s %s %.1f deg" % (_s, _label, _d))
+    if _bad:
+        print("  WARNING: VRM_EXPORT_POSE=rest, but this rest pose is NOT a "
+              "T-pose: %s. The add-on's estimate was doing that work and is now "
+              "off, so Unity will build the humanoid avatar on a bent skeleton. "
+              "Fix the T-pose step for this rig, or leave VRM_EXPORT_POSE at "
+              "auto." % ", ".join(_bad))
+    else:
+        print("  rest pose checked: arms on X and legs vertical within "
+              "tolerance, so dropping the add-on's estimate costs nothing")
+else:
+    print("export pose: the add-on's default autoPose - it will re-straighten "
+          "every humanoid chain, fingers included (VRM_EXPORT_POSE=rest to stop it)")
+
 if os.environ.get("VRM_SAVE_BLEND"):
     bpy.ops.wm.save_as_mainfile(filepath=os.environ["VRM_SAVE_BLEND"])
     print("saved pre-export scene to", os.environ["VRM_SAVE_BLEND"])
