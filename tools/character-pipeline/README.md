@@ -2814,6 +2814,92 @@ characters that the late pass does report. Nothing else was rebuilt, so nothing
 else changed; a character that is rebuilt later and does trip it has the
 self-check above standing in front of it.
 
+### A .vrm read back into Blender INVENTS half of what you measure
+
+2026-11-14, chasing "her hands are a mess". Three faults were measured in
+Gadget Hackwrench's hands, each specific and alarming, and **all three were
+artefacts of the comparison**. Nothing in the build touches her hands. Written
+up because the measurements looked clean and the numbers were real; it was the
+frame of reference that was invented.
+
+**What a glTF actually stores is a node's TRANSLATION.** It has no notion of a
+bone length and no notion of a bone roll. Both are reconstructed by the importer
+on the way back in, and a reconstruction is not a measurement:
+
+| claim | measured | actually |
+|---|---|---|
+| "the fingertip bones were halved" | `DEF-f_index.03` 1.841% of height in the source, 0.890% in the build | a leaf bone has no child to point at, so the importer gives it half its parent |
+| "the palm bones were flattened to one length" | source 2.620 / 3.201 / 3.083%, build 1.353 / 1.353 / 1.353% | the same invention, on three bones that each lost their `ORG-` child |
+| "the fingers were straightened" | in the hand's rest frame the source's joints curl in +x and the build's run dead straight | the hand's rest FRAME is itself rebuilt from an invented roll, so the two sets of components are quoted in different axes |
+
+**What is real in both files is a joint's POSITION.** Measured as a distance from
+the wrist, every finger joint survives the build to within 0.1% of character
+height, and the worst in the hand is 0.66%. `VRM_TRACE_BONE` settles it from the
+other end: `DEF-f_middle.03.L` in the hand's frame reads
+`(+0.0183,+0.0858,-0.0063)` at import and `(+0.0186,+0.0872,-0.0064)` before
+export -- the 1.7% rescale and nothing else, at every stage in between. **The
+build does not touch her fingers.**
+
+`VRM_TRACE_BONE="<bone>,<reference bone>"` follows one joint in another bone's
+REST frame at every stage. Rest and not pose on purpose: `bone.matrix_local` is
+what a bind is expressed against, so a stage that rewrites it moves every vertex
+bound to that bone, and a pose-space reading hides exactly that. Use it on a rig
+the way `VRM_TRACE_PART` is used on geometry.
+
+### A build log carries the VRM add-on's own guesses, and they are not ours
+
+The same session nearly reported a catastrophe. Gadget's build log contains:
+
+```
+[VRM Add-on:WARNING] Generated mappings:
+  hips: root
+  leftHand: DEF-shin.L
+  rightHand: DEF-shin.R
+  leftUpperLeg: torso
+```
+
+Hands mapped to shins, a leg mapped to a control bone. That is the ADD-ON's
+structure search guessing at a rig it does not understand, printed at WARNING
+level in the middle of our own output. It has nothing to do with the humanoid
+this build assigns -- and grepping the log for `leftHand:` finds it rather than
+ours.
+
+`vrmhuman.py <file.vrm>` reads the humanoid out of the FILE, which is the only
+thing that settles it. Gadget's is correct: 50 bones, `leftHand` on `DEF-hand.L`,
+every limb where it belongs.
+
+The general rule, and it has now cost time twice in one day: **a log line is
+evidence about whoever printed it.** Ours are indented two spaces and say what
+was done; the add-on's carry its own prefix. When a grep returns something
+shocking, read the ten lines above it before believing it.
+
+### Framing a render on a vertex GROUP, and three ways that renders nothing
+
+`facecam.py` grew what a hand needs: `group:DEF-hand.L` frames on everything
+weighted to matching vertex groups, an elevation argument, and `FACECAM_REST=1`
+to clear the pose first. Each exists because its absence produced an empty or a
+misleading frame:
+
+- **A hand is not a material**, so it cannot be framed the way the teeth were.
+  Framing on the BONE instead fails on exactly the files worth comparing: a
+  Rigify source carries a metarig as well as a rig, `render_closeup.py` picks the
+  metarig, the metarig is not posed, and the camera is aimed at empty space.
+- **Vertex groups live on the base mesh and the character may be POSED.** Taking
+  the group's indices and then the base COORDINATES aims the camera where the
+  hand would be at rest. On a posed source that is empty space, and a blank frame
+  looks exactly like "the hand is missing". Read indices from the base, positions
+  from the evaluated mesh.
+- **A T-posed character holds its palms down**, so a camera level with the hand
+  sees it edge-on and the fingers read as thin spikes whatever shape they are.
+  That alone made the build's hand look deformed beside a source photographed
+  from above.
+
+Still open: `FACECAM_REST=1` renders an empty frame on this source while the
+probe that places the camera reports a sensible centre. Clearing `matrix_basis`
+on a constraint-driven rig does not put the geometry where the depsgraph is asked
+for it one line later. Not chased, and NOT to be read as a finding about the
+model until it is.
+
 ### Straighten an arm JOINT BY JOINT
 
 The T-pose correction used to rotate only the upper arm until the HAND sat on

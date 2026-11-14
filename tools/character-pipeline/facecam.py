@@ -8,6 +8,7 @@ present in both files under the same name and needs no skeleton at all.
 Argv: <file> <material-substring> <out.png> [span] [azimuth-deg]
 """
 import math
+import os
 import sys
 
 import bpy
@@ -17,6 +18,10 @@ a = sys.argv[sys.argv.index("--") + 1:]
 SRC, MAT, OUT = a[0], a[1], a[2]
 SPAN = float(a[3]) if len(a) > 3 else 0.22
 AZ = float(a[4]) if len(a) > 4 else 0.0
+# Elevation matters for a hand. A T-posed character holds its palms down, so a
+# camera level with the hand sees it edge-on and the fingers read as thin
+# spikes whatever shape they really are -- which is a fault that is not there.
+EL = float(a[5]) if len(a) > 5 else 0.0
 
 low = SRC.lower()
 if low.endswith(".vrm"):
@@ -30,6 +35,21 @@ elif low.endswith(".blend"):
 else:
     raise SystemExit("ABORT: want a .blend or a .vrm")
 
+# FACECAM_REST=1 clears the pose before rendering.
+#
+# A source file is usually POSED and a build is at rest, so a side-by-side of
+# the two answers "does the build match the author's pose", which is rarely the
+# question. "Does the build match the model's REST shape" is a different one and
+# it is the one that says whether the build is faithful -- and a glTF/VRM has no
+# pose at all, so the build can only ever be compared with a source at rest.
+if os.environ.get("FACECAM_REST") == "1":
+    for _o in bpy.data.objects:
+        if _o.type == "ARMATURE":
+            for _pb in _o.pose.bones:
+                _pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
+    print("POSE CLEARED: rendering the rest shape")
+
 # Hide the rig widgets: they are geometry and they would be in the shot.
 for o in bpy.data.objects:
     if o.name.startswith("WGT-") or o.name == "smd_bone_vis":
@@ -40,6 +60,50 @@ dg = bpy.context.evaluated_depsgraph_get()
 
 
 def centroid(sub):
+    """Centre of a material's geometry, or of a vertex GROUP's.
+
+    `group:NAME` frames on everything weighted to vertex groups matching NAME,
+    which is how to look at a hand: a hand is not a material, and framing on the
+    BONE instead fails on exactly the files worth comparing -- a Rigify source
+    carries a metarig as well as the rig, the metarig is not posed, and a camera
+    aimed at it looks at empty space beside the character.
+    """
+    if sub.lower().startswith("group:"):
+        want = sub.split(":", 1)[1].lower()
+        acc, n = Vector((0.0, 0.0, 0.0)), 0
+        for ob in bpy.data.objects:
+            if ob.type != "MESH" or ob.hide_render:
+                continue
+            gi = {g.index for g in ob.vertex_groups if want in g.name.lower()}
+            if not gi:
+                continue
+            # Vertex groups live on the BASE mesh and the character may be
+            # POSED, so read the indices from the base and the POSITIONS from
+            # the evaluated mesh. Framing on base coordinates aims the camera
+            # at where the hand would be at rest; on a posed source that is
+            # empty space, and the render comes back blank -- which looks
+            # exactly like "the hand is missing".
+            idx = [v.index for v in ob.data.vertices
+                   if any(g.group in gi and g.weight > 0.3 for g in v.groups)]
+            if not idx:
+                continue
+            saved = [(m, m.show_viewport) for m in ob.modifiers]
+            for m, _ in saved:
+                if m.type != "ARMATURE":
+                    m.show_viewport = False
+            ev = ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
+            me = ev.to_mesh()
+            src, mw = ((me.vertices, ev.matrix_world)
+                       if len(me.vertices) == len(ob.data.vertices)
+                       else (ob.data.vertices, ob.matrix_world))
+            for i in idx:
+                acc += mw @ src[i].co
+                n += 1
+            ev.to_mesh_clear()
+            for m, flag in saved:
+                m.show_viewport = flag
+            bpy.context.view_layer.update()
+        return (acc / n, n) if n else (None, 0)
     acc, n = Vector((0.0, 0.0, 0.0)), 0
     for ob in bpy.data.objects:
         if ob.type != "MESH" or ob.hide_render:
@@ -82,7 +146,8 @@ tgt, nt = centroid(MAT)
 if tgt is None:
     raise SystemExit("ABORT: no material matching %r" % MAT)
 print("CENTRE %-10s verts=%-6d at (%.4f,%.4f,%.4f)" % (MAT, nt, tgt.x, tgt.y, tgt.z))
-for other in ("body", "eye", "hair", "teeth"):
+for other in (() if MAT.lower().startswith("group:")
+              else ("body", "eye", "hair", "teeth")):
     c, n = centroid(other)
     if c is not None and other != MAT.lower():
         d = c - tgt
@@ -97,11 +162,15 @@ dist = SPAN * 2.4
 ang = math.radians(AZ)
 cam.location = tgt + Vector((math.sin(ang) * dist, -math.cos(ang) * dist, 0.02))
 cam.rotation_mode = "XYZ"
-cam.rotation_euler = (math.radians(90.0), 0.0, ang)
+elev = math.radians(EL)
+cam.rotation_euler = (math.radians(90.0) - elev, 0.0, ang)
 cam_d.lens = 50.0
 cam_d.sensor_width = 36.0
 # 50mm on a 36mm sensor: the frame is SPAN wide at `dist` when dist = SPAN*lens/sensor
-cam.location = tgt + Vector((math.sin(ang), -math.cos(ang), 0.0)) * (SPAN * 50.0 / 36.0)
+_dir = Vector((math.sin(ang) * math.cos(elev),
+               -math.cos(ang) * math.cos(elev),
+               math.sin(elev)))
+cam.location = tgt + _dir * (SPAN * 50.0 / 36.0)
 bpy.context.scene.camera = cam
 
 for i, (vec, e) in enumerate((((-1.0, -1.0, 0.6), 60.0), ((1.0, -0.8, 0.3), 30.0),

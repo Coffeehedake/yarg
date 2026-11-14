@@ -387,6 +387,32 @@ def trace(stage):
     # DATA is the base mesh through the object transform, which is what ships,
     # and EVAL is after modifiers and the pose. A stage that changes EVAL alone
     # has moved the POSE; one that changes DATA has rewritten the geometry.
+    # VRM_TRACE_BONE="<bone>,<reference bone>" follows one joint in another
+    # bone's REST frame at every stage, which is how to catch a stage that
+    # rewrites a rig rather than moving it. Gadget Hackwrench's fingers come out
+    # of the build dead straight while her source's rest fingers are curled, and
+    # an arm rotation cannot do that: expressed in the hand's own frame, a rigid
+    # rotation of the whole arm cancels out, so whatever is left is a change to
+    # the hand itself.
+    #
+    # Rest, not pose, on purpose. bone.matrix_local IS what a bind is expressed
+    # against, so a stage that rewrites it moves every vertex bound to that
+    # bone, and a pose-space reading would hide exactly that.
+    _tb = os.environ.get("VRM_TRACE_BONE")
+    if _tb and "," in _tb:
+        _bn, _rn = [x.strip() for x in _tb.split(",", 1)]
+        _b = arm.data.bones.get(_bn)
+        _r = arm.data.bones.get(_rn)
+        if _b is None or _r is None:
+            print("  BONE   %-22s %r or %r is not in the rig"
+                  % (stage, _bn, _rn))
+        else:
+            _v = _r.matrix_local.inverted() @ _b.head_local
+            print("  BONE   %-22s %s in %s's rest frame = (%+.4f,%+.4f,%+.4f)  "
+                  "parent=%s"
+                  % (stage, _bn, _rn, _v.x, _v.y, _v.z,
+                     _b.parent.name if _b.parent else "-"))
+
     _part = os.environ.get("VRM_TRACE_PART")
     if _part:
         _part = _part.strip().lower()
