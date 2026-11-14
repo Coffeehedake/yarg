@@ -2013,6 +2013,37 @@ Worth listing together, because the same shape kept recurring in one afternoon:
 A zero is only worth something next to a non-zero produced by the same code. Every table above has
 one.
 
+#### The exporter undercounted too, and only a both-directions check found it
+
+Comparing all 227 materials rather than the 34 the exporter flipped turned up two it was
+CULLING that an isolated render says are sheets: Alcina's `Material.007` (1.42% of its silhouette
+lost from behind) and `Material.013` (2.05%). Nothing that inspects only what a rule FIRED on can
+find what it missed.
+
+The cause is the same decal case that `sidedness.py` had: `Material.007` is 2,792 triangles in
+**482 separate 8-triangle flakes** which weld into a larger non-sheet piece, so by piece it
+measured 0.0%. `SheetShareByMaterial` now also measures each material's OWN faces as connected
+pieces and takes the better of the two, gated on the same decal-vs-patch test -- a piece counts
+only when its rim is still free in the WHOLE mesh, or Ariel's `Ears`, `Irises` and `Lips` come
+back as sheets and the per-submesh bug returns by another road.
+
+One thing the measurement forced: the 12-triangle floor had to move from per-piece to per-material
+TOTAL. These pieces are small by nature, and a per-piece minimum would have discarded all 482 of
+Alcina's flakes and rescued nothing.
+
+Verified by rebuilding four characters, three of them controls that had to not move:
+
+| | before | after | |
+|---|---|---|---|
+| Alcina `Material.007` | 0.0% | **79.0%** | fixed (`matgeom.py` predicted 78.7%) |
+| Alcina `Material.013` | 0.0% | **64.9%** | fixed (predicted 64.9%) |
+| Sayuri `Eyelashes` | 0.0% | 0.0% | control against over-reach -- 4 pieces at openness 0.00, fully closed, and the render loses nothing |
+| Ariel `Ears` / `Irises` / `Lips` | 0.0% | 0.0% | control: patches of a closed head, the per-submesh signature |
+| Alastor `Eyes.001` / `Head.001` | 100% / 0.0% | 100% / 0.0% | the hand-made answer, preserved |
+
+Alcina goes from 3 double-sided materials to 5, cull-only against her installed build, and the
+roster to 36 across 17 characters.
+
 #### Pair materials by what they USE, not by name and not by order
 
 Verifying those three needed a pairing that survives the rename, and the obvious two both fail:

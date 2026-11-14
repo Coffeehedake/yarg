@@ -99,6 +99,10 @@ public static class YargCharExporter
     {
         var area = new Dictionary<Material, double>();
         var sheet = new Dictionary<Material, double>();
+        // Second attribution, unioned with the first. The block further
+        // down says why one of them is not enough.
+        var ownArea = new Dictionary<Material, double>();
+        var ownSheet = new Dictionary<Material, double>();
 
         foreach (var r in root.GetComponentsInChildren<Renderer>(true))
         {
@@ -243,13 +247,141 @@ public static class YargCharExporter
                 area.TryGetValue(mat, out var ma); area[mat] = ma + faceArea[f];
                 if (sheetPiece[rt]) { sheet.TryGetValue(mat, out var ms); sheet[mat] = ms + faceArea[f]; }
             }
+
+            // ---- SECOND ATTRIBUTION: each material's OWN faces as pieces ----
+            //
+            // A DECAL lying on a solid is invisible to the pass above. Alcina's
+            // Material.007 is 2,792 triangles in 482 separate 8-triangle flakes
+            // which weld into a larger non-sheet piece, so it measured 0.0% and
+            // was culled -- and an isolated geometry-only render loses 1.42% of
+            // its silhouette from behind when culled, so it IS a sheet. On its
+            // own faces it measures 78.7%; Material.013 measures 64.9%.
+            //
+            // Own faces alone are NOT enough either: Ariel's Ears, Irises and
+            // Lips are patches of a CLOSED HEAD and look like open sheets when
+            // measured alone -- the exact bug this method was fixed for when it
+            // built pieces per submesh. So a piece counts here only when its rim
+            // is still free in the WHOLE mesh:
+            //
+            //   a DECAL lies ON a surface -- nothing else uses its edges
+            //   a PATCH is part of one    -- its rim is shared with the
+            //                                neighbouring material, so the
+            //                                surface is closed
+            //
+            // The floor applies to the material's TOTAL face count, not per
+            // piece: these pieces are small BY NATURE (8 triangles for Alcina's
+            // flakes) and a per-piece minimum of 12 would discard all 482 and
+            // rescue nothing.
+            //
+            // Sayuri's Eyelashes are the control against over-reaching: 808
+            // triangles in 4 pieces, every one at openness 0.00 -- fully closed,
+            // no boundary at all -- so this leaves them culled, which is what an
+            // isolated render says (0.00% lost in all three views).
+            var byMat = new Dictionary<Material, List<int>>();
+            for (int f = 0; f < faceCount; f++)
+            {
+                var m = faceMat[f];
+                if (m == null) continue;
+                if (!byMat.TryGetValue(m, out var fl)) byMat[m] = fl = new List<int>();
+                fl.Add(f);
+            }
+            foreach (var km in byMat)
+            {
+                var faces = km.Value;
+                int n = faces.Count;
+                if (n < MinPieceFaces) continue;
+                var par2 = new int[n];
+                for (int i = 0; i < n; i++) par2[i] = i;
+                int Find2(int x) { while (par2[x] != x) { par2[x] = par2[par2[x]]; x = par2[x]; } return x; }
+                var e2 = new Dictionary<long, List<int>>(n * 3);
+                for (int i = 0; i < n; i++)
+                {
+                    int f = faces[i];
+                    for (int e = 0; e < 3; e++)
+                    {
+                        int a = weld[faceTri[f * 3 + e]], b = weld[faceTri[f * 3 + (e + 1) % 3]];
+                        long key = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+                        if (!e2.TryGetValue(key, out var lst)) e2[key] = lst = new List<int>(2);
+                        lst.Add(i);
+                    }
+                }
+                foreach (var kv in e2)
+                    for (int k = 1; k < kv.Value.Count; k++)
+                    { int rx = Find2(kv.Value[0]), ry = Find2(kv.Value[k]); if (rx != ry) par2[rx] = ry; }
+
+                var a2 = new Dictionary<int, double>();
+                var c2 = new Dictionary<int, Vector3>();
+                for (int i = 0; i < n; i++)
+                {
+                    int f = faces[i], rt = Find2(i);
+                    Vector3 p0 = verts[faceTri[f * 3]], p1 = verts[faceTri[f * 3 + 1]], p2 = verts[faceTri[f * 3 + 2]];
+                    a2.TryGetValue(rt, out var aa); a2[rt] = aa + faceArea[f];
+                    c2.TryGetValue(rt, out var cc); c2[rt] = cc + (p0 + p1 + p2) / 3f * (float)faceArea[f];
+                }
+                foreach (var k in new List<int>(c2.Keys)) c2[k] = c2[k] / (float)Math.Max(a2[k], 1e-12);
+                var v2 = new Dictionary<int, double>();
+                for (int i = 0; i < n; i++)
+                {
+                    int f = faces[i], rt = Find2(i);
+                    var c = c2[rt];
+                    Vector3 p0 = verts[faceTri[f * 3]] - c, p1 = verts[faceTri[f * 3 + 1]] - c, p2 = verts[faceTri[f * 3 + 2]] - c;
+                    v2.TryGetValue(rt, out var vv); v2[rt] = vv + Vector3.Dot(p0, Vector3.Cross(p1, p2)) / 6.0;
+                }
+                var b2 = new Dictionary<int, double>();
+                var rim = new Dictionary<int, int>();
+                var freeRim = new Dictionary<int, int>();
+                foreach (var kv in e2)
+                {
+                    if (kv.Value.Count != 1) continue;
+                    int i = kv.Value[0], f = faces[i], rt = Find2(i);
+                    int ka = (int)(kv.Key >> 32), kb = (int)(kv.Key & 0xffffffffL);
+                    float len = 0f;
+                    for (int e = 0; e < 3; e++)
+                    {
+                        int va = weld[faceTri[f * 3 + e]], vb = weld[faceTri[f * 3 + (e + 1) % 3]];
+                        if ((va == ka && vb == kb) || (va == kb && vb == ka))
+                            len = (verts[faceTri[f * 3 + e]] - verts[faceTri[f * 3 + (e + 1) % 3]]).magnitude;
+                    }
+                    b2.TryGetValue(rt, out var bb); b2[rt] = bb + len;
+                    rim.TryGetValue(rt, out var rr); rim[rt] = rr + 1;
+                    if (edgeFaces.TryGetValue(kv.Key, out var whole) && whole.Count <= 1)
+                    { freeRim.TryGetValue(rt, out var ff); freeRim[rt] = ff + 1; }
+                }
+                double oa = 0, os = 0;
+                foreach (var kv in a2)
+                {
+                    double a = kv.Value;
+                    if (a <= 0) continue;
+                    b2.TryGetValue(kv.Key, out var bl);
+                    v2.TryGetValue(kv.Key, out var vol);
+                    rim.TryGetValue(kv.Key, out var rr);
+                    freeRim.TryGetValue(kv.Key, out var ff);
+                    double openness = bl / Math.Sqrt(a);
+                    double solidity = Math.Abs(vol) / Math.Pow(a, 1.5);
+                    bool decal = rr > 0 && ff >= rr * 0.5;
+                    oa += a;
+                    if (openness > OpenMin && solidity < SolidMin && decal) os += a;
+                }
+                if (oa > 0)
+                {
+                    ownArea.TryGetValue(km.Key, out var xa); ownArea[km.Key] = xa + oa;
+                    ownSheet.TryGetValue(km.Key, out var xs); ownSheet[km.Key] = xs + os;
+                }
+            }
         }
 
         var share = new Dictionary<Material, float>();
-        foreach (var kv in area)
+        var all = new HashSet<Material>(area.Keys);
+        all.UnionWith(ownArea.Keys);
+        foreach (var m in all)
         {
-            sheet.TryGetValue(kv.Key, out var s);
-            share[kv.Key] = (float)(s / Math.Max(kv.Value, 1e-12));
+            area.TryGetValue(m, out var pa);
+            sheet.TryGetValue(m, out var ps);
+            ownArea.TryGetValue(m, out var oa);
+            ownSheet.TryGetValue(m, out var os);
+            double byPiece = pa > 0 ? ps / pa : 0.0;
+            double byOwn = oa > 0 ? os / oa : 0.0;
+            share[m] = (float)Math.Max(byPiece, byOwn);
         }
         return share;
     }
