@@ -2168,6 +2168,7 @@ code -- the other 57 were written and correct.
 | Power Girl | mixamo | 1.80 | Injustice 2 rip, 417 bones, builds clean. Materials are called `mesh0`/`mesh1`, so pin them: `VRM_TEX="mesh0=Supergirl_A_Body_Color.png,mesh0.001=Supergirl_A_FACE_30hz_Color.png,mesh0.002=Supergirl_A_Cape_Color.png,mesh1=Supergirl_A__EyesMouth_Color.png,mesh2=Supergirl_A_Hair_Color.png"`. Her hair alpha has to be pinned too, for the same reason — add `,mesh2=Supergirl_A_Hair_Alpha.png:alpha`. She is the ONLY model of the 109 archives here whose opacity map does not name its own material, so she is the only one the narrowed alpha pick leaves without one |
 | Peacemaker | dcseries | 1.85 | exclude `^Peacemaker_obj_(BlueDeep\|RedGlow\|Silver_003)_0$` — a SECOND figure's helmet on a second skeleton, floating above his head. Left in, it is the tallest thing in the file and he scales to 1.51 m. Flat-colour model: its USDZ holds no images at all, so every material reading `-> NONE` is correct |
 | Vigilante | dcseries | 1.88 | same rig as Peacemaker, based at `n8` instead of `n115`. He arrives armed, and the two weapons CANNOT be excluded by mesh name: they share `Vigilante_obj_001_Pewter_002_0` with the sheath on his back and the holster on his hip. `VRM_DROP_ISLAND="Vigilante_obj_001_(Pewter_002\|Silver_003)=n17+n50"` takes the 540 vertices the two hand bones carry and leaves the 204 the spine and hips carry. Height, width and humanoid count are unchanged by it (`x1.0552`, 0.7075 m, 47/47) — the weapons never affected his proportions, which is why they survived the first build |
+| Kronk | **kronkusd** | 1.95 | `Kronk_Doing_the_Hokey_Pokey.usdz`, textures `extract/0`, exclude `^$` and spring `^$` — one mesh, one material, one 512x512 map, and nothing on him that should swing. **Do NOT pass `VRM_NO_TPOSE=1`**: he LOOKS T-posed and is not, and skipping it takes `bind_check.py` from 16 bones over threshold to 52, arms off by 62 deg and up to 962 mm. No shape keys at all, so he can never lipsync or blink. `n7` sits above the humanoid root carrying 171 vertices and its weight moves to the hips; `n8`/`n9`, probably his tunic flap, are re-parented there and are rigid by design |
 | Shaggy Rogers | shaggyusd | 1.83 | USDZ, 52/52 — the whole humanoid including toes and three-bone thumbs, and already in a T-pose. One 1.5 KB palette texture does the entire character |
 | Scott Hall | mixamo | 2.01 | the `.blend` in `source/`, not the fbx: a plain 65-bone Mixamo rig. exclude `^(Plane\|Scott Hall OGscale\|M_Jacket)$` — a joined duplicate of the whole body, a duplicate jacket and a backdrop. hairrig `Hall_Hair$`. His own file points the RIGHT elbow pad at the kneepad texture, so `VRM_TEX="Hall_Elbow-R=Hall_r_elbowpad_color.png,Hall_Elbow-R=Hall_r_elbowpad_roughness.png:rough"` |
 | Anakin Skywalker | anakin | 1.85 | a posed SCULPT — see the section above; needs `VRM_STANDUP=1 VRM_REBIND_STALE=1`. One leg's mesh still smears |
@@ -2200,6 +2201,36 @@ mixamo.com, and build with `rig=mixamo` and a `VRM_TEX` map built from the
 `contact_sheet.py <texdir> <out.png>` puts every texture in one labelled image,
 which is much cheaper than opening thirty files when an archive names them
 `_01` ... `_27`.
+
+### When there is no donor: reading a numbered rig off its own geometry
+
+`name_from_donor.py` needs a named `.fbx` of the same model, and Kronk's USDZ came with none. The
+numbered-rig families cannot help either -- `dcseries`/`shaggyusd` find the hips as "the parentless
+`nNNN` bone with three or more children", and Kronk's root `n6` has exactly ONE child, with his
+hips two levels below it.
+
+So his family is read off the geometry, and three measurements had to come first:
+
+- **THE FRAME WAS INVERTED.** His import maps USD +Y onto world -Z, so he hangs upside down in
+  world space: feet at z=+0.05, head at z=-2.70, HEIGHT is -z. Taken the other way up, the bone
+  nearest the "top" is the pelvis and every name after it is wrong.
+- **29 of his 87 bones are stubs**, zero-length tips parked on the root's own position. He has 58
+  vertex groups for 87 bones, and the 29 without one are exactly those. Weight mass per bone is
+  what separates a joint from a stub.
+- **SIDES ARE MEASURED.** His toes sit at greater world Y than his ankles on both legs, so he
+  faces +Y, and with up at -Z his LEFT is +X. That is the check that was missing when Judy shipped
+  criss-crossed, and `build_vrm.py` confirms it: "all 4 limb pairs are on the side their names
+  claim".
+
+The result maps hips `n11`, spine `n22`, chest `n23`, head `n24` (no neck -- the chest runs
+straight into it), and four bones per limb, giving humanoid 38/38 with zero readback mismatches.
+
+**`bind_check.py` needs a control to read.** Kronk comes back with 16 bones over threshold, which
+looks alarming until it is measured against anything else: Peach and Batman score **0**, and Judy
+Hopps -- installed, and the character whose stub fingers were explicitly fixed -- scores **34**,
+with the same `*_thumb_*_fused` bones at 43.3 deg that Kronk has at 45. That artefact belongs to
+the stub-finger step, which fires for any model whose fingers are two-bone chains; a model with
+real three-bone fingers scores zero. Kronk is better than the shipped baseline, not worse.
 
 ### A USD export with its bone names stripped
 

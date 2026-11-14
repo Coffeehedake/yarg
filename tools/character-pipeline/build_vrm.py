@@ -2355,6 +2355,53 @@ elif RIG == "judyusd":
         MAP["%s_lower_leg" % s_] = ll
         MAP["%s_foot" % s_] = ft
         MAP["%s_toes" % s_] = to
+elif RIG == "kronkusd":
+    # Another numbered USDZ rig, and it fits NONE of the families above -- the
+    # dcseries/shaggyusd finder wants a parentless 'nNNN' bone with three or
+    # more children as the hips, and Kronk's root 'n6' has exactly one. His
+    # hips are two levels down.
+    #
+    # 87 bones, of which 58 carry weight: the other 29 are zero-length tips all
+    # parked on the root's own position, so a bone with no vertex group here is
+    # a stub and not a joint.
+    #
+    # THE FRAME IS INVERTED. His import maps USD +Y onto world -Z, so he hangs
+    # upside down in world space: feet at z=+0.05, head at z=-2.70, and HEIGHT
+    # is -z. Every position below is read that way. Reading it the other way up
+    # maps the pelvis to the skull and everything after it is nonsense.
+    #
+    # SIDES ARE MEASURED, not assumed -- this is the trap that criss-crossed
+    # Judy's arms and legs. His toes sit at greater world Y than his ankles on
+    # both legs (n15 +0.072 against n14 -0.025; n20 +0.131 against n19 +0.021),
+    # so he faces +Y. With up at -Z that puts his LEFT at +X, which is the n12
+    # leg and the n67 arm. Check it with limb_check.py after building: it should
+    # answer 4 of 4 limb pairs mirrored.
+    #
+    # His fingers are three two-bone chains per hand where VRM wants three
+    # bones, so they are left unmapped, exactly as Judy's are: a finger mapped
+    # to the wrong joint is worse than no finger.
+    #
+    # He has no neck bone -- chest n23 carries straight into head n24, which is
+    # also the heaviest bone in the file (326 of the weight) and the parent of
+    # 18 face and hair stubs.
+    MAP = {"hips": "n11", "spine": "n22", "chest": "n23", "head": "n24"}
+    for s_, sh, ua, la, hd, ul, ll, ft, to in (
+            ("left", "n67", "n68", "n69", "n70", "n12", "n13", "n14", "n15"),
+            ("right", "n80", "n81", "n82", "n83", "n17", "n18", "n19", "n20")):
+        MAP["%s_shoulder" % s_] = sh
+        MAP["%s_upper_arm" % s_] = ua
+        MAP["%s_lower_arm" % s_] = la
+        MAP["%s_hand" % s_] = hd
+        MAP["%s_upper_leg" % s_] = ul
+        MAP["%s_lower_leg" % s_] = ll
+        MAP["%s_foot" % s_] = ft
+        MAP["%s_toes" % s_] = to
+    # Every name is checked to exist, so a file this does not fit aborts rather
+    # than mapping a leg to a finger -- the same guard the dcseries table has.
+    _missing = [b for b in MAP.values() if b not in arm.data.bones]
+    if _missing:
+        raise SystemExit("ABORT: rig 'kronkusd' does not fit this file -- missing %s"
+                         % ", ".join(sorted(_missing)))
 elif RIG in ("dcseries", "shaggyusd"):
     # More numbered bones, and this time they come in a family. The Peacemaker
     # and Vigilante rips are the SAME rig: identical tree, identical rest
