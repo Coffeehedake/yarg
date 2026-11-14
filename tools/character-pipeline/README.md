@@ -550,7 +550,39 @@ What is left, and why each is left:
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
 
-### The teeth are still in the wrong PLACE, and moving the bind earlier does not fix it
+### The teeth displacement is REAL and MEASURED, and its cause is still unknown
+
+Measured against her EYES, which is the comparison that works -- it needs no shared origin and no
+assumption about scale or facing:
+
+| | teeth below eyes | teeth IN FRONT of eyes |
+|---|---|---|
+| source, base mesh | 0.116 | **-0.011** (tucked inside the head) |
+| source, **Subsurf 2 evaluated** | 0.116 | **-0.012** |
+| every build of her | 0.160 | **-0.124**, eleven times further out |
+
+Her 188 teeth vertices are unweighted in the source, so the natural reading is that something
+moves the face while they stay put. **Three candidates were tested and all three are disproved:**
+
+| mechanism | test | result |
+|---|---|---|
+| the T-pose step | moved the stray binding to run before it | gap unchanged at -0.124 |
+| SUBDIVISION (her Body carries Subsurf level 2, 4,648 -> 90,000 verts) | measured the source with modifiers EVALUATED | -0.012, the same as the base mesh. Not the cause |
+| the pose bake | bound strays to their nearest weighted neighbour BEFORE `bake_pose_to_rest` | gap unchanged at -0.124 |
+
+None of those changes is in the tree. The displacement is somewhere else, and finding it wants
+`VRM_TRACE` or a per-stage measurement of this same eye-to-teeth offset through the build rather
+than another guess -- each of these three cost a full rebuild to disprove.
+
+**What IS fixed:** her teeth are driven by her mouth (`DEF-lip.T.L`, under `DEF-spine.006`)
+instead of by her left shoulder, so they no longer swing when her arms move. That was a real
+fault and it is gone. Where they SIT is a second fault that has not been found.
+
+**Compare against the eyes, not the floor.** Teeth-to-eye offset normalised nothing and needed no
+origin; the first measurement of this used absolute z against model height and read as a 9.09% ->
+12.42% vertical drop, which sent the search after the pose bake. The real signal is horizontal.
+
+
 
 Binding them to the mouth instead of the shoulder (below) fixed what MOVES them. It did not move
 them: isolating the `teeth` material and rendering it shows a plate hanging below her chin,
