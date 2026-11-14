@@ -4414,12 +4414,36 @@ if _hb:
         _loose = [_v.index for _v in _m.data.vertices if _v.index not in _have]
         if not _loose:
             continue
+        # ASK THE NEIGHBOURS, NOT THE SKELETON.
+        #
+        # Binding to the nearest humanoid bone HEAD put Gadget Hackwrench's 188
+        # unweighted TEETH vertices on DEF-shoulder.L, so her teeth hung at her
+        # collar instead of in her mouth. A shoulder bone's head sits near the
+        # base of the neck, which is closer to a mouth than a head bone whose
+        # head sits up inside the skull -- the measure was simply the wrong one.
+        #
+        # Stray geometry is almost always a part of something that IS weighted:
+        # teeth inside a mouth, a tongue, an eye. So take the weight of the
+        # nearest vertex in the same mesh that already has some. That is local,
+        # needs no idea of anatomy, and gets teeth onto whatever the mouth
+        # around them uses. Only when the mesh has no weighted vertex at all
+        # does it fall back to the nearest humanoid bone.
         _byb = {}
         _mw = _m.matrix_world
+        _anchor = [(_m.data.vertices[_i].co,
+                    max(((_g.weight, _m.vertex_groups[_g.group].name)
+                         for _g in _m.data.vertices[_i].groups if _g.weight > 0.0001),
+                        default=(0.0, None))[1])
+                   for _i in _have]
+        _anchor = [(c, n) for c, n in _anchor if n]
         for _i in _loose:
-            _co = _mw @ _m.data.vertices[_i].co
-            _near = min(_hb, key=lambda t: ((arm.matrix_world @ t[1]) - _co).length)
-            _byb.setdefault(_near[0], []).append(_i)
+            _lc = _m.data.vertices[_i].co
+            if _anchor:
+                _pick = min(_anchor, key=lambda t: (t[0] - _lc).length_squared)[1]
+            else:
+                _co = _mw @ _lc
+                _pick = min(_hb, key=lambda t: ((arm.matrix_world @ t[1]) - _co).length)[0]
+            _byb.setdefault(_pick, []).append(_i)
         for _bn, _vs in _byb.items():
             _vg = _m.vertex_groups.get(_bn) or _m.vertex_groups.new(name=_bn)
             _vg.add(_vs, 1.0, "REPLACE")
@@ -4441,7 +4465,8 @@ if _hb:
 if _strays:
     print("  stray geometry: %d mesh(es) carried vertices with no weight at "
           "all, which the exporter would have hung on a bone of its own that "
-          "never moves -- bound to the nearest humanoid bone: %s"
+          "never moves -- bound to whatever the nearest weighted neighbour "
+          "uses: %s"
           % (len(_strays), ", ".join("%s %d verts -> %s" % t for t in _strays[:6])))
 
 # ---------------------------------------------------------------- chest rig

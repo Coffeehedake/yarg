@@ -550,6 +550,36 @@ What is left, and why each is left:
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
 
+### Teeth at the collar: stray geometry must ask its NEIGHBOURS
+
+Gadget Hackwrench's teeth hung at her throat. The cause was in her build log all along:
+
+```
+stray geometry: ... bound to the nearest humanoid bone: Body 188 verts -> DEF-shoulder.L
+```
+
+188 unweighted vertices -- her teeth -- were bound to her LEFT SHOULDER. A shoulder bone's head
+sits at the base of the neck, which really is closer to a mouth than a head bone whose head sits
+up inside the skull, so "nearest humanoid bone" was not wrong in its arithmetic. It was the wrong
+question.
+
+Stray geometry is almost always part of something that IS weighted -- teeth inside a mouth, a
+tongue, an eye -- so it now takes the weight of the nearest vertex in the SAME MESH that already
+has some, and falls back to the nearest humanoid bone only when a mesh has no weighted vertex at
+all. Local, needs no anatomy, and gets teeth onto whatever the mouth around them uses:
+
+```
+Body 188 verts -> DEF-lip.T.L, Hair 4 verts -> HairSpring_0_0_3
+```
+
+`DEF-lip.T.L` ships, sits at z 0.819 against her head bone at 0.800, and is parented under
+`DEF-spine.006`. Her teeth ride with her mouth.
+
+**This is the same misjudgement as her ears**, in a different code path: an anatomical question
+answered with a distance between bone heads. The ear case is still open -- see above -- but it is
+worth noting the two together, because "nearest humanoid bone" appears in three places in this
+file and is suspect in all of them.
+
 ### RETRACTED: "a head sphere that swallowed the hair roots"
 
 The head-sphere change below was made, shipped and then REVERTED. It did not fix the splaying,
