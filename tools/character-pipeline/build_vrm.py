@@ -529,8 +529,16 @@ def _off_x(a_name, b_name, sx, pose):
     return _off_axis(_bone_line(a_name, b_name, pose), Vector((sx, 0.0, 0.0)))
 
 
-_keep_anim_pose = False
-if _had_anim:
+# VRM_KEEP_POSE=1 forces the decision below, the way VRM_NO_TPOSE and
+# VRM_KEEP_GRIP force theirs. The heuristic reads the rig against the UNRIGGED
+# meshes, so a character with nothing unrigged -- every mesh skinned or
+# bone-parented, which is most of a Rigify file -- gives it nothing to measure
+# and it declines by default. That is the right default and it is not always
+# the right answer, so there has to be a way to say otherwise per character.
+_keep_anim_pose = os.environ.get("VRM_KEEP_POSE") == "1"
+if _keep_anim_pose:
+    print("VRM_KEEP_POSE=1: keeping the file's pose and baking it into rest")
+if _had_anim and not _keep_anim_pose:
     bpy.context.view_layer.update()
     _ea = _early_arms()
     if len(_ea) == 2:

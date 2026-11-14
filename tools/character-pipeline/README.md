@@ -2586,6 +2586,123 @@ What it found, and what each is worth knowing:
   the metal one (a 1x1 black image) became his ROUGHNESS, so his robe shipped
   as a mirror. The short code at the END of the name breaks the tie.
 
+### Gadget Hackwrench's teeth, and three fixes that measured as nothing
+
+2026-11-14. No fix shipped. What shipped is a knob, three probes, and the
+retraction of a conclusion this file carried for a day. Written up at length
+because the wrong readings here were expensive and each of them looked right.
+
+**The symptom.** Her whole set of teeth hangs below her lip like a collar
+instead of sitting inside her mouth. `facecam.py` puts the source and the build
+side by side, framed on the same material at the same fraction of each
+character's own height:
+
+```
+blender --background --python facecam.py -- <source.blend> teeth src.png 0.16
+blender --background --python facecam.py -- <built.vrm>    teeth bld.png 0.16
+```
+
+**What is actually wrong, in numbers.** `partsize.py` reports each material's
+box as a percentage of character height, which is free of the build's rescale:
+
+| | teeth box (% of height) | teeth centre z | eye centre z |
+|---|---|---|---|
+| source | 8.10 / 8.94 / 5.35 | 59.1% | 68.3% |
+| build | 7.91 / 8.74 / 5.23 | 59.6% | 71.8% |
+
+So the teeth are **not oversized** and **not at the wrong height** -- both within
+half a percent. What moves is the gap between the teeth and the eyes, and it
+moves FORWARD: `-0.99%` of height in the source against `-9.55%` in the build.
+Eleven centimetres of it. In the source only a sliver of tooth shows between
+her lips and the rest is inside her head; in the build the whole band has come
+out through her face. Same geometry, same place vertically, pushed forward.
+
+`VRM_TRACE_OFFSET="teeth,eye"` puts the move between `after import` and
+`after CHILD_OF`, and nothing later touches it.
+
+**Three fixes, and what each measured.**
+
+1. **Bind the unweighted teeth before the pose moves.** In her source, 188 of
+   the Body mesh's 4,648 vertices carry no weight at all, and they are exactly
+   the 188 vertices of the `teeth` material. Everything that moves geometry in
+   this build does it by evaluating the armature modifier, and that never moves
+   an unweighted vertex -- so the reasoning was that her face travelled and her
+   teeth stayed. Binding them to the nearest weighted neighbour a thousand lines
+   earlier left the teeth **exactly where they already were**: same box, same
+   centre, same driving bones, same trace to four decimals. The .vrm is not
+   byte-identical -- it also reaches four stray vertices in her hair -- but on
+   the thing it was written for it measured as nothing. Reverted.
+
+   Worth knowing anyway: the pass near the END of the build already binds those
+   188 vertices, and `partbind.py` confirms all 3,522 of them come out weighted,
+   spread over `DEF-lip.T.L`, `DEF-nose.002/003`, `DEF-lip.T.R`, `DEF-lip.B.R`
+   and `DEF-chin.L`. They are rigged. They are in the wrong place.
+
+2. **Make `bake_pose_to_rest` test the EVALUATED pose.** It decides whether
+   there is a pose to bake by testing each bone's `matrix_basis` against
+   identity. A Rigify DEF bone has an identity basis and is bent by a Copy
+   Transforms constraint, so the test sees a rig at rest while the character is
+   in a full pose -- which is why asking to keep her pose aborted on the height
+   gate with a message about "a scale hiding in an object transform" when every
+   object scale in her file is 1.0. Comparing `pose_bone.matrix` against
+   `bone.matrix_local` does see it: 73 bones on the normal path, 628 with the
+   pose kept. The build it produced on the normal path was **again identical**,
+   and with the pose kept it **still aborted** -- because the constraints are
+   still live, so every bake is undone the moment the depsgraph re-evaluates.
+   Baking has to happen after the constraint bake-and-remove, which is 1,400
+   lines further down. Reverted; it changes the default build of every
+   constraint-driven rig in the roster, which is most of it, for no measured
+   gain.
+
+3. **Keep her pose.** `VRM_KEEP_POSE=1` is now wired, and this is the one thing
+   that shipped. It had been used as a probe before and had never been
+   connected, so a run that passed it **silently took the normal path** and its
+   result was read as "keeping the pose changes nothing". With it connected the
+   teeth-to-eye gap closes from `-0.1211` to `-0.0973`, about a fifth of the
+   way back to the source's `-0.0123`, and the build still aborts on the height
+   gate for the reason in (2). Opt-in, and the default is unchanged **by
+   measurement**, not by inspection: with the knob unset her build comes out
+   byte-identical to the one from before the change.
+
+**The retraction.** This file said the pose reset displaced her teeth. It does
+not displace them: they end up within half a percent of their source height and
+at their source size, and binding them before the reset changes nothing. What
+the reset does is move everything ELSE -- including her eyes, which are
+bone-parented to `MCH-eye.L/R` and so follow a control bone whose basis is
+cleared. A teeth-to-eye measurement cannot tell those two apart, and that is
+how a reference chosen for being rigidly related to the teeth turned out not to
+be.
+
+**Three traps worth not falling into again**, all of them hit in one session:
+
+- **A centroid of one material against a centroid of another is not a
+  measurement** when the two files have different topology. The build subdivides
+  -- 188 teeth vertices become 3,522 and 642 lip vertices become 14,030 -- and a
+  centroid of a non-uniform cluster moves when you subdivide it. Three
+  comparisons built on this each said something different, and one of them said
+  the build was BETTER than the source. Use a box, not a centroid: a box shifts
+  by a few percent under subdivision, not by a factor.
+- **A fixed world-space camera span is not a like-for-like picture.** Framing
+  both files 0.20 m wide made the build's teeth look three times too big, which
+  is a specific and plausible fault -- geometry left out of the rescale -- and
+  the file does not contain it. `facecam.py` now frames on a fraction of each
+  character's own measured height.
+- **A VRM renders black in EEVEE.** MToon materials need the addon's own shading
+  setup, and a black frame and "the part is not where I am looking" are the same
+  picture. `facecam.py` renders with Workbench, which shades raw geometry and
+  cannot go black; the question is position, not shading.
+
+**The probes.** `facecam.py <file> <material> <out.png> [span-as-fraction-of-height]
+[azimuth]` frames a render on a material and prints its centre; `partsize.py
+<file> [material ...]` gives each material's box as a percentage of height;
+`partbind.py <file.vrm> [material]` says which bones actually drive it and how
+many of its vertices carry no weight at all.
+
+**What is still open.** Why the teeth come forward 8.6% of height at the pose
+reset while measuring as unmoved in absolute terms. The next thing to try is
+not another fix: it is `partsize.py` on the Body material alone at each trace
+stage, to see whether the FACE moves back rather than the teeth moving forward.
+
 ### Straighten an arm JOINT BY JOINT
 
 The T-pose correction used to rotate only the upper arm until the HAND sat on
