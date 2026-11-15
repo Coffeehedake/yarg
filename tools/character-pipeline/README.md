@@ -3216,6 +3216,128 @@ pipeline has drifted, plus The Rock and The Mandalorian. The eleven with a
 `.preexportpose` backup in `character-backups/` are exactly the eleven that
 ship one, which is the cheapest way to ask.
 
+### Gadget Hackwrench's ears hung off her elbows, 2026-11-15: nearness is a property of the pose
+
+Her ears were reported wrong three times before anything measured them. The
+answer was not in the ear geometry, which is correct in the shipped file to
+within a per-cent of its source, and not in her weights. It was one line of
+this script choosing the wrong parent.
+
+Her DEF-ear chain hangs off rigify CONTROL bones, which do not deform, so all
+five ear joints per side are orphans by the test above: deform bones outside
+the humanoid hierarchy that nothing would ever move. The orphan rescue adopts
+each to the nearest humanoid bone --
+
+    _near = min(_cand, key=lambda t: (t[1] - _eb.head).length)
+
+-- and for the two outer joints it chose `DEF-forearm.L/R`. In game her ears
+followed her elbows.
+
+**It chose the elbow because it was asked after the T-pose bake.** The log
+ordering is the whole finding:
+
+    1364  T-pose: left upper arm 0.0 deg off X, forearm 0.0 deg
+    1366  T-pose bake: 'Body' has 152 groups, 4648/4648 verts weighted
+    1378  orphan bones: 85 deform bone(s) ... re-parented 85
+
+By line 1378 her arms have been swung out horizontal to shoulder height and
+written into the rest pose, so her forearm sits up beside her head -- and for
+the two ear joints that point up and OUT, it is genuinely the closest humanoid
+bone there is. The rule did exactly what it says. It measured in a pose this
+pipeline had put her into, not the one she was modelled in. The three inner
+joints are far enough inboard that the head still wins, which is why only
+`.003` and `.004` went astray and why the fault looked like a geometry problem
+rather than a parenting one.
+
+**The wrong reasoning that nearly closed this off.** The proximity hypothesis
+was raised and then dismissed, on a measurement: in her SOURCE rest pose the
+head bone is 0.447 away from `DEF-ear.L.003` and the forearm 0.525, so the rule
+"could not" have picked the forearm. The measurement was right and the
+conclusion was wrong, because **nearness between two body parts is not a
+property of the character -- it is a property of the pose.** Measuring it in
+the authored pose says nothing about what the rule saw.
+
+The fix is to measure in the authored pose on purpose. `_REST_HEADS` snapshots
+`head_local` for every bone at the top of the T-pose section, before anything
+in it moves a bone, and the rescue uses those positions for both the orphan and
+the humanoid candidates. Re-parenting is deformation-neutral and the bone keeps
+its position either way, so this changes only the CHOICE of parent.
+
+Measured against the build that reproduced the shipped fault, same arguments,
+one line different:
+
+| | shipped build | fixed build | her source |
+|---|---|---|---|
+| `DEF-ear.L.003` parent | `DEF-forearm.L` | `DEF-spine.006` | -- |
+| `DEF-ear.L.003` world x | **-0.416** | **+0.284** | +0.279 |
+| `DEF-ear.L.004` world x | -0.284 | +0.261 | +0.257 |
+| ear.L chain steps, % of hips->head | 31.78 / 32.09 / **178.02** / 35.18 | 31.78 / 32.09 / **20.56** / 35.18 | even |
+
+Four of 183 nodes changed parent, the same four moved, and nothing else in the
+file did: 6 materials, 3 texture names, 183 node names, 20 spring joints, 10
+colliders and 18 expressions are identical either side. The 178% step -- a gap
+five times longer than any other joint in the chain -- is what an ear stretched
+to an elbow looks like in one number, and it is the measurement to reach for
+when an appendage is reported "wrong" with no further detail.
+
+`VRM_KEEP_ORPHANS=1` is **not** the fix, though it is a good control: it
+collapses the gap to 20.56% too, because it leaves the ear bones parented to
+`root` where nothing moves them at all. That is the problem the rescue exists to
+solve, traded for a different one.
+
+#### The rule now reports when the pose changed its answer
+
+One build per character is enough to tell whether this moved anybody who was
+already right, because the rescue computes both choices and logs the
+disagreements:
+
+    orphan bones: 4 of them would have been adopted by a DIFFERENT bone had this
+    measured the baked pose instead of the authored one -- DEF-ear.L.003
+    (DEF-forearm.L not DEF-spine.006), ...
+
+Every line it prints is a bone the old rule got wrong. It is the line to read
+first when a part comes out attached to the wrong body part, and it makes the
+control and the treatment come out of the same run instead of two.
+
+`VRM_TRACE_ORPHANS=1` prints all of the assignments rather than the first eight;
+85 of them is a wall of text in the normal log, but eight cannot show a choice.
+
+Run over the other characters the orphan rescue actually does work on, that line
+says the change is surgical:
+
+| character | orphan bones | adopted | choices the pose changed |
+|---|---|---|---|
+| Gadget Hackwrench | 85 | 85 | **4** |
+| Lola Bunny | 120 | 118 | 0 |
+| Judy Hopps | 2 | 1 | 0 |
+| Ariel / Heels / Joker | 0 | 0 | -- |
+
+**119 adoption decisions on other characters, none of them changed.** Ariel,
+Heels and Joker have no orphans left at all, so they are null controls and say
+nothing either way -- which is worth stating, because the first run of this
+sweep reported "nothing changed" for four of the five and every one of those
+four had **failed to build**: `blender -b <model>` opens its argument as a
+`.blend`, and `build_vrm.py` imports the model itself off the extension, so
+every `.fbx`/`.glb`/`.usdz` died at "File format is not supported" before a line
+of the build ran. A sweep must assert that the work happened, not just that the
+count came back zero.
+
+#### Two things worth knowing about her source, and about what is still wrong
+
+Her rig is damaged independently of anything here. `ear.L.001` is **missing from
+the `rig` armature**, and rigify's Damped Track and Stretch To constraints on
+`DEF-ear.L` that reference it fail to resolve on load:
+
+    Could not find op_from: OperationKey(type: BONE, component name: 'ear.L.001', ...)
+
+That is why the DEF-ear chain is orphaned rather than self-parenting, and it is
+in the file as downloaded.
+
+And this file still has **two other proximity searches that measure in the baked
+pose** -- the non-deform weight rebind, and the stray-mesh bind. Neither fires
+on Gadget, so neither was changed here and neither is measured. They are the
+first place to look if another part lands on the wrong bone.
+
 ### A build log carries the VRM add-on's own guesses, and they are not ours
 
 The same session nearly reported a catastrophe. Gadget's build log contains:

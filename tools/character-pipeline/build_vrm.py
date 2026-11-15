@@ -3344,6 +3344,27 @@ if _hips and _hips in bone_names:
 # hand shared an X of 0.1030 (arms straight down) and her arms inverted, while
 # the Xenomorph and Prix -- both of which looked right -- run from shoulder to
 # wrist along X.
+
+# Remember where the author actually put every bone, BEFORE this section moves
+# any of them.
+#
+# Everything from here to the bake below is the pipeline's own doing: the arms
+# swing out onto X, the legs straighten, and `armature_apply` writes all of it
+# into the rest pose. After that, `head_local` no longer describes the pose the
+# character was modelled in -- it describes the pose we put it in.
+#
+# That matters for any later step that asks "which bone is nearest", because
+# nearness between two body parts is not a property of the character, it is a
+# property of the pose. Gadget Hackwrench's ears point up and out; with her arms
+# down they sit beside her head, and with her arms baked out horizontally her
+# forearm is nearer to the ear tips than her head bone is. The orphan rescue
+# further down asked that question after the bake and duly adopted her two outer
+# ear joints onto DEF-forearm.L/R, which dragged the ears out to x -0.436 where
+# the source has +0.279: in game her ears hung off her elbows.
+#
+# So snapshot the authored rest pose here and let that step measure in it.
+_REST_HEADS = dict((_b.name, _b.head_local.copy()) for _b in arm.data.bones)
+
 # ---------------------------------------------------------------- facing
 # Everything downstream assumes the character faces -Y: the T-pose swings the
 # arms onto the X axis, and VRM itself requires the model to face forward. A
@@ -4622,6 +4643,14 @@ if _nd_no:
 # Re-parent each orphan to the nearest humanoid bone, keeping its world
 # position, so the geometry rides the body instead of being left behind.
 # VRM_KEEP_ORPHANS=1 leaves them alone.
+#
+# "Nearest" is measured in the AUTHORED rest pose, not the one this build baked.
+# See _REST_HEADS above for what that cost when it was not: the T-pose bake puts
+# the forearm up beside the head, and Gadget Hackwrench's outer ear joints were
+# adopted onto her elbow because at that moment it genuinely was the closest
+# humanoid bone. Re-parenting is deformation-neutral and the bone keeps its
+# position either way, so this changes only the CHOICE of parent -- which is
+# the whole fault.
 _driven = set()
 for _n in MAP.values():
     if _n in bone_names:
@@ -4640,8 +4669,21 @@ for _m in meshes:
 _orphans = sorted(n for n in _deform_now
                   if n and n in bone_names and n not in _driven)
 if _orphans and not os.environ.get("VRM_KEEP_ORPHANS"):
-    _hum_bones = [(_n, arm.data.bones[_n].head_local) for _n in MAP.values()
-                  if _n in bone_names]
+    _authored = globals().get("_REST_HEADS") or {}
+
+    def _authored_head(_bn, _fallback):
+        """Where the AUTHOR put this bone, falling back to where it is now."""
+        return _authored.get(_bn, _fallback)
+
+    _hum_bones = [(_n, _authored_head(_n, arm.data.bones[_n].head_local))
+                  for _n in MAP.values() if _n in bone_names]
+    # The same list measured in the pose this build baked, kept ONLY so the log
+    # can say where the two disagree. Every disagreement is a bone the old rule
+    # got wrong, so this is the line to read when an appendage comes out
+    # attached to the wrong body part.
+    _hum_baked = dict((_n, arm.data.bones[_n].head_local.copy())
+                      for _n in MAP.values() if _n in bone_names)
+    _repose = []
     if _hum_bones:
         # An orphan ABOVE the humanoid root is a different animal, and the
         # first cut of this got it wrong in the most direct way possible.
@@ -4698,7 +4740,12 @@ if _orphans and not os.environ.get("VRM_KEEP_ORPHANS"):
             _cand = [t for t in _hum_bones if t[0] not in _below and t[0] != _n]
             if not _cand:
                 continue
-            _near = min(_cand, key=lambda t: (t[1] - _eb.head).length)
+            _oh = _authored_head(_n, _eb.head)
+            _near = min(_cand, key=lambda t: (t[1] - _oh).length)
+            _was = min((t[0] for t in _cand),
+                       key=lambda bn: (_hum_baked[bn] - _eb.head).length)
+            if _was != _near[0]:
+                _repose.append((_n, _was, _near[0]))
             _tb = arm.data.edit_bones.get(_near[0])
             if _tb is None or _tb == _eb:
                 continue
@@ -4722,11 +4769,22 @@ if _orphans and not os.environ.get("VRM_KEEP_ORPHANS"):
         bpy.ops.object.mode_set(mode="OBJECT")
         bpy.context.view_layer.update()
         if _orphans:
+            # The summary shows eight because 85 of them is a wall of text, but
+            # the choice of parent is exactly what went wrong on Gadget and
+            # eight lines cannot show that. VRM_TRACE_ORPHANS=1 prints the lot,
+            # which is how the before/after of this rule gets compared.
+            _cap = len(_moved) if os.environ.get("VRM_TRACE_ORPHANS") else 8
             print("  orphan bones: %d deform bone(s) sat outside the humanoid "
                   "hierarchy, so nothing would ever have moved them -- "
                   "re-parented %d: %s"
                   % (len(_orphans), len(_moved),
-                     ", ".join("%s->%s" % t for t in _moved[:8])))
+                     ", ".join("%s->%s" % t for t in _moved[:_cap])))
+        if _repose:
+            print("  orphan bones: %d of them would have been adopted by a "
+                  "DIFFERENT bone had this measured the baked pose instead of "
+                  "the authored one -- %s"
+                  % (len(_repose), ", ".join("%s (%s not %s)" % t
+                                             for t in _repose[:12])))
 elif _orphans:
     print("  orphan bones: %d outside the humanoid hierarchy, left alone by "
           "VRM_KEEP_ORPHANS: %s" % (len(_orphans), ", ".join(_orphans[:8])))
