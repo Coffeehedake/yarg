@@ -3210,8 +3210,11 @@ right, and is now 4.2 on both. Alice Ivy moves 8 hand bones plus four leg bones
 at 1.4 and 1.2 degrees, which is the add-on's leg straightening going away and
 the same effect the eight shipped with on 2026-11-14.
 
-That is **ten of the roster on a rest-pose build**, and thirteen still held: the
-eleven whose pipeline has drifted, plus The Rock and The Mandalorian.
+That is **eleven of the roster on a rest-pose build** -- Gadget Hackwrench, the
+eight of 2026-11-14, and these two -- and thirteen still held: the eleven whose
+pipeline has drifted, plus The Rock and The Mandalorian. The eleven with a
+`.preexportpose` backup in `character-backups/` are exactly the eleven that
+ship one, which is the cheapest way to ask.
 
 ### A build log carries the VRM add-on's own guesses, and they are not ours
 
