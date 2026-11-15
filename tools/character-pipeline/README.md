@@ -495,7 +495,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Batman | every texture misplaced | **does not reproduce.** He has exactly one base colour map, so no pairing can be wrong; his rebuild is identical to the installed build to the triangle (18,818) and renders correctly — grey suit, black cowl and cape, bat symbol, gold belt. His metal/rough both take the ORM atlas, which is what glTF wants (G rough, B metal). Needs re-checking in game before more is spent on it |
 | Gadget Hackwrench | head and hair dragged off the body | **FIXED 2026-11-13, and the cause was none of the three things it was blamed on.** Her `hips` was mapped to a bone literally called `root` at **0.6% of her height**, because her thighs hang off the armature root rather than her pelvis, so the root is the only bone satisfying "the junction of a spine and two legs". Unity then pivots the whole body about a floor-level hips, whipping the head, and her hair springs turn that into a spike. Also true, and separate: her eyes are bone-parented to `MCH-eye.L/R`, which the export drops because they do not deform |
 | Joker | a pistol orbiting him; parts of the suit unrigged | **both fixed.** The pistol is 262 verts on a bone called `Gun_joker`, inside his one mesh with his one material: `VRM_DROP_ISLAND="Joker=Gun_joker"`. The suit was the orphan-bone case |
-| Peach | eyes missing; dress springs so reactive her legs clip through it | **BOTH FIXED 2026-11-11, and neither was what the report implied.** The eyes are the alpha fault: her eye is a STACK of meshes from a Smash rip -- `Peach_eye` is a blank white sclera with no iris, `Peach_Blink_Ottotto` is the iris and `Peach_Blink_VoiceA` is the eyelid-and-lash plate that fills a rectangular hole in `Peach_faceN` -- and all three shipped `OPAQUE`, so the top layer drew as a solid plate. The skirt is NOT too reactive: her skirt chains are stiffer and more damped than her hair's (0.85/0.80 against 0.60/0.45). They are UNGUARDED -- eight of her nine chains hang around her thighs and she had two colliders, both on her torso. See below |
+| Peach | eyes missing; dress springs so reactive her legs clip through it | **BOTH FIXED 2026-11-11, and neither was what the report implied.** The eyes are the alpha fault: her eye is a STACK of meshes from a Smash rip -- `Peach_eye` is a blank white sclera with no iris, `Peach_Blink_Ottotto` is the iris and `Peach_Blink_VoiceA` is the eyelid-and-lash plate that fills a rectangular hole in `Peach_faceN` -- and all three shipped `OPAQUE`, so the top layer drew as a solid plate. The skirt is NOT too reactive: her skirt chains are stiffer and more damped than her hair's (0.85/0.80 against 0.60/0.45). They are UNGUARDED -- eight of her nine chains hang around her thighs and she had two colliders, both on her torso. See below. **~~BOTH FIXED~~ — REOPENED 2026-11-15 and fixed again, and "BOTH FIXED" is what let it happen.** Reported a second time, for clipping legs AND a dress moving as one piece. Two causes: her skirt was damped to near-rigidity by the 0.85/0.80 cloth default, which had itself been set in answer to the *first* Peach report before that report's cause was withdrawn; and the limb capsules fitted on 2026-11-11 use the MEDIAN flesh radius, so half of every limb sits outside its own collider and her calf reaches 24 mm past the only thing her hem can feel. See "Peach's dress, 2026-11-15" |
 | Link | eye textures misplaced; still holding the master sword and shield | **both fixed.** His rig has bones named `Sword` and `Shield`, so `VRM_DROP_ISLAND="LinkEquipment=Sword+Shield"` takes 41 islands and leaves `Fourreau`, his scabbard, on his back. His eye material `Material.003` was taking the body atlas while `Eye.png` sat unused beside it |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and ~~finger bones that are mapped but not weighted~~ **corrected 2026-11-11 by `bundle_audit.py`: he has ZERO finger bones in his humanoid map**, and 21 humanoid bones in total against a typical 52. The symptom was right, the stated cause was wrong |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
@@ -555,6 +555,127 @@ What is left, and why each is left:
 
 Installed total after that: **53 of 391 across 7 characters**, and every one of the seven is in
 one of the three rows above.
+
+### Peach's dress, 2026-11-15: both halves were a remedy that outlived its reason
+
+She was reported again, four days after being closed. The report this time was **clipping through
+her legs AND moving as one piece** — and "one piece" is the opposite of the symptom the first
+report described. Both halves turned out to be pipeline defaults still in place after the
+reasoning behind them had been withdrawn, and one of them was put there *by* the first Peach
+report.
+
+**Fault A — the skirt barely moves.** `build_vrm.py` gives a cloth-named chain 0.85 stiffness and
+0.80 drag against hair's 0.60/0.45, uniform across all five joints. The comment on that line said
+why: *"Peach's dress is rigged and reported as so reactive that her legs pass through it"*. On
+2026-11-11 that reactivity was measured and was not the cause at all — her skirt chains had **no
+collider on any leg**, so the legs passed through cloth that was barely moving. The colliders were
+fixed, the entry in the table above was marked **BOTH FIXED**, and the stiffening stayed. Same
+character, four days, opposite symptom.
+
+The replacement is not a better guess. The six downloaded VRoid bundles in the installed folder
+were parameterised by their own authors and are not ours, so they are a control:
+
+| whose | kind | stiffness | drag |
+|---|---|---|---|
+| Harq Alkahana, both Hatsune Mikus, Inforder Trogen | skirt | **0.50** | **0.05** |
+| Adachi Rei | skirt | 2.00–4.00 | 0.40 |
+| all six | hair | 0.26–0.40 | 0.40–0.50 |
+| ours | hair | 0.60 | 0.45 |
+| **ours** | **cloth** | **0.85** | **0.80** |
+
+Drag 0.80 is **above every authored value in the set**, for cloth or hair, and sixteen times what
+four independent authors give a skirt. And the direction is wrong, not just the magnitude: the
+authors damp a skirt *less* than hair, because a hanging panel is restrained by its restoring
+force and damping is what stops it moving at all. Stiffness 0.85 is unremarkable by comparison and
+was never the outlier. `VRM_CLOTH_PARAMS` now defaults to `0.5,0.05,0.0`.
+
+**One false lead, recorded because it was convincing.** Collapsing each authored chain to its set
+of distinct settings showed *two* per skirt, which read as a graded chain — stiff at the waist,
+loose at the hem — and would have been a much more interesting finding. Printing them in chain
+order killed it: the second setting is `1.00/0.50` on the **last** joint of every chain, hair and
+cloth alike. A VRM joint rotates the bone *before* it, so the final joint only marks the tip and
+its parameters are never simulated. The authored chains are uniform, like ours. A set is not a
+sequence, and the question was entirely about order.
+
+**Fault B — the legs pass through the hem anyway.** `vrm_colliders.fit` sizes a collider at the
+**median** distance of the flesh its bone carries. That rule is right where it was written —
+a hair collider on a scalp, where a sphere enclosing the nose and chin holds the hair visibly off
+the head — and the limb capsules added on 2026-11-11 inherited it. On a limb the requirement is
+the opposite. A VRM spring joint is deflected by a collider and by nothing else, so **the capsule
+IS the leg** as far as a skirt is concerned, and a median radius leaves half the leg outside it by
+construction.
+
+Measured off her shipped bundle, by decoding the vertex buffers and attributing each vertex to the
+bone that dominates it. Her radius equals the 50th percentile to three decimals on **all eight
+limbs** — the rule, read back out of the file it built:
+
+| limb | capsule | p50 | p90 | max | outside the capsule |
+|---|---|---|---|---|---|
+| upper leg | 0.061 | 0.061 | 0.081 | 0.085 | 49%, worst by 24 mm |
+| lower leg | 0.039 | 0.039 | 0.064 | 0.080 | 50%, worst by **41 mm** |
+| upper arm | 0.053 | 0.053 | 0.095 | 0.109 | 50%, worst by **57 mm** |
+| forearm | 0.032 | 0.034 | 0.040 | 0.042 | 75%, worst by 10 mm |
+
+Her calf reaches 0.080 from the bone axis and its capsule stops at 0.039, so a hem resting on that
+capsule sits 20 mm inside the skin. No spring parameter can fix that.
+
+`VRM_LIMB_PCT` now defaults to **0.90** for the limbs; the head and torso keep the median. p90
+rather than the maximum, and the first reason is weaker than it looked. A spring joint is a sphere
+of `hit_radius` 0.02, so the capsule only has to come within 0.02 of the furthest vertex — and
+swept over all 65 installed bundles, p90 + 0.02 does that on **314 of 469 limbs**, Peach's eight
+among them. Not on all of them: **155 fall short**, so this is an improvement on the median and
+not a guarantee.
+
+The second reason is why the shortfall is tolerable and why chasing the maximum would be worse.
+The vertices attributed to a leg bone are not all flesh — a gown skinned to the legs counts too.
+**Alcina Dimitrescu's lower leg has its furthest vertex at 0.401 against a 0.123 p90, because that
+vertex is her dress.** A capsule drawn to enclose it would wrap the very cloth the capsule exists
+to deflect, and eject it. A fixed percentile cannot chase that; a max-seeking one would.
+
+The clearance guard is unchanged and still has the final word. On the installed set it would newly
+fire on 14 limbs across five of our own characters — Chibi Rem, Jinx, Power Girl, Sayuri and Yoda
+— which is the guard working, not a regression. Peach is not among them: her nearest skirt joint
+is 0.114 from the thigh axis against an 0.081 p90.
+
+**She was PATCHED, not rebuilt, and the reason is a measurement.** Her recorded recipe does not
+reproduce her. The rebuild from `source/model.fbx`, 1.70 m, `smash`, with her cutout materials,
+matches the installed bundle on 173 bones with **63 rotation mismatches**, and adding
+`VRM_EXPORT_POSE=rest` makes it worse at 71. So rebuilding her would have shipped a pose change
+nobody asked for alongside the spring fix — which is exactly the mistake Miku's rebuild made
+earlier the same day. Her real arguments are still unknown and she joins the characters with
+drifted recipes.
+
+`patch_springs.py` does both fixes to an installed bundle instead, which also reaches the 35
+characters with no source file left on this machine. What it changed in her:
+
+```
+cloth: 8 chain(s), 40 joint(s) -> stiffness 0.50, drag 0.05, gravity 0.00  (from 0.85/0.80)
+limbs: LeftUpperArm   _15_-_LShoulderJ   0.053 -> 0.095 (+42.1 mm)
+       LeftUpperLeg   _04_-_LLegJ        0.061 -> 0.081 (+19.8 mm)
+       LeftLowerLeg   _05_-_LKneeJ       0.039 -> 0.064 (+25.2 mm)
+       LeftLowerArm   _16_-_LArmJ        0.032 -> 0.040 ( +7.4 mm)   (and the four mirrors)
+       2 collider(s) left alone -- the head sphere and the hip capsule
+read-back: 545 object(s) readable, 48 changed (expected 48), 0 gone, 0 added
+```
+
+Verified four ways. The patcher's own read-back fingerprints **every** object's full typetree
+before and after, and a Mesh's typetree carries its vertex buffer bytes, so the geometry is
+byte-compared and identical: 48 of 545 objects differ and they are the 40 joints and 8 colliders.
+`verify_rebuild.py` against the installed file: **CULL-ONLY, DIFFERS BEYOND CULL 0** — type counts,
+material state, texture names and the whole rig unchanged. `texdims.py` the same 10 textures at the
+same dimensions, `bundle_audit.py` the same 6 clips / 51 humanoid / 30 fingers / 16 meshes,
+`viseme_audit.py` the same (none, as before — she has never had any). The file is **68 KB smaller**,
+entirely from re-deflating the container; nothing any of those tools can read differs.
+
+The limb radii are also a genuine cross-check, because two independent implementations produced
+them. The Blender fit wrote 0.081 / 0.064 / 0.095 / 0.038 and the bundle patcher 0.081 / 0.064 /
+0.095 / 0.040 — three identical and the fourth 2 mm apart, because the build attributes vertices by
+bone *subtree* and the patcher by *dominant weight*.
+
+**What is still wrong.** Five other characters carry the old 0.85/0.80 cloth — **Batman, Chibi
+Rem, Link, Power Girl and Yoda** — and every character built before today carries median limb
+capsules. `patch_springs.py --cloth --limbs` is the tool for all of them and none of them has been
+done. And nothing here has been seen in game: Peach is verified file-side only.
 
 ### FOUND, exactly: the POSE RESET, and her authored pose is her shape
 
@@ -1665,6 +1786,18 @@ right.
   round trip that produces the `.vrm` changes 60 bone orientations on a character whose rig
   matches his bundle exactly. The state is COPIED from a real cutout (Heels' `Heels_17`),
   not invented, and it reads the file back to prove only the named material changed
+- `patch_springs.py <yargchar> [--cloth] [--limbs] [--out X] [--dry-run]` — fixes the spring
+  simulation IN THE INSTALLED BUNDLE, two independent defects, either or both. `--cloth`
+  re-parameterises every cloth-named chain to the authored reference 0.50/0.05/0.00 (the old
+  0.85/0.80 damps a skirt into near-rigidity and is above every value in any author-made bundle
+  here); `--limbs` re-radiuses the arm and leg capsules from the median flesh distance to the
+  90th percentile, because a median leaves half of every limb outside its own collider and a
+  VRM spring joint is deflected by a collider and by nothing else. Both carry the clearance
+  guard — a collider that CONTAINS a joint ejects it, which is what ballooned Gadget's hair —
+  and both skip the chain's anchor joint, as `vrm_colliders.fit` does. Its read-back
+  fingerprints every object's full typetree, so an unintended change cannot hide and a failed
+  check writes nothing at all. For the 35 characters with no source left, and for the ones like
+  Peach whose recorded recipe no longer reproduces them
 - `uv_alpha.py <vrm...>` — what would ACTUALLY disappear if a material honoured its
   texture's alpha? Samples the alpha at the material's own vertex UVs, not across the
   whole atlas, because an atlas's unused regions are clear and lie outside every UV island
@@ -2484,7 +2617,7 @@ code -- the other 57 were written and correct.
 | Mario | mariojnt | 1.55 | |
 | Link (OoT) | linkoot | 1.65 | `VRM_TEX="Hair=Link_Link_BaseColor.png"` |
 | Gadget Hackwrench | rigify_def | 1.30 | exclude `^(WGT-\|smd_bone_vis)`, hairrig `^Hair$` |
-| Peach | smash | 1.70 | her forearms are stretched in the SOURCE rip, not by the build. **As installed 2026-11-11:** build from `source/model.fbx` with `VRM_CUTOUT_MATERIALS="_1.004;_4.003;_5.008;_5.012;_5.013" VRM_MTOON_ALL=1` — the iris, eyelash-plate and dress-lace materials, and one shading model so the plate does not read as a patch on her face. NOT `_6`/`_6.002`: the crown's alpha is an outline and masking it carves the jewel out. Reproduces the installed character exactly at 11,602 triangles, 16 meshes, 16 materials, 10 images, 9 springs, 173 nodes |
+| Peach | smash | 1.70 | her forearms are stretched in the SOURCE rip, not by the build. **As installed 2026-11-11:** build from `source/model.fbx` with `VRM_CUTOUT_MATERIALS="_1.004;_4.003;_5.008;_5.012;_5.013" VRM_MTOON_ALL=1` — the iris, eyelash-plate and dress-lace materials, and one shading model so the plate does not read as a patch on her face. NOT `_6`/`_6.002`: the crown's alpha is an outline and masking it carves the jewel out. Reproduces the installed character exactly at 11,602 triangles, 16 meshes, 16 materials, 10 images, 9 springs, 173 nodes. **~~Reproduces exactly~~ — NOT TRUE as of 2026-11-15.** Rebuilt from these arguments, `identify_build.py` puts it at 89.2% name match over 173 bones with **63 rotation mismatches** against the installed bundle (and 71 with `VRM_EXPORT_POSE=rest`, so that is not the missing flag either). The counts in this row may well all match — they did for Gordon Freeman while a rebuild silently dropped all 32 of his shape keys. Her real arguments are unknown; she was fixed with `patch_springs.py` rather than rebuilt |
 | Harley Quinn | mixamo | 1.70 | build from the USDZ (names transferred from the .fbx) — the .zip has no colour map and the two have different UVs |
 | The Mandalorian | mixamo | 1.83 | glTF; BOTH its skeletons are collapsed, so re-rig via Mixamo. Exclude `^(grogu\|.*CRADLE\|.*JetPack\|.*RIFLE\|Icosphere)` — the pack also contains Grogu, his cradle and a rifle |
 | Power Girl | mixamo | 1.80 | Injustice 2 rip, 417 bones, builds clean. Materials are called `mesh0`/`mesh1`, so pin them: `VRM_TEX="mesh0=Supergirl_A_Body_Color.png,mesh0.001=Supergirl_A_FACE_30hz_Color.png,mesh0.002=Supergirl_A_Cape_Color.png,mesh1=Supergirl_A__EyesMouth_Color.png,mesh2=Supergirl_A_Hair_Color.png"`. Her hair alpha has to be pinned too, for the same reason — add `,mesh2=Supergirl_A_Hair_Alpha.png:alpha`. She is the ONLY model of the 109 archives here whose opacity map does not name its own material, so she is the only one the narrowed alpha pick leaves without one |

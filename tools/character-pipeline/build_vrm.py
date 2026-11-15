@@ -7516,14 +7516,45 @@ if SPRING:
                         yield sub
                 return
 
-        # Hair swings and keeps swinging; a skirt does not. Peach's dress is
-        # rigged and reported as so reactive that her legs pass through it,
-        # which is the same defaults doing the wrong job: cloth hangs, drags
-        # against itself and settles, so it wants more restoring force and far
-        # more damping than hair. Judged by the chain's own name, which is what
-        # selected it in the first place.
+        # Cloth gets its own stiffness and drag, judged by the chain's own
+        # name, which is what selected it in the first place.
+        #
+        # THESE NUMBERS WERE 0.85 / 0.80 AND CAME FROM A WITHDRAWN DIAGNOSIS.
+        # The comment that stood here said Peach's dress was "reported as so
+        # reactive that her legs pass through it", and stiffened and damped
+        # every cloth chain in answer to it. On 2026-11-11 that report was
+        # measured and the reactivity was not the fault at all -- her skirt
+        # chains had NO COLLIDER on any leg, so the legs passed through cloth
+        # that was barely moving. The colliders were fixed. The stiffening
+        # stayed, and on 2026-11-15 she was reported again, this time for a
+        # dress that moves as ONE PIECE. Same character, opposite symptom,
+        # because the remedy for the wrong cause was never backed out.
+        #
+        # The replacement is measured rather than reasoned. The six downloaded
+        # VRoid bundles in the installed folder were parameterised by their own
+        # authors and are not ours, so they are a control:
+        #
+        #   authored skirts (Harq Alkahana, both Mikus, Inforder Trogen)
+        #       stiffness 0.50   drag 0.05      -- all of them, identically
+        #   authored skirts (Adachi Rei)        2.00-4.00 / 0.40
+        #   authored hair                       0.26-0.40 / 0.40-0.50
+        #   ours, hair                          0.60 / 0.45
+        #   ours, cloth                         0.85 / 0.80
+        #
+        # Drag 0.80 is above EVERY authored value in the set, for cloth or
+        # hair, and sixteen times what four independent authors give a skirt.
+        # The authors damp a skirt LESS than hair, not more: a hanging panel is
+        # restrained by its restoring force, and damping is what stops it
+        # moving at all. Stiffness 0.85 is unremarkable by comparison and was
+        # never the outlier.
+        #
+        # One thing the control does NOT say: the last joint of every authored
+        # chain reads 1.00 / 0.50, which looks like a graded chain and is not.
+        # A VRM joint moves the bone BEFORE it, so the final joint only marks
+        # the tip and its parameters are never simulated. The authored chains
+        # are uniform, like ours.
         _CLOTH = r"(skirt|dress|cloth|cape|coat|robe|apron|tabard|sash|scarf)"
-        _cp = os.environ.get("VRM_CLOTH_PARAMS", "0.85,0.8,0.0").split(",")
+        _cp = os.environ.get("VRM_CLOTH_PARAMS", "0.5,0.05,0.0").split(",")
         _c_stiff, _c_drag, _c_grav = [float(x) for x in _cp]
         # How much of the mesh does each bone actually carry? An attachment
         # bone is the giveaway, and it needs measuring rather than naming.

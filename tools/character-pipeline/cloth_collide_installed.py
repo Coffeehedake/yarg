@@ -329,4 +329,11 @@ def main():
           "across %d character(s)" % (nfile, nbadchain, nchain, nbad))
 
 
-main()
+# Guarded so this file can be IMPORTED. It could not be: `main()` ran at import
+# time off whatever sys.argv the importer happened to have, so
+# `import cloth_collide_installed` printed a whole sweep -- or crashed -- before
+# the importing tool had done anything. patch_springs.py reuses read() from here
+# rather than keeping a second copy of the bundle reader, which is the argument
+# vrm_colliders.py already makes for being shared between two callers.
+if __name__ == "__main__":
+    main()

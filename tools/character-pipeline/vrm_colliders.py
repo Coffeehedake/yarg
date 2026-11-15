@@ -47,6 +47,48 @@ LIMBS = [
 # without an edit here.
 SCALE = float(os.environ.get("VRM_COLLIDER_SCALE", "1.0"))
 
+# ...but NOT on a limb, and that is a different question with a different
+# answer. The median rule above was written for hair resting on a scalp, where
+# a sphere enclosing the nose and chin holds the hair off the head. It was then
+# inherited by the limb capsules below, where the requirement is the opposite:
+# the capsule IS the leg as far as a skirt is concerned, so a median radius
+# leaves HALF the leg outside its own collider by construction.
+#
+# Measured on the shipped Peach bundle, 2026-11-15 -- her capsule radius equals
+# the 50th percentile of her flesh to three decimals on all eight limbs, which
+# is this rule, read back out of the file it built:
+#
+#     limb            capsule    p50    p90    max   outside the capsule
+#     upper leg         0.061  0.061  0.081  0.085   49%
+#     lower leg         0.039  0.039  0.064  0.080   50%, worst by 41 mm
+#     upper arm         0.053  0.053  0.095  0.109   50%, worst by 57 mm
+#
+# Her calf reaches 0.080 from the bone axis and its capsule stops at 0.039, so
+# a hem resting on that capsule is 20 mm inside the skin. That is the second
+# half of her dress fault, and no spring parameter can fix it.
+#
+# p90 rather than the maximum, for two reasons, and the first one is weaker
+# than it first looked. A spring joint is a SPHERE of hit_radius 0.02, so the
+# capsule only has to come within 0.02 of the furthest vertex -- and swept over
+# all 65 installed bundles, p90 + 0.02 does that on 314 of 469 limbs, Peach's
+# eight among them. NOT on all of them: 155 fall short, so this is an
+# improvement on the median and not a guarantee.
+#
+# The second reason is why the shortfall is tolerable, and why an adaptive rule
+# chasing the maximum would be worse rather than better. The vertices
+# attributed to a leg bone are not all flesh -- a gown skinned to the legs is
+# counted too. Alcina Dimitrescu's lower leg has its furthest vertex at 0.401
+# against a 0.123 p90, because that vertex is her dress. A capsule drawn to
+# enclose it would wrap the very cloth the capsule exists to deflect, and eject
+# it. A fixed percentile cannot chase that; a max-seeking one would.
+#
+# The clearance guard in add() is unchanged and still has the final word. On
+# the installed set it would newly fire on 14 limbs across five of our own
+# characters -- Chibi Rem, Jinx, Power Girl, Sayuri and Yoda -- which is the
+# guard doing its job, not a regression. Peach is not among them: her nearest
+# skirt joint is 0.114 from the thigh axis against an 0.081 p90.
+LIMB_PCT = float(os.environ.get("VRM_LIMB_PCT", "0.90"))
+
 
 def _pct(vals, q):
     if not vals:
@@ -305,9 +347,16 @@ def fit(arm, ext, MAP, bone_names, log=print):
     # own geometry is invisible to the simulation. With a head sphere and a
     # torso capsule and nothing else, a skirt hanging around the thighs has
     # nothing to push it aside, so the legs walk straight through it. That is
-    # Peach's "dress so reactive her legs clip through", and it is not a spring
-    # parameter at all -- her skirt chains are stiffer and more damped than her
+    # Peach's "dress so reactive her legs clip through", and the reactivity was
+    # not the cause -- her skirt chains were stiffer and more damped than her
     # hair's (0.85/0.80 against 0.60/0.45).
+    #
+    # Half of that still stands and half of it does not. Colliders were missing
+    # and that is fixed. But "not a spring parameter at all" was read as
+    # clearing the parameters, and it did not: 0.85/0.80 had itself been set in
+    # answer to the same misread report, and on 2026-11-15 Peach came back with
+    # a dress moving as ONE PIECE. See VRM_CLOTH_PARAMS in build_vrm.py, which
+    # now carries the authored reference rather than that reasoning.
     #
     # Measured across the 65 installed characters with `cloth_collide_installed
     # .py`: 107 of 422 spring chains sit nearest a part that carries no
@@ -339,7 +388,7 @@ def fit(arm, ext, MAP, bone_names, log=print):
             if (b - a).length < 1e-4:
                 continue
             add(pb, "Capsule", a,
-                _pct([_seg_dist(v, a, b) for v in lv], 0.5), b)
+                _pct([_seg_dist(v, a, b) for v in lv], LIMB_PCT), b)
 
     if not cols:
         log("colliders: none could be measured on this rig")
