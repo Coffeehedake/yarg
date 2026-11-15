@@ -2967,6 +2967,128 @@ build does not touch her fingers.**
 > See "The VRM add-on applies a T-pose of its OWN" above. A trace that stops
 > where our code stops cannot see a tool we call.
 
+### The roster, 2026-11-14: the add-on had flattened 25 of 35 hands, and only 8 could be rebuilt
+
+Gadget was not special. Every one of the 35 characters whose source and recipe
+both survive was rebuilt with `VRM_EXPORT_POSE=rest` and again with `auto`, and
+**every single auto build reads a knuckle bend of exactly 0.0 degrees** -- all
+35 but Pomni, who reads 5.2 either way. 25 of them carry authored bend the
+add-on was destroying, and it is not subtle: Vigilante 87.0 degrees, Peacemaker
+74.5, The Rock 36.2, Scott Hall 34.8, Doom Slayer and Shaggy Rogers 34.3, The
+Mandalorian 28.4, Batman 27.9, Gordon Freeman 25.2.
+
+That also closes the open question about Pomni. She was one of only two built
+files on this machine whose fingers were not flat, and the cause was recorded
+as unknown. The cause is that the knob is a no-op for her: 5.2 degrees both
+ways. The add-on's estimate agrees with her rest pose, so she was never a
+counter-example to anything.
+
+Ten characters changed nothing and were not touched. Seven of those have only
+4 of 8 finger chains mapped -- mitten hands, with nothing to recover.
+
+#### The rest pose has to be a T-pose, and for four of them it was not
+
+The guard added with the knob fired on exactly four: The Mandalorian (thighs
+179.6 degrees off vertical, knees above hips), Yoda (28-34), Jessica Rabbit
+(left leg only, 28.0) and Peacemaker (right leg only, 27.9). Three are the same
+fault, and `VRM_STRAIGHTEN_LEGS=1` -- which already existed, and whose comment
+names Jessica Rabbit -- fixes them. Measured joint to joint in the FILE, her
+legs and Peacemaker's come out at 0.0 degrees from vertical either way: our
+straightening lands exactly where the add-on's did.
+
+Yoda needs nothing. He passes the guard with that knob, but his fingers are
+identical both ways, so there is nothing to win.
+
+The Mandalorian is a different fault: his legs are not authored bent, his REST
+pose is wrong while his ANIMATED pose is right (5.5 degrees off vertical). The
+build's own test for that keeps an animated pose when it is the better T-pose,
+and it declined him because **it gates on the arms** -- `_p < 10.0 <= _r`, and
+his animated and rest arms are both 17.1 degrees off X, so "the clip is a T and
+the rest pose is not" reads false. The legs are what differ and the test never
+looks at them for that decision. `VRM_KEEP_POSE=1 VRM_STRAIGHTEN_LEGS=1`
+produces a clean T-pose from the same recipe. He still did not ship, for the
+reason below.
+
+#### A ratio is not a tear, and a camera framed on the subject is not a measurement
+
+`VRM_STRAIGHTEN_LEGS` is a DEFORMATION, so it was checked three ways, and the
+first two each gave a confident wrong answer.
+
+**Edge-length RATIO** found Jessica at 21.8x, Yoda at 13.2x and the Mandalorian
+at 30.8x. A ratio decides nothing on its own: a seam edge 0.01 mm long
+stretched twentyfold has grown 0.2 mm. Ranked by ABSOLUTE growth instead, with
+the bone carrying each edge named, Jessica's worst is 14 mm in `thigh.L` and
+Peacemaker's 27 mm in his right leg -- while the Mandalorian's is **234 mm**,
+and his render is a character with no head, stub legs and the cape standing up
+as a flat sheet.
+
+**A render framed on the leg joints** then reported Jessica and Peacemaker as
+pixel-identical to the shipped build, mean 0.00 of 255. That framing is derived
+from the very joints being compared, so the camera moves with the subject.
+Pinned in world space the same pair reads 12.6 and 7.2. Neither number is about
+legs: the first hides a global vertical offset, the second is the offset coming
+back.
+
+**The angle, joint to joint, in each file's own frame** is the measurement --
+no camera, and immune to offset and scale. Jessica and Peacemaker: 0.0 degrees
+of change. Its first run returned exactly 90.0 for all eight of their leg
+joints in both builds, which is a vertical leg measured against the wrong axis:
+**glTF is Y-up**, and these positions come out of the FILE, not out of a
+Blender import, unlike the build's own guard which measures in Blender where up
+is +Z.
+
+#### What stopped 16 of the 24: the recipe, not the knob
+
+The recipes here are harvested from the `ARGV:`/`ENV:` lines builds print, so a
+log IS the recipe that produced its .vrm. The most recent log per character is
+NOT the recipe that produced what is installed. Rebuilt and verified against
+the installed bundle, 15 of 24 differ in ways no pose knob can cause:
+
+| Character | What a rebuild would have destroyed |
+|---|---|
+| Gwen Stacy | 94 -> 72 transforms; 22 bones and their spring chains |
+| Sayuri | 143 -> 124 transforms |
+| Link | Material 6 -> 5, Texture2D 14 -> 11; three textures |
+| Chibi Rem | 180 -> 158 transforms |
+| Batman | Texture2D 3 -> 6, Material 1 -> 2, names differ |
+| Vigilante | an extra Mesh and SkinnedMeshRenderer, 3 materials |
+| Alcina, Alice Ivy | MonoBehaviour 37 -> 53: 16 spring/collider components |
+
+This is the Gordon Freeman fault again: exit 0, a plausible file, work quietly
+gone. **Comparing the rebuild against the installed bundle cannot tell the two
+causes apart.** The control that does is building the SAME recipe with `auto` --
+the pipeline exactly as it ships -- and verifying THAT. Nine reproduced their
+installed character; The Rock's auto build moves `LeftArm`, `LeftForeArm`,
+`LeftFoot` and `LeftHand`, so his recipe is stale too and only eight shipped:
+Ariel, Doom Slayer, Gordon Freeman, Heels, Joker, Scott Hall, Shaggy Rogers,
+Xenomorph.
+
+Their legs do shift by 2.4 to 12.3 degrees, which is the add-on's own leg
+straightening going away, within the guard's tolerance and the same effect
+Gadget shipped with.
+
+#### Scott Hall grew 36% and nothing was wrong
+
+35.4 MB installed against 48.1 MB rebuilt looks like a regression and is not.
+His textures are identical -- 37 of them, same dimensions, same format, and
+306,538,952 image bytes in both files to the byte. Summed per object type the
+two bundles differ by **32 bytes**, in a TextAsset. The 13 MB is the container's
+compression and nothing else, and the comparison is the strongest confirmation
+in this batch that his recipe reproduces him exactly. `verify_rebuild.py`
+deliberately does not read mesh data, so a file-size check is worth running
+beside it -- but read it against the auto build before believing it.
+
+#### What is still open
+
+15 characters hold a stale recipe. The logs carry **87 distinct candidates**
+between them -- Jessica Rabbit 13, Alice Ivy 11, Alcina and Sayuri 7 each -- and
+a candidate can be eliminated in Blender time alone, because almost everything
+`verify_rebuild.py` compares is visible in the .vrm before Unity is involved:
+node count is GameObject/Transform, images are Texture2D, materials are
+Material, and the spring bones and colliders in the VRM extension are the
+MonoBehaviours. Calibrate the node-count-to-Transform offset on the eight pairs
+now known to be correct before trusting it.
+
 `VRM_TRACE_BONE="<bone>,<reference bone>"` follows one joint in another bone's
 REST frame at every stage. Rest and not pose on purpose: `bone.matrix_local` is
 what a bind is expressed against, so a stage that rewrites it moves every vertex
