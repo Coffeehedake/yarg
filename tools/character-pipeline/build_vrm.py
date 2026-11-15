@@ -5345,6 +5345,84 @@ def norm(s):
     return "".join(c for c in s.lower() if c.isalnum())
 
 
+# A GLOSSINESS map is not a roughness map. It is its COMPLEMENT.
+#
+# Specular-glossiness is the other standard PBR workflow, and an asset built
+# that way ships Diffuse / Specular / Glossiness where a metallic-roughness one
+# ships BaseColor / Metallic / Roughness. `gloss` is in TOKENS["rough"] because
+# the glossiness map is indeed the file that belongs in that slot -- but
+# glossiness = 1 - roughness, so wiring it straight in inverts the entire
+# surface response: matte skin reads as polished and polished armour as matte.
+#
+# Measured on Thanos, 2026-11-15, in his glb rather than in the bundle. glTF
+# packs roughness in G, and his came out:
+#
+#   Thanos_M_Lrg_Jim_Body_Glossiness    G mean 0.46, sd 37
+#   Thanos_M_Lrg_Jim_Body_Glossiness.jpg  mean 0.46  (the SOURCE)
+#
+# Equal to two decimal places, so the glossiness values went into the roughness
+# channel untouched. Correct would have been 1 - 0.46 = 0.54, and per-pixel the
+# error is the whole dynamic range, not a constant offset.
+#
+# 'smooth' is here too: smoothness is Unity's name for the same quantity.
+_GLOSS_RE = re.compile(r"gloss|smooth", re.I)
+_INVERTED_MARK = "_inverted_to_roughness"
+# Which image datablocks have already been flipped. `images.load` is called with
+# check_existing=True, so two materials sharing one gloss file get the SAME
+# datablock -- and inverting it twice is the identity.
+_INVERTED = set()
+
+
+def wire_map(nt, t, bsdf, slot, path, matname):
+    """Link an image into a BSDF slot, inverting a glossiness map on the way.
+
+    THE INVERSION IS IN THE PIXELS, NOT IN A NODE, and that is not a style
+    choice. An Invert node between the image and Roughness is accepted by
+    Blender's glTF exporter and then silently IGNORED: probed 2026-11-15 with
+    two materials, one direct and one through an Invert, the exporter emitted a
+    single image and pointed both at it --
+
+        probe_direct     -> texture 0 -> image 0
+        probe_inverted   -> texture 1 -> image 0
+        image 0  R1.000 G0.460 B1.000      (the raw glossiness)
+
+    -- so a node-based fix changes nothing while the log claims it worked.
+    Inverting the pixels gives a second image at G 0.540 with the standard
+    deviation unchanged at 37.6, which is a true complement rather than a
+    shift. Packing makes no difference either way.
+
+    Only the Roughness slot is ever inverted: 'Glossiness' in a BASE map's
+    filename is part of a set name, not a statement about the colour.
+    """
+    if slot != "Roughness" or not _GLOSS_RE.search(os.path.basename(path)):
+        nt.links.new(t.outputs["Color"], bsdf.inputs[slot])
+        return False
+    img = t.image
+    if (img is not None and len(img.pixels)
+            and _INVERTED_MARK not in img.name and img.name not in _INVERTED):
+        import numpy as _np
+        _px = _np.empty(len(img.pixels), dtype=_np.float32)
+        img.pixels.foreach_get(_px)
+        _px = _px.reshape(-1, 4)
+        _px[:, :3] = 1.0 - _px[:, :3]     # RGB only; alpha is not roughness
+        img.pixels.foreach_set(_px.reshape(-1))
+        img.update()
+        _INVERTED.add(img.name)
+        # NOT renamed. The first cut appended a marker to the datablock name so
+        # the artefact would say what it holds -- and it does not work: the
+        # exporter names the glb image from the image's FILEPATH, so the
+        # rebuilt Thanos still ships a texture called
+        # 'Thanos_M_Lrg_Jim_Body_Glossiness' that now contains roughness. The
+        # rename changed nothing visible and the comment claiming it did was
+        # the only thing it achieved. Anyone reading a bundle's texture names
+        # should take the suffix as the SOURCE map's kind, not the slot's.
+        print("    %s: '%s' is a GLOSSINESS map, not a roughness one -- "
+              "inverted its pixels (gloss = 1 - rough)"
+              % (matname, os.path.basename(path)))
+    nt.links.new(t.outputs["Color"], bsdf.inputs[slot])
+    return True
+
+
 def _words(name):
     """Split a name into words: separators and camelCase boundaries both count."""
     # A bare number is not a word. Blender's '.001' duplicate suffix turns up on
@@ -6349,7 +6427,7 @@ for mat in bpy.data.materials:
             if kind not in ("base", "emis"):
                 img.colorspace_settings.name = "Non-Color"
             t = nt.nodes.new("ShaderNodeTexImage"); t.image = img
-            nt.links.new(t.outputs["Color"], bsdf.inputs[slot])
+            wire_map(nt, t, bsdf, slot, _ov, mat.name)
             if kind == "base":
                 base_tex = t
                 # An operator naming the map in VRM_TEX is the STRONGEST
@@ -6445,7 +6523,7 @@ for mat in bpy.data.materials:
             p = None
             continue
         t = nt.nodes.new("ShaderNodeTexImage"); t.image = img
-        nt.links.new(t.outputs["Color"], bsdf.inputs[slot])
+        wire_map(nt, t, bsdf, slot, p, mat.name)
         if kind == "base":
             base_tex = t
             base_from = _from

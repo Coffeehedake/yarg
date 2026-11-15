@@ -3338,6 +3338,114 @@ pose** -- the non-deform weight rebind, and the stray-mesh bind. Neither fires
 on Gadget, so neither was changed here and neither is measured. They are the
 first place to look if another part lands on the wrong bone.
 
+### Thanos, 2026-11-15: a glossiness map is not a roughness map, and a decoder that agreed with itself
+
+Reported three times as "his textures are wrong". Two faults, both measured in
+his **glb** rather than in his bundle, which matters for a reason given below.
+
+#### Specular-glossiness is the other PBR workflow, and `gloss` was wired raw
+
+His set is Diffuse / Specular / Glossiness, not BaseColor / Metallic /
+Roughness. `TOKENS["rough"]` matches `gloss`, which is right -- the glossiness
+map IS the file that belongs in that slot -- but **glossiness = 1 - roughness**,
+and nothing in this file inverted it. glTF packs roughness in G, and his came
+out of the build at exactly his source maps' values:
+
+| map | glb G | source .jpg mean |
+|---|---|---|
+| Body_Glossiness | 0.460 | 0.460 |
+| Head_Glossiness | 0.474 | -- |
+| Helmet_Glossiness | 0.431 | -- |
+
+Equal to three decimals, so the values went in untouched. His matte skin read
+as polished and his polished armour as matte, per pixel, across the whole
+dynamic range.
+
+**The inversion has to be in the PIXELS, not in a node.** The first fix put a
+`ShaderNodeInvert` between the image and Roughness. Blender's glTF exporter
+accepts that link and then silently ignores it. Probed with two materials, one
+direct and one through an invert:
+
+    probe_direct     -> texture 0 -> image 0
+    probe_inverted   -> texture 1 -> image 0
+    image 0   R1.000 G0.460 B1.000        <- the raw glossiness, shared
+
+One image, both materials pointing at it. The node-based fix would have changed
+nothing while printing a log line claiming it had worked. Inverting the pixel
+buffer instead gives a second image at G 0.540 with the standard deviation
+unchanged at 37.6 -- a true complement rather than a shift -- and packing makes
+no difference either way. `_INVERTED` guards against flipping twice, because
+`images.load(check_existing=True)` hands two materials the same datablock and a
+second inversion is the identity.
+
+The datablock rename that was meant to make the artefact self-describing does
+**not** work: the exporter names the glb image from the image's FILEPATH, so the
+rebuilt Thanos still ships a texture called `..._Glossiness` that now contains
+roughness. Read a bundle's texture suffix as the SOURCE map's kind, not the
+slot's.
+
+#### The second fault was already fixed, and the rebuild proves it
+
+| material | metallicFactor before | after | roughness G before -> after |
+|---|---|---|---|
+| Body | **absent** | 0 | 0.460 -> 0.540 |
+| Head | **absent** | 0 | 0.474 -> 0.526 |
+| Helmet | **absent** | 0 | 0.431 -> 0.569 |
+| Gauntlet | **absent** | 0 | 0.643 -> 0.357 |
+
+**A missing `metallicFactor` is 1.0 in glTF, not 0.** With the texture's B
+channel at 1.000 as well, his skin, head, helmet and gauntlet were fully
+metallic -- which in URP/Lit throws the diffuse away and turns a dark base map
+into a dark mirror. That is the larger of the two faults visually, and the
+metallic guard already in this file (`metallic %.2f with no map -> 0`) fixes it
+with no change from us: his build is dated 2026-11-07 and the guard is not in
+it. Nothing but a rebuild was needed.
+
+#### The decoder that agreed with itself
+
+The first version of this investigation read the BUNDLE with UnityPy and found
+his metallic/gloss map to be 5,592,404 bytes of a single byte value, `0xcd` --
+no content at all. `0xCD` is also MSVC's uninitialised-heap fill, which was the
+clue. The control settled it: **18 of 22 characters' metallic-slot textures read
+the same flat 0xcd**, Yoda, Link, Iron Man, Batman and both Clone Troopers among
+them, none of which anyone has complained about, while their base maps in the
+same bundles read 250-odd distinct values. Flatness tracked the DECODER, not the
+characters. One step further and "Thanos ships as chrome" would have been
+reported on an artefact of a library.
+
+The glb is readable with any JPEG/PNG decoder and needs no library that
+understands Unity's serialised textures, so it is the surface to measure on.
+
+#### What is still wrong with him
+
+- **`EyeBall` has no base colour at all**, in the glb as `baseTex=NO`. There is
+  no `Thanos_EyeBall_Diffuse` on disk -- the set ships only Specular and
+  Glossiness. That is a gap in the download, not in the build, and it cannot be
+  fixed without a map.
+- `EyeBall`'s rough slot now takes `Thanos_EyeBall_Specular` where the old
+  build took `..._Glossiness`, so it is not inverted. In a spec-gloss set a
+  `*_Specular` map is an RGB specular COLOUR, not a roughness map, and it should
+  not win that slot over a glossiness map. Left alone deliberately: the material
+  is wrong either way until it has a diffuse, and reordering `TOKENS["rough"]`
+  would change the pick for every character that has both.
+- **His humanoid map is questionable and was not touched.** `rightLowerLeg:
+  HipPart1_R`, `rightFoot: HipPart2_R`, with `spine`, both arms and `head` on
+  bare `joint6`-`joint14` from an Advanced Skeleton rig whose deformation
+  system holds 131 bones. The log says "assigned 52/52, readback mismatches 0",
+  which is a count of filled slots and not a statement that they are the right
+  bones. The rebuild reproduces that map exactly, so it is no worse -- but 52/52
+  is not evidence of a correct rig.
+
+#### He had no recorded recipe
+
+No log anywhere records an `ARGV:` line for him: that echo was added after
+2026-11-07, which is the gap "A build log must say what it was built FROM"
+exists for. His arguments were reconstructed from the evidence --
+`m10/source/Kneeling Idle.fbx` (which carries `Thanos_Rig`, `joint9` and
+`Shoulder_L` and no `mixamorig`, so it is the model despite the name),
+`m10/textures`, 2.40 m from the log's own VERIFIED height, `advskel`, 1024 --
+and confirmed by the rebuild reproducing his humanoid map bone for bone.
+
 ### A build log carries the VRM add-on's own guesses, and they are not ours
 
 The same session nearly reported a catastrophe. Gadget's build log contains:
