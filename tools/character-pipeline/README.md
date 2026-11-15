@@ -2461,7 +2461,7 @@ code -- the other 57 were written and correct.
 | Jinx | ue4 | 1.68 | braids and bangs already in the rig |
 | Shrek | mayajnt | 2.10 | **As installed 2026-11-12:** `t_Shrek_alpha_c` (material `Shrek_1` in the bundle) is a CUTOUT, applied with `patch_alpha_cutout.py` rather than by rebuilding — it is a real opacity map, 40.8% clear and 0.0% mid under its own UVs on a 238-vertex card, and honouring it gives his tunic the ragged hem it should have. **Do not ship this by rebuilding**: the Blender round trip changes 60 bone orientations at arbitrary angles, and his `.vrm` and bundle otherwise agree exactly |
 | Gordon Freeman | valvebiped | 1.80 | **As installed 2026-11-12:** build from `m2/source/Valve_Gordon_Freeman.fbx`, textures `m2/textures`, with BOTH of these or he loses something — `VRM_BLEND_MATERIALS="lens"` (his glasses lenses shipped opaque and drew as two solid white panes over his eyes) and `VRM_VISEME="aa=gordon_freeman/AU26ZR+AU26ZL,ee=gordon_freeman/AU12R+AU12L,ih=gordon_freeman/AU12R+AU12L@0.7,oh=gordon_freeman/AU18R+AU18L.001,ou=gordon_freeman/AU18R+AU18L.001@0.75"`. **His shape keys are FACS action units and match none of the automatic patterns**, so without that map a rebuild drops all 32 of them and binds nothing — which is exactly what happened on the first rebuild, silently, with every census count unchanged. 7,169 triangles, 4 meshes, 7 materials, 12 morph targets, 5/5 bound. Do NOT add `eye-iris-green.tga` or `onefreeman` to the blend list: both alphas are specular masks, and honouring them hides his irises and erases his suit. **2026-11-12, second pass: he needed no rebuild at all** — his `.vrm` already carried `alphaMode: BLEND` on `lens` and the fault was entirely the exporter's, so his installed bundle is a straight re-export of that same `.vrm`. That was also the safer route: a rebuild is what dropped his 32 FACS keys the first time. His lens now renders as glass you can see his eyes through, where it had been a speckled hard mask |
-| Joker / Miku | maxbiped | 1.85 / 1.58 | |
+| Joker / Miku | maxbiped | 1.85 / 1.58 | **Miku, as installed 2026-11-15:** build from `miku-final.blend`, textures `miku_orig/textures`, exclude `^ts_bot`, **spring argument EMPTY** and `VRM_CLEAR_SPRINGS=1 VRM_FINGER_FILL=1`. Her intermediate carries the `HairSpring_1_*`/`HairSpring_2_*` twintail chains an earlier session built, so `VRM_CLEAR_SPRINGS` wipes those and `DEFAULT_SPRING` rebuilds exactly one chain per twintail — 2 chains, 4 joints each, 10 colliders, `MonoBehaviour` 22 -> 41. **Do NOT pass `$^` as the spring argument** (see below), and do not pass `VRM_EXPORT_POSE=rest`: her recipe has never had it and adding it moves 18 bones, 45 deg on the fused thumb metacarpals. Her skirt still does not swing and cannot be rigged by the current interface — one mesh, one material, no skirt bones, so no pattern can isolate it |
 | Tenna | rigify_def | 1.80 | exclude `^(Floor\|Lights\|Sign)` |
 | Sophia | rp | 1.70 | |
 | Steve | steve | 1.80 | |
@@ -3445,6 +3445,70 @@ exists for. His arguments were reconstructed from the evidence --
 `Shoulder_L` and no `mixamorig`, so it is the model despite the name),
 `m10/textures`, 2.40 m from the log's own VERIFIED height, `advskel`, 1024 --
 and confirmed by the rebuild reproducing his humanoid map bone for bone.
+
+### Miku's twintails, 2026-11-15: a diagnostic switch shipped as a recipe
+
+Reported twice as "her twintails are broken". Nothing in the pipeline was
+wrong. **Her recipe disabled her springs twice over, and one of the two
+switches was a diagnostic that was never meant to ship.**
+
+Her recorded arguments ended `1024 '^ts_bot' '$^' ''`. The eighth argument is
+`SPRING`, the pattern that decides which bones get spring chains -- and `$^` is
+a regex that can never match anything. Her environment then also carried
+`VRM_CLEAR_SPRINGS=1`. Belt and braces on the same trousers, and the result was
+measurable in the shipped bundle:
+
+| | installed | after |
+|---|---|---|
+| `HairSpring_*` GameObjects | **8** | 8 |
+| `MonoBehaviour` | **22** | **41** |
+| spring chains | **0** | 2 |
+| colliders | **0** | 10 |
+
+22 is the bare count for a character with no springs at all, so all eight
+twintail bones were in the file with nothing whatever to move them. They were
+rigid because they were bones, not hair.
+
+`VRM_CLEAR_SPRINGS` exists *because of her*. The comment on it says so: her
+intermediate `.blend` carries the `HairSpring` chains an earlier session built,
+so rebuilding her with the hair rigger switched off still shipped them, and the
+switch was added to prove the chains were inherited rather than made by that
+run. It did its job. Then it stayed in her recipe, with `$^` beside it, and a
+measurement aid became the shipped configuration.
+
+**The fix keeps the clear and drops the `$^`.** `DEFAULT_SPRING` contains
+`hair`, which matches `HairSpring_1_0` and `HairSpring_2_0`, so with the eighth
+argument empty the build wipes the two inherited chains and makes two fresh
+ones -- 4 joints each, stiffness 0.60, drag 0.45, gravity 0, hitRadius 0.02,
+identical to Gadget Hackwrench's four working hair chains. Clearing first is
+deliberate: it is what stops an inherited chain and a new one claiming the same
+bones.
+
+#### One variable, and the first attempt was not
+
+The first rebuild also set `VRM_EXPORT_POSE=rest`, which her recipe has never
+had. It produced the right springs AND moved 18 of 90 bones -- 45.04 deg on
+`left_thumb_metacarpal_fused` and its mirror, 5.47 at both thighs -- so the
+spring fix could not be told apart from a pose change nobody asked for. Built
+again with her environment exactly as recorded:
+
+    MonoBehaviour 22 -> 41, textures same, materials same, meshes 1 -> 1,
+    bones moved: 0 of 90
+
+That is the build that shipped. A fix whose diff contains one thing is worth a
+second build, particularly when the first one's own script comment claimed
+"ONE change" while making two.
+
+#### Her skirt is a different problem and is not fixed
+
+The hair-rig interface finds a group by **material**, and she is one mesh with
+one material, `tsx_bot205`, covering her whole body. There is no pattern that
+isolates her skirt, and no skirt bones to spring either -- her 70-bone rig is
+`Bip01 *` plus the eight `HairSpring` bones and nothing else. So the twintails
+swing and the skirt does not. Note this is a different fault from "her dress
+does not move with her", which was undriven WEIGHT above the humanoid root and
+was fixed on 2026-11-11; the skirt follows her hips correctly and simply has
+nothing to make it swing.
 
 ### A build log carries the VRM add-on's own guesses, and they are not ours
 
