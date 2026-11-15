@@ -3095,6 +3095,124 @@ what a bind is expressed against, so a stage that rewrites it moves every vertex
 bound to that bone, and a pose-space reading hides exactly that. Use it on a rig
 the way `VRM_TRACE_PART` is used on geometry.
 
+### Recovering a stale recipe, 2026-11-15: the arguments are not the recipe
+
+Fifteen of the roster could not be rebuilt on 2026-11-14 because the recipe
+harvested from their build logs no longer reproduced the installed character at
+all -- Gwen Stacy lost 22 bones and their spring chains, Link three textures,
+Batman and Vigilante their materials. The logs hold many more candidate recipes
+than the one `recipes.py` picked, so the question was whether the right one was
+still in there. **Two of the fifteen were. The other thirteen fail for a reason
+no argument search can fix.**
+
+#### A cheap predicate, and what it cost to make it trustworthy
+
+Searching by building is expensive, so the search runs on the `.vrm` instead:
+nearly everything `verify_rebuild.py` checks apart from the rig is visible in
+the glb before Unity is involved. The first version of that predicate compared
+counts and was **wrong on every count but one**, which the nine already-proven
+pairs said immediately:
+
+| glb -> bundle | delta across the nine | usable? |
+|---|---|---|
+| `nodes` -> `Transform` | +1, +2 | no |
+| `images` -> `Texture2D` | 0, +1, +3, +6, +7, +15 | no |
+| `materials` -> `Material` | 0 | **yes** |
+| springbone pieces -> `MonoBehaviour` | +16, +17, +18, +22 | no |
+
+Images are unpredictable because Unity's VRM importer **duplicates an image per
+sampler usage** and suffixes it by colorspace, so one glb image becomes `name`,
+`name__UNIGLTF__DUPLICATED__2`, `name.normal`, `name.standard`. Strip those two
+artefacts and the base-name SET is exact. Node names survive verbatim as
+GameObject names. And `MonoBehaviour` decomposes exactly:
+
+    MonoBehaviour == 22 + joints + colliders + (1 if any spring else 0)
+
+22 on the nose for the four characters with no spring bones at all, and the extra
+1 is the manager component. Without that fourth leg the predicate passed Lola
+Bunny and Tenna, whose ONLY difference from their installed bundle is spring-bone
+count, 34 to 42 and 33 to 40. **The negative control caught two false positives
+before the search ran** -- run a predicate over cases already known to be stale,
+not only over cases known to be good.
+
+Validated: 9/9 on the proven pairs, 0/15 on the known-stale, 6/6 on deliberately
+mismatched pairs. Then a sweep of all 397 `.vrm` files on the machine, 5,925
+comparisons, found an exact match for ten of the fifteen. The predicate is
+pose-blind by construction -- export pose moves node transforms and touches none
+of material count, texture names, node names or spring count -- so a `.vrm` built
+under either pose identifies its recipe equally well.
+
+#### The arguments are not the recipe: the pipeline version is part of it
+
+Fourteen candidate recipes were then built under `auto` and exported, which is
+the control that decides. **Two came back cull-only:** Alcina Dimitrescu and
+Alice Ivy, each on one of three recipes the cheap predicate could not separate,
+because they differ only in `VRM_BLEND_MATERIALS` / `VRM_VALUE_ALPHA` and those
+change material PROPERTIES, which the glb-side check does not read.
+
+The other eight failed, and six failed because the recipe was never theirs:
+`findrecipe.py` fell back to matching the output BASENAME when no log named the
+exact path, and **nine different Batman logs all write a file called `Batman.vrm`**
+into nine directories, one of them a different source model at a different
+texture size. Require the exact path.
+
+But Alastor and Lola Bunny came off exact logs and still failed -- Alastor's
+material count 3 to 4, Lola Bunny's `MonoBehaviour` 34 to 42. Their matching
+`.vrm` on disk reproduces the installed bundle; replaying that `.vrm`'s own
+recorded command today does not. **So the recipe is the arguments PLUS the
+version of `build_vrm.py` that ran them,** and for thirteen of the fifteen this
+script has since drifted in some way that shows: an extra material, extra spring
+chains, colliders fitted in a different place. No archaeology on arguments
+recovers those. Rebuilding them means accepting the current pipeline's output as
+the new baseline, which is a decision about the character, not about the recipe.
+
+#### The collider round trip, and why four of them are near-misses
+
+Batman, Chibi Rem, Gwen Stacy, Jinx and Link had no matching `.vrm` at all, and
+four failed the same leg: their installed bundle holds two or three GameObjects
+named `Head-Head Collider`, `Hips Collider-Hips Collider End` and
+`Hips Collider1` that no `.vrm` contains. That naming is the tell. The build
+writes colliders into the **VRM extension**, and it is Blender's VRM importer
+that materialises them as empties called `<bone> Collider` -- so a node called
+`Pelvis Collider-Pelvis Collider End` has already been round-tripped through
+`add_colliders.py` once, and Unity then makes its own GameObject per collider,
+named after the node it hangs off. `_Character` and `secondary` are Unity's, in
+every bundle.
+
+Round-tripping a fresh build once takes the unexplained extras from 24 to zero
+for Chibi Rem and Gwen Stacy on the cheap predicate -- but the full verify still
+puts them three GameObjects short, **and reports their `Head Collider` and
+`Hips Collider` empties as moved**: `vrm_colliders.fit` no longer places them
+where it did. The same drift, one layer down. Jinx overshoots instead: the round
+trip gives him 16 collider nodes his installed bundle has never had, because that
+bundle predates the limb-capsule change `add_colliders.py`'s own docstring
+describes.
+
+Two things worth keeping from that detour. `add_colliders.py` exits **2** with
+"left alone" rather than re-fitting colliders the build has already written;
+`VRM_RECOLLIDE=1` is what makes the round trip happen at all. And the round trip
+is **pose-safe, measured**: Gwen Stacy's rest build goes in at 14.3 / 15.4 / 13.6
+/ 12.1 degrees of knuckle bend and comes out at 14.3 / 15.4 / 13.6 / 12.1, to the
+decimal, even though `add_colliders.py` sets no export pose and therefore runs
+the add-on's `autoPose`. It is safe for a reason rather than by luck: the VRM
+importer synthesises every bone tail to point at its child, so the thing
+`autoPose` does -- aim each bone at its child -- has nothing left to do. The pose
+setting is not written to the file at all; checking the glb for it finds nothing.
+
+#### What shipped
+
+Alcina Dimitrescu and Alice Ivy, rebuilt under `VRM_EXPORT_POSE=rest` from their
+confirmed recipes, verify against installed as **bones only, with no position
+change anywhere** -- the bind is untouched to four decimal places. Alcina's 18
+moved bones are all in the hands, and the left/right asymmetry the add-on had
+introduced is gone: `f_pinky.01` was 52.2 degrees on the left and 20.7 on the
+right, and is now 4.2 on both. Alice Ivy moves 8 hand bones plus four leg bones
+at 1.4 and 1.2 degrees, which is the add-on's leg straightening going away and
+the same effect the eight shipped with on 2026-11-14.
+
+That is **ten of the roster on a rest-pose build**, and thirteen still held: the
+eleven whose pipeline has drifted, plus The Rock and The Mandalorian.
+
 ### A build log carries the VRM add-on's own guesses, and they are not ours
 
 The same session nearly reported a catastrophe. Gadget's build log contains:
