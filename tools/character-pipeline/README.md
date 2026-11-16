@@ -889,6 +889,72 @@ place, so nothing lands on them; that is not done here because the hips are not
 known at the point the weighting runs, and a rule that guesses which parentless
 bone is the stray is worth more thought than this evening.
 
+#### Chasing the bodice, 2026-11-16: why it is not a weights problem you can patch
+
+The builder's own `trace()` says where the bodice is at every stage, and its
+docstring says why to use it -- *"chasing a part that ends up in the wrong
+place by reasoning about matrices is how three wrong fixes got written"*:
+
+```
+TRACE after import    Object_9   z  6.204.. 9.474
+TRACE after realign   Object_9   z  6.204.. 9.474
+TRACE after pose bake Object_9   z  6.204.. 9.474
+TRACE after scale     Object_9   z  0.914.. 1.420
+```
+
+It does not move until the scale, because **it is being CARRIED by the bone it
+is welded to**. In the GLB everything with 160 vertex groups -- the body, the
+hair, the eyes -- stands at z 32..44, and everything with ZERO groups stands at
+z 0..10.6: the dress sculpt, beside the mic-stand cubes and cylinders. The
+dress is a separate unskinned model thirty units from the character, and the
+only bone anywhere near it is the file's own root joint, **38.56 units long**,
+running from z 0.33 to z 38.90 straight through the pile. Bone heat has nothing
+else to choose.
+
+So the obvious remedy -- just give the dress the body's weights -- would tear
+it off her, because its data is not where the body's is. Which is why the
+patch route was tried and measured rather than assumed.
+
+#### The patch route is closed, and the number that closes it
+
+`patch_transfer_weights.py` copies the body's weights onto a garment by nearest
+vertex, rewriting the two weight channels in the vertex buffer. Its central
+guard is that **re-weighting must not move the mesh at rest**: with consistent
+bind poses every bone's `world * bindPose` is the same data-to-world map, so
+the rest pose does not depend on which bones carry a vertex.
+
+On her it refuses, at **35.7 mm**, and the reason is in the file:
+
+| bone | where `world * bindPose` sends one body vertex |
+|---|---|
+| `spine` | (−0.1558, +1.2776, −0.0694) |
+| `spine.003` | (−0.1558, +1.2776, −0.0694) |
+| `breast.L` | (−0.1558, +1.2776, −0.0694) |
+| **`thigh.L`** | (−0.1536, **+1.1754**, **+0.0834**) |
+
+The spine chain agrees to four decimals and `thigh.L` is 102 mm out in y and
+153 mm in z; across all 194 bones the spread reaches 0.96 m. About 31 bones'
+bind poses disagree with their rest pose -- the build straightened her legs
+(*"worst thigh is 28.0 deg off vertical"*) and baked a non-identity rest on 31
+bones. **Any re-weighting in this bundle is unreliable wherever it touches
+those bones**, and a garment hanging from the hips to the ankles touches them.
+
+Adopting the donor's bind poses as well changes nothing: it is the same 35.7 mm,
+because the disagreement is between bones and not between meshes.
+
+The tool is kept, and it has been exercised rather than merely written: a
+self-transfer of the body onto itself reproduces its influence distribution
+exactly ({1: 6576, 2: 12026, 3: 6299, 4: 14767}), moves the rest pose by
+**0.0002 mm**, and the rewritten bundle loads in Unity at 16 renderers / 11
+materials / 194 bones / 10 chains, 0 failed. So the vertex-buffer rewrite is
+byte-correct and the refusal is a finding about her file, not a bug in the
+tool.
+
+**The bodice therefore needs fixing in the BUILD**, at a point where the
+geometry has been carried onto the body and the bind poses are about to be
+generated together -- not in the bundle. That is a real change to the order of
+`build_vrm.py` and it is not made here.
+
 #### A rule that was written and NOT shipped
 
 `build_vrm.py` detects unrigged meshes as `not o.vertex_groups`, which cannot
