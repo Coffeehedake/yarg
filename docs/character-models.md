@@ -1094,9 +1094,16 @@ she is one material, one base map, no normal or gloss map, at URP/Lit's own 0.50
 albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB
 like all 57, and she has no emission. She is simply the one on whom a uniform plastic specular
 over a photoscan of a real person shows. `patch_shine.py` applies the same switch to an installed
-bundle, and it was applied to her alone rather than swept across the 27 — smoothness 0 is fully
-matte, the editor understates the difference, and blanketing a roster on the strength of a tool
-default is the `doubleSided` mistake.
+bundle. It was applied to her alone rather than swept across the 27, on the reasoning that
+smoothness 0 is fully matte, the editor understates the difference, and blanketing a roster on the
+strength of a tool default is the `doubleSided` mistake — an appearance judgement across a third
+of the roster is Jay's to make, not a measurement's. **He then said to sweep it, so all 26 others
+were flattened as well** (every material of each is URP/Lit at the defaults with no normal or gloss
+map, so a wildcard flatten is coherent per character). All 26 have hash-verified backups named
+`<Name>.preshine-2026-11-15.yargchar`, so any single one is a file copy to revert, and
+`patch_shine.py --smoothness S` can soften one rather than reverting it. **Not swept: the further
+36 characters that are at the same default but carry a normal or a gloss map** — their specular is
+already varying and flattening them is a different question.
 
 **3. The coat, pants and boots looked inside-out.** Vertex normals agree with the face winding (0% of
 faces against it, mean dot 0.94) and the winding is identical in the source model and every build, so

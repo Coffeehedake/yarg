@@ -507,7 +507,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Peach | eyes missing; dress springs so reactive her legs clip through it | **BOTH FIXED 2026-11-11, and neither was what the report implied.** The eyes are the alpha fault: her eye is a STACK of meshes from a Smash rip -- `Peach_eye` is a blank white sclera with no iris, `Peach_Blink_Ottotto` is the iris and `Peach_Blink_VoiceA` is the eyelid-and-lash plate that fills a rectangular hole in `Peach_faceN` -- and all three shipped `OPAQUE`, so the top layer drew as a solid plate. The skirt is NOT too reactive: her skirt chains are stiffer and more damped than her hair's (0.85/0.80 against 0.60/0.45). They are UNGUARDED -- eight of her nine chains hang around her thighs and she had two colliders, both on her torso. See below. **~~BOTH FIXED~~ — REOPENED 2026-11-15 and fixed again, and "BOTH FIXED" is what let it happen.** Reported a second time, for clipping legs AND a dress moving as one piece. Two causes: her skirt was damped to near-rigidity by the 0.85/0.80 cloth default, which had itself been set in answer to the *first* Peach report before that report's cause was withdrawn; and the limb capsules fitted on 2026-11-11 use the MEDIAN flesh radius, so half of every limb sits outside its own collider and her calf reaches 24 mm past the only thing her hem can feel. See "Peach's dress, 2026-11-15" |
 | Link | eye textures misplaced; still holding the master sword and shield | **both fixed.** His rig has bones named `Sword` and `Shield`, so `VRM_DROP_ISLAND="LinkEquipment=Sword+Shield"` takes 41 islands and leaves `Fourreau`, his scabbard, on his back. His eye material `Material.003` was taking the body atlas while `Eye.png` sat unused beside it |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and ~~finger bones that are mapped but not weighted~~ **corrected 2026-11-11 by `bundle_audit.py`: he has ZERO finger bones in his humanoid map**, and 21 humanoid bones in total against a typical 52. The symptom was right, the stated cause was wrong |
-| Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor; applied to her alone, NOT swept. See "Sophia's shine, 2026-11-15" |
+| Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor. Applied to her alone and put to Jay as a question, since an appearance change across a third of the roster is his call; he said **"yes, all 26"**, so the other 26 were flattened too — **132 materials across 26 characters**, each hash-backed up and verified five ways. See "Sophia's shine, 2026-11-15" |
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15, and it is one number.** His `thigh.R` sits **92.12 mm** from the mirror of his `thigh.L` while every other bone in his rig mirrors exactly — rotations to six decimals, `shin`/`foot`/`toe`/`heel` to 0.000 mm — so his whole right leg hangs off one bad offset, 30 mm clear of a hip socket his left leg sits 5 mm inside. No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
@@ -982,11 +982,16 @@ how bad the shine looks."* She is the character on whom it shows, because a unif
 specular over a photoscan of a real person reads as wrong in a way it does not on Shrek or Mickey
 Mouse.
 
-**It was applied to her alone and deliberately not swept.** Smoothness 0 is fully matte, the
-editor is on record as a poor guide, and 27 characters would be a roster-wide appearance change
-made on the strength of a tool default — which is the mistake a previous session nearly made with
-`doubleSided`, where every file reported `true` because Blender defaults it. `patch_shine.py`
-takes `--smoothness S` for exactly that reason, if matte skin turns out to look dead.
+**It was applied to her alone, not swept — and then Jay said to sweep it, so it was.** Both halves
+of that matter. The recommendation was to stop at her: smoothness 0 is fully matte, the editor is
+on record as a poor guide to how the shine reads in game, and 27 characters is a roster-wide
+appearance change made on the strength of a tool default — the mistake a previous session nearly
+made with `doubleSided`, where every file reported `true` because Blender defaults it. An
+appearance judgement across a third of the roster is the owner's to make, not a measurement's,
+which is why it was put as a question rather than done. **Jay answered "yes, all 26"**, so the
+other 26 are flattened too; the sweep is below. `patch_shine.py` takes `--smoothness S` if matte
+turns out to look dead on any of them, and every one has a hash-verified backup, so reverting any
+single character is a file copy.
 
 **That documentation was also stale, and the files are the record.** The same passage says Heels,
 Gwen Stacy and Ariel *"were also installed no-shine (`*`) to compare"*. They are not: all three
@@ -1023,11 +1028,135 @@ reports "already flat". Backup `character-backups/Sophia.preshine-2026-11-15.yar
 `74925073…`, matched against the live file before replacing; installed md5 `990bb92a…`, 6,159,657
 bytes against 6,357,467.
 
-**What is still wrong.** The other 26 characters with a uniform default specular are untouched,
-and whether they want the same treatment is a look-at-them question, not a measurement. Her base
-map is 2048×2048 against the house setting of 1024, which is hers alone among the one-material
-characters and was left alone. And none of this has been seen in game — which matters more here
-than anywhere else today, because the project's own note says the editor understates the shine.
+**What is still wrong.** Her base map is 2048×2048 against the house setting of 1024, which is
+hers alone among the one-material characters and was left alone. And none of this has been seen in
+game — which matters more here than anywhere else today, because the project's own note says the
+editor understates the shine. (The other 26 with a uniform default specular were untouched when
+this was written and are not any more; the sweep is below.)
+
+
+#### The sweep across the other 26, on Jay's decision
+
+Asked whether to extend it, he said **"yes, all 26"**, so it was done in full. The set was
+re-derived from the bundles rather than from the earlier sweep's output, and it is exactly the
+characters whose **every** material is URP/Lit at the shader's own defaults — `_Smoothness` 0.50,
+`_SpecularHighlights` 1, `_EnvironmentReflections` 1 — with **no** normal map and **no**
+metallic/gloss map on any of them. That matters for scope: because no material in any of them has
+either map, a wildcard flatten is coherent for the whole character and there is no material whose
+shine was ever varying.
+
+26 in, 39 out, 65 total. The 39 excluded, with the reason printed per character, are the MToon
+VRoid models (different shader, no such properties), the characters with a normal or gloss map
+somewhere, and the ones already carrying a non-default value — Alastor, who already had the switch,
+and Sophia, who got it earlier the same day.
+
+| character | materials flattened | | character | materials flattened |
+|---|---|---|---|---|
+| Aiko | 3 | | Power Girl | 5 |
+| B1 Battle Droid | 2 | | Shaggy Rogers | 1 |
+| Chibi Rem | 1 | | Shrek | 3 |
+| Doom Slayer | 12 | | Skeleton Mage | 1 |
+| Elite Terrorist | 2 | | Skibidi Toilet | 7 |
+| Gadget Hackwrench | 6 | | Sonic | 4 |
+| Joker | 1 | | Steve | 1 |
+| Judy Hopps | 3 | | Tenna | 2 |
+| Kronk | 1 | | The Rock | 21 |
+| Mario | 13 | | Vegeta | 9 |
+| Mickey Mouse | 1 | | Vigilante | 6 |
+| Miku | 1 | | Xenomorph | 2 |
+| Peacemaker | 8 | | | |
+| Peach | 16 | | **total** | **132** |
+
+**Backed up first, and verified by hash, not by exit code.** Each of the 26 was copied to
+`character-backups/<Name>.preshine-2026-11-15.yargchar` and the copy's md5 compared against the
+source before anything was patched; the script refuses to overwrite a backup that already exists,
+so a second run cannot destroy the pre-change state. The installer then refuses any character
+whose live file no longer matches its backup, because if those disagree something else has changed
+the file since and it must not run blind over it.
+
+**The backup loop failed first, loudly, and the failure is worth recording.** The name list was
+written by Python with its default newline, so on Windows every line ends CRLF, and bash read each
+name with a trailing `\r`: every path became `Aiko\r.yargchar` and all 26 reported MISSING. It is
+the same one-bad-byte fault as piping a value into a Unix `read`, and the only reason it was
+obvious is that it failed on all 26 at once rather than on some.
+
+**Verification, per character, five ways and none of them sampled.**
+
+1. `patch_shine.py`'s own read-back fingerprints every object's full typetree before and after:
+   **26 of 26 report the changed count equal to that character's material count, 0 gone, 0
+   added.** Peach's 545 objects with 16 changed also confirms her dress fix from earlier the same
+   day is intact underneath.
+2. `verify_rebuild.py` against each character's BACKUP — not against a file this sweep had already
+   touched — reports **material state as the only difference on all 26**: no object-count change,
+   no texture-name change, no bone moved.
+3. **Uncompressed payload delta = 60 × materials, exactly, on all 26.** Not approximately: Chibi
+   Rem +60 for one material, The Rock +1,260 for twenty-one, and every one in between on the
+   line. Object, texture and material counts unchanged throughout.
+4. Texture pixels decoded and hashed on the two biggest size drops and two controls: **identical,
+   every texture**.
+5. The installer refuses any character whose live file no longer matches its backup, so **26
+   installed and 0 skipped** also says nothing else had touched those files in the meantime.
+
+And the set was re-derived from the installed bundles afterwards, which is the check that nothing
+was missed: **0 in, 65 out**. No character is left at URP's defaults with no normal or gloss map.
+
+**The Rock's file fell from 26.0 MB to 7.9 MB, and the sweep stopped until that was explained.**
+A 70% drop from editing 21 materials' floats is not a recompression difference, and none of the
+checks above would have caught a loss: `patch_shine.py`'s fingerprint compares each object's
+typetree, and a Texture2D's bytes are in the typetree **only when they are inline** — a bundle
+that streams them (`m_StreamData` with a path and offset) would fingerprint identically with the
+pixels gone. `verify_rebuild.py` compares texture NAMES. `texdims.py` reads dimensions out of the
+header. All three would have passed an empty file.
+
+Four measurements settled it, and nothing was installed until they had:
+
+| | The Rock, before → after |
+|---|---|
+| textures, streamed vs inline | 0 streamed, **21 inline** both sides — so the fingerprint did cover them |
+| texture pixels, md5 of the decoded image | **21 of 21 identical** |
+| objects, and the cab | **273 → 273**, same `CAB-2680e4bb…` |
+| UNCOMPRESSED object data | **100,644,790 → 100,646,050 bytes** |
+| compression flags | identical (`BlocksAndDirectoryInfoCombined ǀ BlockInfoNeedPaddingAtStart ǀ 3`) |
+
+100.6 MB of payload in, 100.6 MB out, differing by **1,260 bytes** — and that number is the
+explanation. Flattening a material adds two keyword strings and four float entries, about 60
+uncompressed bytes, and 21 × 60 = 1,260. The same law holds on every character checked: Elite
+Terrorist +120 for 2 materials, Shrek +180 for 3, Skeleton Mage +60 for 1. **A size that had
+fallen for any other reason would not land on that line**, so the delta was checked against
+60 × materials for all 26 rather than for a sample.
+
+Why the container shrinks so much is his own shape: 15 of his 21 textures are
+`all_color__UNIGLTF__DUPLICATED__N`, identical inline copies of one 1024×1024 image. The
+exporter's original block layout could not dedupe across them; repacking the same bytes in one
+pass can. It is also why the drop tracks duplication rather than size — Elite Terrorist −35%, The
+Rock −70%, Shrek −203 bytes on an 8.6 MB payload.
+
+**Where the whole roster now stands**, swept again after installing:
+
+| | characters |
+|---|---|
+| fully flat — specular and reflections off | **28** (Alastor already was, Sophia, and the 26) |
+| still at URP's default | **27** — every one of them carries a normal or a gloss map |
+| MToon, so no such properties exist | **5** (the VRoid models) |
+| mixed, some materials flat and some not | **5** — Alcina, Alice Ivy, Jessica Rabbit, Pomni, Spider-Man PS |
+| | **65** |
+
+**What was deliberately NOT done.** The 27 still at the default are untouched: their specular
+already varies per pixel through a normal or gloss map, so they are not the uniform-plastic case
+and flattening them is a different question. The 5 mixed ones are untouched for a stronger reason
+— somebody's build already made a per-material decision on them, and overriding that blind would
+be exactly the kind of blanket change this sweep was careful about.
+
+No per-material judgement was attempted within the 26, because it cannot be made from the bundle:
+the exporter renames every material to `<Character>_N`, so `Xenomorph_0` and `SkibidiToilet_3`
+carry no authoring meaning. Refining a hard-surface character to keep some shine on one part needs
+the source material names, which means a rebuild rather than a patch.
+
+**The two most likely to want it back** are the hard surfaces, where a specular highlight is part
+of what the thing is: **Xenomorph**'s carapace and **Skibidi Toilet**'s porcelain. Both are now
+fully matte. `patch_shine.py --smoothness S` softens one without reverting it, and the hash-verified
+backup makes a full revert a file copy. Nothing here has been seen in game, and the project's own
+note is that the editor understates the difference.
 
 
 ### FOUND, exactly: the POSE RESET, and her authored pose is her shape

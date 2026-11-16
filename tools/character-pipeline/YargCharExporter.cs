@@ -542,12 +542,15 @@ public static class YargCharExporter
                             }
                             // DO NOT MOVE THIS ABOVE THE METALLIC-MAP BLOCK BELOW. It used to be
                             // above it and `docs/character-models.md` records the consequence as a
-                            // known bug: binding a metallic map sets `_Metallic` back to 1 and
-                            // routes smoothness through the map's alpha, so for any material with
-                            // one the switch was only PARTLY applied -- it zeroed four floats and
-                            // then two of them were overwritten three statements later. Flattening
-                            // now happens last and declines the map outright, because a material
-                            // asked to have no shine does not want a gloss map either.
+                            // known bug. For any material with a metallic map the switch was only
+                            // PARTLY applied: it zeroed four floats, and three statements later
+                            // the map block set `_Metallic` straight back to 1 and enabled
+                            // `_METALLICSPECGLOSSMAP`, which makes the shader read smoothness from
+                            // the map's alpha and ignore the `_Smoothness` float that had just
+                            // been zeroed. So one of the four was literally overwritten and
+                            // another was bypassed. Flattening now happens last and declines the
+                            // map outright, because a material asked to have no shine does not
+                            // want a gloss map either.
                             if (flatten)
                             {
                                 nm.SetFloat("_Smoothness", 0f);
