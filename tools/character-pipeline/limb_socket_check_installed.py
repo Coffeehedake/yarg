@@ -209,6 +209,52 @@ def nearest(ps, torso):
     return ds
 
 
+def shift(da, db):
+    """(mm the right side is further at the WEAKEST of q0..q50, the profile).
+
+    A limb genuinely out of its socket is further from the body across its
+    whole near region, because the displacement is rigid. A difference in
+    topology between the two sides moves some quantiles and not others, and
+    three earlier versions of this check were each fooled by one statistic
+    that happened to move. So the criterion is the WEAKEST decile of the near
+    half, which is a statement of distributional dominance and is what "this
+    limb is further from the body" actually means.
+
+        Spartan Mark V, displaced   +25.1 +28.1 +26.7 +27.8 +26.8 +24.8
+        Peacemaker, sound            +0.1 +21.7 +26.8  +0.7  -2.8  -0.8
+
+    Peacemaker differs at two deciles out of eleven and agrees or reverses at
+    the rest. He was the last finding of the p10 version, and he is sound.
+    """
+    prof = []
+    for q in (0, 10, 20, 30, 40, 50):
+        ia = min(len(da) - 1, q * (len(da) - 1) // 100)
+        ib = min(len(db) - 1, q * (len(db) - 1) // 100)
+        prof.append((db[ib] - da[ia]) * 1000)
+    worst = min(prof, key=abs) if all(v > 0 for v in prof) \
+        or all(v < 0 for v in prof) else 0.0
+    return worst, prof
+
+
+def decide(da, db):
+    """(is one side out of its socket, +1 right / -1 left, text).
+
+    THE ONE PLACE THIS DECISION IS MADE. It lived in two -- here and in
+    patch_mirror.py's guard -- and the duplication bit twice: each time the
+    criterion was sharpened, the check got it and the patcher kept the old one,
+    so the tool that MOVES A BONE was briefly willing to accept characters the
+    tool that only reports had already cleared. Both call this now.
+    """
+    la, lb = gap(da) * 1000, gap(db) * 1000
+    lo, hi = min(la, lb), max(la, lb)
+    worst, prof = shift(da, db)
+    bad = abs(worst) >= GAP_MM and hi >= GAP_RATIO * max(lo, 0.01)
+    txt = ("left %6.1f mm   right %6.1f mm   q0..q50 right-left %s  "
+           "weakest %+6.1f" % (la, lb, " ".join("%+.0f" % v for v in prof),
+                               worst))
+    return bad, (1 if worst > 0 else -1), txt
+
+
 def gap(ds):
     """The limb's distance from the body, as a ROBUST statistic.
 
@@ -292,15 +338,11 @@ def report(path):
                      torso)
         db = nearest(sorted(pb, key=lambda p: -p[1])[:max(8, len(pb) // 5)],
                      torso)
-        la, lb = gap(da) * 1000, gap(db) * 1000
-        lo, hi = min(la, lb), max(la, lb)
-        bad = (hi - lo) >= GAP_MM and hi >= GAP_RATIO * max(lo, 0.01)
-        lines.append("    %-10s left %6.1f mm   right %6.1f mm   "
-                     "difference %5.1f, ratio %4.1fx   (minima %.1f / %.1f)%s"
-                     % (slot, la, lb, hi - lo, hi / max(lo, 0.01),
-                        da[0] * 1000, db[0] * 1000,
+        bad, side, txt = decide(da, db)
+        lines.append("    %-10s %s%s"
+                     % (slot, txt,
                         "   <-- %s SIDE IS OUT OF ITS SOCKET"
-                        % ("RIGHT" if lb > la else "LEFT") if bad else ""))
+                        % ("RIGHT" if side > 0 else "LEFT") if bad else ""))
         if bad:
             found += 1
     print("%-26s %s%s" % (name[:26], "%d limb(s) out of socket" % found

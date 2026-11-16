@@ -89,10 +89,7 @@ def sockets(src):
                 g.append(None)
                 continue
             top = sorted(ps, key=lambda p: -p[1])[:max(8, len(ps) // 5)]
-            # sock.gap(), the p10, NOT nearest()[0]. The minimum is hostage to
-            # one vertex: on minima Scott Hall's thighs read 1.1 against 14.0
-            # and this tool would have accepted him and moved a sound leg.
-            g.append(sock.gap(sock.nearest(top, tor)))
+            g.append(sock.nearest(top, tor))
         # and the two sides must be the same object before their joins can be
         # compared at all -- Vegeta's upper arms differ 45.2 mm in frame.
         if g[0] is not None and g[1] is not None:
@@ -129,17 +126,17 @@ def main():
                   "join, so there is no evidence %r is out of place" % (slot,
                                                                         bone))
             return 2
-        mine, theirs = (gl, gr) if bone == ln else (gr, gl)
-        print("%s: the %s join -- %r sits %.1f mm from the torso, its partner "
-              "%r sits %.1f mm" % (os.path.basename(src), slot, bone,
-                                   mine * 1000,
-                                   rn if bone == ln else ln, theirs * 1000))
-        if not ((mine - theirs) * 1000 >= sock.GAP_MM
-                and mine >= sock.GAP_RATIO * max(theirs, 1e-5)):
-            print("ABORT: that is not a limb out of its socket -- it needs to "
-                  "be at least %.0f mm and %.1fx further out than its partner."
-                  " Moving a bone that is already attached would detach it."
-                  % (sock.GAP_MM, sock.GAP_RATIO))
+        # ONE decision function, shared with the check -- see sock.decide().
+        bad, side, txt = sock.decide(gl, gr)
+        mine_is_right = (bone == rn)
+        print("%s: the %s join -- %s"
+              % (os.path.basename(src), slot, txt))
+        if not bad or (side > 0) != mine_is_right:
+            print("ABORT: %r is not the side that is out of its socket. The "
+                  "gap has to be at least %.0f mm and %.1fx larger than its "
+                  "partner's ACROSS the near half of the distribution, not at "
+                  "one quantile. Moving a bone that is already attached would "
+                  "detach it." % (bone, sock.GAP_MM, sock.GAP_RATIO))
             return 2
         hit = (slot, ln, rn, gl, gr)
         break
@@ -272,17 +269,13 @@ def main():
         print("  WARNING: the join cannot be re-measured on the result, so "
               "there is no proof it closed -- nothing was written")
         return 1
-    mine = g[2] if bone == g[0] else g[3]
-    theirs = g[3] if bone == g[0] else g[2]
-    print("  the %s join after the move: %r %.1f mm, %r %.1f mm "
-          "(was %.1f / %.1f)"
-          % (slot, bone, mine * 1000, partner, theirs * 1000,
-             (gl if bone == left else gr) * 1000,
-             (gr if bone == left else gl) * 1000))
-    if (mine - theirs) * 1000 >= sock.GAP_MM:
-        print("  WARNING: it is still %.1f mm further out than its partner, so "
-              "the mirror of the local offset is NOT this rig's mirror -- "
-              "nothing was written" % ((mine - theirs) * 1000))
+    still_bad, still_side, after_txt = sock.decide(g[2], g[3])
+    print("  the %s join BEFORE: %s" % (slot, txt))
+    print("  the %s join AFTER:  %s" % (slot, after_txt))
+    if still_bad and (still_side > 0) == (bone == right):
+        print("  WARNING: %r is STILL the side out of its socket, so the "
+              "mirror of the local offset is not this rig's mirror -- nothing "
+              "was written" % bone)
         return 1
     with open(out, "wb") as f:
         f.write(data)

@@ -1081,6 +1081,87 @@ translated out of it, and a different thing from Spartan Mark V's fault. He also
 in this file for a leg that reads 27.9° off vertical. Nobody has looked.
 
 
+#### Peacemaker, and the end of the summary statistic
+
+The last candidate, and he is sound too. His seven limb bone offsets mirror to **0.00 mm**, every
+one of them. What flagged him was the p10, and this is why it was wrong — the two sides' whole
+distance distributions, decile by decile:
+
+| | q0 | q10 | q20 | q30 | q40 | q50 | q60 | q70 | q80 | q90 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| left `n187` | 8.4 | 10.5 | 19.3 | 49.1 | 52.6 | 57.7 | 61.2 | 83.2 | 92.2 | 97.0 |
+| right `n191` | 8.4 | 32.1 | 46.1 | 49.8 | 49.9 | 56.9 | 59.1 | 87.9 | 94.4 | 95.3 |
+| difference | **+0.1** | +21.7 | +26.8 | **+0.7** | **−2.8** | **−0.8** | **−2.1** | +4.8 | +2.3 | **−1.8** |
+
+**Two deciles out of eleven differ.** They agree at the closest point, agree from q30 on, and
+reverse sign four times. Against Spartan Mark V's displaced leg, which is the shape a rigid
+displacement actually makes:
+
+| | q0 | q10 | q20 | q30 | q40 | q50 |
+|---|---|---|---|---|---|---|
+| Spartan, right − left | **+25.1** | **+28.1** | **+26.7** | **+27.8** | **+26.8** | **+24.8** |
+
+About 25 mm at every quantile, because the whole leg moved as one piece. That is the difference
+between a limb out of its socket and two sides whose topology differs slightly — and Peacemaker's
+does: his thighs carry 414 and 402 vertices and sit 7.03 mm apart in their own frames, and six of
+his seven limbs differ in frame at all.
+
+**And that asymmetry is his, not ours.** His source `Peacemaker_John_Cena_-_Rigged.usdz` holds
+8,449 vertices of which **3,929 sit right of centre and 4,520 left** — a difference of 591 — and
+each sampled right vertex is a median **4.74 mm** from its nearest mirrored left one, p90 7.32 mm.
+His model was never mirrored, the scatter in the source is the same size as the 7.03 mm in his
+bundle, and the build carried it through unchanged. Same conclusion as Scott Hall, reached the same
+three ways.
+
+**So the criterion is no longer a summary statistic.** A limb flags only when it is further from
+the body at EVERY decile from q0 to q50 — distributional dominance over the near half — by at least
+10 mm at the weakest of them. That is what "this limb is further from the body" means, it was
+derivable before any of this, and it is the thing three earlier versions each approximated with one
+number that happened to move. Spartan Mark V's weakest decile is +24.8 mm; Peacemaker's profile
+changes sign, so his is 0.
+
+Yui Suzukaze is the useful near-miss: her left upper arm IS consistently further out, −15 −10 −10
+−7 −10 −8, so the sign never changes — and the weakest is 7.2 mm, under the threshold. A mild
+genuine asymmetry, correctly not called a fault.
+
+**The decision now lives in ONE function**, `decide()`, called by both the check and the patcher.
+It had lived in two, and the duplication bit twice: each time the criterion was sharpened the check
+got it and the patcher kept the old one, so the tool that MOVES A BONE was briefly willing to
+accept characters the tool that only reports had already cleared. Pointed at Peacemaker's `n191`
+the patcher now refuses him, and the only reason it did no harm before the fix is that his bone was
+already at the target.
+
+**Six versions, one fault.**
+
+| version | measures | found across 65 |
+|---|---|---|
+| 1 | local offsets, `.L`/`.R` names, flat 2 mm | 39 |
+| 2 | local offsets, humanoid limbs | 9 |
+| 3 | the join, on minima | 3 |
+| 4 | the join, on a p10 | 2 |
+| 5 | + an in-frame gate | 1 |
+| 6 | the join, dominant across q0..q50 | **0 installed — and it still flags the real fault** |
+
+**A check that ends up reporting zero after six versions has to answer for itself**, so: three
+things say this is not a threshold tuned until the complaints stopped.
+
+1. **It still flags the fault.** Run against Spartan Mark V's pre-fix backup it reports his right
+   leg at +24.8 mm on the weakest decile. That fault was verified three ways that have nothing to
+   do with this check — a provably symmetric source, a rebuild 0.000 mm out, and a socket gap that
+   closed to his left leg's own figure when the bone moved. The installed set reads zero because
+   he is fixed and he was the only one.
+2. **The criterion was derivable before any of this.** A rigid displacement moves the whole near
+   region; that is what rigid means. Versions 3, 4 and 5 each approximated it with one number, and
+   the sharpening was towards the thing that was always correct rather than away from an answer.
+3. **It is not blind.** Yui Suzukaze's left upper arm is consistently further out at every decile
+   — −15 −10 −10 −7 −10 −8, sign never changing — and comes out at 7.2 mm on the weakest, under
+   the 10 mm threshold. The check reports that profile rather than hiding it; a genuine mild
+   asymmetry is visible in the output and simply not called a fault.
+
+64 of the 65 report "every limb joins the body"; the one that does not has too little torso flesh
+to measure a join against and says so.
+
+
 ### Sophia's shine, 2026-11-15: not her defect, the pipeline's default
 
 Reported as shiny, and explicitly not the Thanos fault — there is no glossiness map to invert
@@ -2106,7 +2187,7 @@ falls out of that is by *characters fixed per change made* rather than by severi
 | 5 | no bound visemes | 52 of 65 | mostly blocked on a source file that does not exist |
 | 6 | Jessica Rabbit is 3.7% too tall | 1 character | cosmetic |
 | — | floating prop setting the height | **0 of 65** | **CLOSED** — item 2 below |
-| — | bent or asymmetric limbs | **0 new** | ~~**CLOSED**~~ — **NOT closed, as of 2026-11-15.** Every flag was explained, and the sweep could only ever flag a limb that is BENT. Spartan Mark V's right leg sat 25 mm out of its socket with its knee and ankle angles matching his left to four decimals, so it was never a candidate. `limb_socket_check_installed.py` measures whether a limb JOINS the body. It took two more corrections after that — a minimum is not a robust statistic, and a vertex count does not establish that two limbs are the same object — and now finds **1 across 65**: Peacemaker's right leg, p10 10.5 mm against 32.1, unexamined. See "Spartan Mark V's right leg, 2026-11-15" and the correction under it |
+| — | bent or asymmetric limbs | **0 new** | ~~**CLOSED**~~ — **NOT closed, as of 2026-11-15.** Every flag was explained, and the sweep could only ever flag a limb that is BENT. Spartan Mark V's right leg sat 25 mm out of its socket with its knee and ankle angles matching his left to four decimals, so it was never a candidate. `limb_socket_check_installed.py` measures whether a limb JOINS the body. It took THREE more corrections after that — a minimum is not robust, a vertex count does not establish that two limbs are the same object, and no single quantile does either — and the sixth version requires the gap to dominate across q0..q50. It finds **0 across the installed 65** while still flagging Spartan Mark V's pre-fix backup at +24.8 mm, which is the only fault any version of it found. See "Spartan Mark V's right leg, 2026-11-15" and the correction under it |
 | — | missing animation / finger mapping | **0 new** | **CLOSED** — same |
 
 The reasoning behind each is in `docs/character-models.md`; what follows is the older list,
@@ -2437,11 +2518,14 @@ right.
   bone's whole subtree down to the next mapped humanoid bone, so a Character Creator `*_Twist`
   bone counts as part of its limb; the torso reference is the mapped spine chain ONLY, because
   expanding that to its subtree pulled in Spartan's `pelvis.R` and closed his 29.7 mm gap to 5.4.
-  **1 limb out of socket across 65**, unexamined: Peacemaker's right leg. It reads a p10 of
-  the near region and NOT the minimum, which one vertex can set — that reported Scott
-  Hall at 1.1 against 14.0 while his two distributions agree to 3 mm — and it declines a
-  pair that differs by more than 10 mm IN ITS OWN FRAME whatever its counts say, because
-  Vegeta's upper arms are 818 and 827 vertices and 45.2 mm apart in frame
+  A limb flags only when it is further from the body at EVERY decile from q0 to q50 —
+  distributional dominance over the near half — by at least 10 mm at the weakest of them.
+  NOT one summary statistic: three earlier versions were each fooled by a single quantile
+  that happened to move, and the profiles are what separate the cases. Spartan Mark V's
+  displaced leg reads +25 +28 +27 +28 +27 +25 and Peacemaker's sound one +0 +22 +27 +1 -3
+  -1. It also declines a pair differing by more than 10 mm IN ITS OWN FRAME whatever its
+  vertex counts say, because Vegeta's upper arms are 818 and 827 vertices and 45.2 mm apart
+  in frame. The decision lives in ONE function, `decide()`, shared with `patch_mirror.py`
 - `patch_mirror.py <yargchar> <bone> [--out X] [--dry-run]` — moves a displaced bone onto the
   mirror of its partner, in all FOUR structures that hold its offset: the `Transform`, the
   Avatar's `m_AvatarSkeletonPose` and `m_DefaultPose` (both nested under a `data` key — read one
