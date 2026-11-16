@@ -512,6 +512,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
+| Miku | twintails only move where they were repaired; the tie could be sprung too | **FIXED 2026-11-15 (evening).** Both right. Her two `HairSpring_*` chains run on eight bones an earlier hair-rigger run INVENTED, which dominate **38** vertices; her own twintail bones `Bone06`..`Bone15` and their `(mirrored)` twins dominate **462** and were on no chain, as were the three tie bones. Nothing found it because every rigger here selects by bone NAME and her rig has no bone whose name contains hair, tail, bang or tie — while `HairSpring_1_0` does. `patch_add_springs.py` put 7 new chains on her own bones: **324 vertices now move against 38**. `Bone06` stays rigid on purpose (it is the bun, 158 vertices, at the crown). The tie chain is given NO collider group — all three of its bones start 44.4/30.5/7.4 mm INSIDE the torso capsule, and attaching it would have thrown the knot forward and undone that morning's re-aim. See "Miku's twintails and necktie, 2026-11-15 (evening)" |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
 
 ### Two colliders was never enough, and nothing counted
@@ -2720,6 +2721,24 @@ right.
   it RE-MEASURES the join on the patched bytes and writes nothing unless the gap has come down to
   its partner's — because the naive mirror of a local offset is an assumption about the parent's
   axes that the file cannot confirm. On Spartan Mark V: 29.7 mm → 4.6, against a left leg at 4.7
+- `patch_add_springs.py <yargchar> <out> --chain A,B,C [--chain ...] [--group N|none]
+  [--stiff/--drag/--grav/--radius V] [--name N]` — puts bones that ALREADY EXIST onto spring
+  chains in an installed bundle. The opposite of `--unrig-hair`, and it exists for a fault that
+  tool cannot describe: every rigger here selects bones by NAME, so a rig whose author called
+  the twintails `Bone07` and the necktie `Bone01` is invisible to `DEFAULT_SPRING` and is left
+  entirely rigid by a rule that is working correctly. It reports how many vertices each chain
+  DOMINATES, because "3 chains added" is a fact about the file and says nothing about how much
+  of the character moves. Guards, in order: every bone exists; none is a humanoid bone; none is
+  already on a chain; each is a CHILD of the one before it, because a VRM chain is a path and a
+  list of unrelated bones is not one; a chain has at least two bones, the last being only a tip;
+  and **no joint may start INSIDE one of its own colliders** — a rest pose in penetration is not
+  a collision that gets handled, it is a displacement on frame one, and on Miku's necktie
+  (44.4 mm inside the torso capsule) it would have undone a fix made the same morning.
+  `--group none` is the escape and is a real trade: no colliders means the chain can swing
+  through the body. Joints are created by copying one the file already has — UnityPy 1.25 has
+  no API for adding an object — so it refuses on a file with no joint to copy, and the result
+  is checked by re-reading the written BYTES and, for the first patch here that adds objects
+  rather than edits them, by Unity's own loader with the pre-patch file as the control
 - `patch_springs.py <yargchar> [--cloth] [--limbs] [--unrig-hair] [--out X] [--dry-run]` — fixes
   the spring simulation IN THE INSTALLED BUNDLE, three independent defects, any or all. `--cloth`
   re-parameterises every cloth-named chain to the authored reference 0.50/0.05/0.00 (the old
@@ -3535,7 +3554,7 @@ code -- the other 57 were written and correct.
 | Jinx | ue4 | 1.68 | braids and bangs already in the rig |
 | Shrek | mayajnt | 2.10 | **As installed 2026-11-12:** `t_Shrek_alpha_c` (material `Shrek_1` in the bundle) is a CUTOUT, applied with `patch_alpha_cutout.py` rather than by rebuilding — it is a real opacity map, 40.8% clear and 0.0% mid under its own UVs on a 238-vertex card, and honouring it gives his tunic the ragged hem it should have. **Do not ship this by rebuilding**: the Blender round trip changes 60 bone orientations at arbitrary angles, and his `.vrm` and bundle otherwise agree exactly |
 | Gordon Freeman | valvebiped | 1.80 | **As installed 2026-11-12:** build from `m2/source/Valve_Gordon_Freeman.fbx`, textures `m2/textures`, with BOTH of these or he loses something — `VRM_BLEND_MATERIALS="lens"` (his glasses lenses shipped opaque and drew as two solid white panes over his eyes) and `VRM_VISEME="aa=gordon_freeman/AU26ZR+AU26ZL,ee=gordon_freeman/AU12R+AU12L,ih=gordon_freeman/AU12R+AU12L@0.7,oh=gordon_freeman/AU18R+AU18L.001,ou=gordon_freeman/AU18R+AU18L.001@0.75"`. **His shape keys are FACS action units and match none of the automatic patterns**, so without that map a rebuild drops all 32 of them and binds nothing — which is exactly what happened on the first rebuild, silently, with every census count unchanged. 7,169 triangles, 4 meshes, 7 materials, 12 morph targets, 5/5 bound. Do NOT add `eye-iris-green.tga` or `onefreeman` to the blend list: both alphas are specular masks, and honouring them hides his irises and erases his suit. **2026-11-12, second pass: he needed no rebuild at all** — his `.vrm` already carried `alphaMode: BLEND` on `lens` and the fault was entirely the exporter's, so his installed bundle is a straight re-export of that same `.vrm`. That was also the safer route: a rebuild is what dropped his 32 FACS keys the first time. His lens now renders as glass you can see his eyes through, where it had been a speckled hard mask |
-| Joker / Miku | maxbiped | 1.85 / 1.58 | **Miku, as installed 2026-11-15:** build from `miku-final.blend`, textures `miku_orig/textures`, exclude `^ts_bot`, **spring argument EMPTY** and `VRM_CLEAR_SPRINGS=1 VRM_FINGER_FILL=1`. Her intermediate carries the `HairSpring_1_*`/`HairSpring_2_*` twintail chains an earlier session built, so `VRM_CLEAR_SPRINGS` wipes those and `DEFAULT_SPRING` rebuilds exactly one chain per twintail — 2 chains, 4 joints each, 10 colliders, `MonoBehaviour` 22 -> 41. **Do NOT pass `$^` as the spring argument** (see below), and do not pass `VRM_EXPORT_POSE=rest`: her recipe has never had it and adding it moves 18 bones, 45 deg on the fused thumb metacarpals. Her skirt still does not swing and cannot be rigged by the current interface — one mesh, one material, no skirt bones, so no pattern can isolate it |
+| Joker / Miku | maxbiped | 1.85 / 1.58 | **Miku, as installed 2026-11-15:** build from `miku-final.blend`, textures `miku_orig/textures`, exclude `^ts_bot`, **spring argument EMPTY** and `VRM_CLEAR_SPRINGS=1 VRM_FINGER_FILL=1`. Her intermediate carries the `HairSpring_1_*`/`HairSpring_2_*` twintail chains an earlier session built, so `VRM_CLEAR_SPRINGS` wipes those and `DEFAULT_SPRING` rebuilds ~~exactly one chain per twintail~~ **two chains on the RIGGER'S OWN bones** — `DEFAULT_SPRING` matches `HairSpring_1_0` because the word is in its name, and matches nothing of hers, because her twintails are `Bone06`..`Bone15`. 2 chains, 4 joints each, 10 colliders, `MonoBehaviour` 22 -> 41, and 38 of her ~500 twintail vertices moving. **The installed bundle is no longer this build**: `patch_add_springs.py` added 7 chains on her own bones on 2026-11-15 evening, so a rebuild from this row loses them and they would have to be re-applied. **Do NOT pass `$^` as the spring argument** (see below), and do not pass `VRM_EXPORT_POSE=rest`: her recipe has never had it and adding it moves 18 bones, 45 deg on the fused thumb metacarpals. Her skirt still does not swing and cannot be rigged by the current interface — one mesh, one material, no skirt bones, so no pattern can isolate it |
 | Tenna | rigify_def | 1.80 | exclude `^(Floor\|Lights\|Sign)` |
 | Sophia | rp | 1.70 | |
 | Steve | steve | 1.80 | |
@@ -4541,8 +4560,16 @@ measurable in the shipped bundle:
 | colliders | **0** | 10 |
 
 22 is the bare count for a character with no springs at all, so all eight
-twintail bones were in the file with nothing whatever to move them. They were
-rigid because they were bones, not hair.
+`HairSpring` bones were in the file with nothing whatever to move them.
+
+> **CORRECTION, same day, evening.** The sentence that stood here called those
+> "all eight twintail bones". **They are not her twintail bones.** They are
+> eight bones an earlier hair-rigger run INVENTED and hung off `Bip01 Head`,
+> and they carry 38 vertices between them. Her twintails are modelled on
+> `Bone06`..`Bone15` and their `(mirrored)` twins, twenty bones carrying 462,
+> and none of those was on a chain. So the fix recorded above restored motion
+> to **38 of her ~500 twintail vertices** and the section read that as the
+> twintails swinging. See "Miku's twintails and necktie, 2026-11-15 (evening)".
 
 `VRM_CLEAR_SPRINGS` exists *because of her*. The comment on it says so: her
 intermediate `.blend` carries the `HairSpring` chains an earlier session built,
@@ -4578,12 +4605,136 @@ second build, particularly when the first one's own script comment claimed
 
 The hair-rig interface finds a group by **material**, and she is one mesh with
 one material, `tsx_bot205`, covering her whole body. There is no pattern that
-isolates her skirt, and no skirt bones to spring either -- her 70-bone rig is
-`Bip01 *` plus the eight `HairSpring` bones and nothing else. So the twintails
-swing and the skirt does not. Note this is a different fault from "her dress
-does not move with her", which was undriven WEIGHT above the humanoid root and
-was fixed on 2026-11-11; the skirt follows her hips correctly and simply has
-nothing to make it swing.
+isolates her skirt. ~~and no skirt bones to spring either -- her 70-bone rig is
+`Bip01 *` plus the eight `HairSpring` bones and nothing else~~ — **that is
+wrong, and it is the same error as above**: her rig also carries `Bone01`
+through `Bone15`, their `(mirrored)` twins and `Dummy01`/`Dummy02`. Two of
+them, `Bone04` and `Bone05`, sit at hip height 150 mm out to each side and
+carry 8 vertices apiece. So there ARE two bones in her skirt region; they are
+simply too small to be the skirt. The rest of it has nothing to swing it, which
+is the original conclusion reached for a reason that was not true.
+
+Note this is a different fault from "her dress does not move with her", which
+was undriven WEIGHT above the humanoid root and was fixed on 2026-11-11; the
+skirt follows her hips correctly and simply has nothing to make it swing.
+
+### Miku's twintails and necktie, 2026-11-15 (evening): the rigger's own bones were the only ones moving
+
+Reported as "her twintails are only spring-boned where they were repaired; the
+rest of her twintails are rigid", with the necktie offered as a second chain
+worth springing now that it hangs. Both are exactly right, and the first one
+names the fault better than three earlier passes at her did.
+
+**What was moving.** Two chains, `HairSpring_1_*` and `HairSpring_2_*`, four
+joints each, on eight bones hanging straight off `Bip01 Head`. Those eight
+bones were **made by a hair-rigger run**, not by her modeller, and the rigger
+weighted a little of her hair onto them. Counting the vertices each bone
+DOMINATES:
+
+| | bones | vertices |
+|---|---|---|
+| on a spring chain (`HairSpring_*`) | 6 of 8 | **38** |
+| her own twintail bones, rigid | 20 | **462** |
+| her own necktie bones, rigid | 3 | **20** |
+
+`HairSpring_1_0` and `HairSpring_2_0` dominate nothing at all. So 7.6% of her
+twintails moved, and the count of chains in the file -- which is what every
+check here had been reading -- was 2 either way.
+
+**Why nothing found it.** Every automatic rigger in this pipeline selects bones
+by NAME. `build_vrm.py`'s `DEFAULT_SPRING` is a regex over bone names, and
+`spring_scan.py` uses the same vocabulary: `hair|ponytail|pigtail|braid|bang|
+tail|skirt|...|tie`. Her twintails are called `Bone06`..`Bone15` and her
+necktie `Bone01`..`Bone03`. **Not one of those words appears in her rig**, so
+the pattern matched nothing of hers — and then matched `HairSpring_1_0`,
+because the rigger's own invented bones have `hair` in their names. The build
+reported two chains made and was telling the truth.
+
+This is a class, not a quirk. Any rig whose author numbered the bones instead
+of naming them is invisible to a name-matching rigger, and the failure is
+silent in the worst way: it reports success, with a count.
+
+**The fix: `patch_add_springs.py`**, a new tool, the opposite of
+`patch_springs.py --unrig-hair`. It puts bones that already exist onto chains
+in an installed bundle. Seven chains were added:
+
+| chain | bones | vertices |
+|---|---|---|
+| `Twintail_0` | `Bone07` → `Bone08` → `Bone09` → `Bone10` | 77 |
+| `Twintail_1` | `Bone11` → `Bone12` → `Bone13` | 59 |
+| `Twintail_2` | `Bone14(mirrored)` → `Bone15(mirrored)` | 14 |
+| `Twintail_3` | the mirror of `Twintail_0` | 75 |
+| `Twintail_4` | the mirror of `Twintail_1` | 64 |
+| `Twintail_5` | `Bone14` → `Bone15` | 15 |
+| `Tie` | `Bone01` → `Bone02` → `Bone03` | 20 |
+
+324 vertices that were rigid now move, against 38 before. Parameters are her
+own existing chains' to the digit: stiffness 0.60, drag 0.45, gravity 0,
+hitRadius 0.02.
+
+**`Bone06` and its mirror are deliberately left rigid.** They sit at the top of
+her skull, 145 mm above `Bip01 Head`, and they carry 158 vertices — the buns
+the twintails are tied into. A VRM chain rotates its first joint, so putting
+`Bone06` at the head of a chain would swing the whole twintail about a pivot on
+her crown and take the bun with it. That is Lola Bunny's attachment-bone fault,
+which `build_vrm.py`'s `_trim_anchor` exists to avoid. The chains start at
+`Bone07`, just below the tie.
+
+#### The necktie gets no colliders, and that is the measured answer
+
+The six twintail chains were given the `Body` collider group — 10 capsules and
+one head sphere — and the tie was going to get it too. It must not:
+
+| tie bone | nearest collider | clearance |
+|---|---|---|
+| `Bone01` | capsule on `Bip01 Spine`, r 132 mm | **−44.4 mm** |
+| `Bone02` | the same | **−30.5 mm** |
+| `Bone03` | the same | **−7.4 mm** |
+
+All three START INSIDE it. A spring solver's first act is to push a joint out
+to the collider's surface, so this is not a collision that would be handled —
+it is a displacement, on frame one, before anything moves. Attaching that group
+would have thrown the knot 44 mm forward and reproduced the **"tie sticking
+straight out"** fixed that same morning by re-aiming the chain, which is as
+close to an own goal as this pipeline has come.
+
+The capsule is not wrong, it is crude: a cylinder of 132 mm radius standing in
+for a torso, on a character who is slim. Shrinking it is not available — the
+twintail chains share it and rely on it. So the tie chain carries no collider
+group, and can in principle swing through her chest. With gravity 0 it holds
+its 15° rest pose and only sways about it, which makes that the smaller of the
+two faults. For hair it would be the larger one.
+
+Every twintail bone, by contrast, clears every collider at rest, the tightest
+being `Bone14(mirrored)` at **+8.6 mm** from the head sphere. The guard is now
+`patch_add_springs.py`'s, not a one-off measurement.
+
+#### Verifying a bundle that has objects in it UnityPy invented
+
+The joints had to be CREATED — 21 of them — and UnityPy 1.25 has no API for
+adding an object to a bundle. Each new joint is a shallow copy of one the file
+already carried, given a fresh `path_id` and its own typetree, inserted into
+the `SerializedFile.objects` dict that `save()` iterates. That works because a
+copy inherits the donor's `assets_file`, `type_id`, `serialized_type` and
+`class_id`, so nothing about the object is invented except its contents.
+
+**UnityPy reading back what UnityPy wrote is not evidence that Unity can read
+it**, and this is the first patch here to add objects rather than edit them.
+So it went through Unity's own loader, with the pre-patch file beside it as the
+control, and the load test was extended to resolve each chain's joint PPtrs —
+a joint Unity cannot deserialise arrives as a **null entry in the list**, not
+as an exception, so counting chains alone would have missed it:
+
+```
+character                    bundle    prefab    rend   mats  bones    smr    springs
+Miku-NEW                     ok        ok           1      1     88      1     9c/29j
+Miku-OLD-control             ok        ok           1      1     88      1      2c/8j
+
+2 loaded with content, 0 FAILED
+```
+
+29 joints resolved, 0 null. The control reads 2c/8j, so the column is not stuck
+on a constant.
 
 ### A build log carries the VRM add-on's own guesses, and they are not ours
 
