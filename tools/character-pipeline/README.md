@@ -34,7 +34,16 @@ blender --background --python build_vrm.py -- <model> <texdir> <height_m> <rig> 
   automatically, which is almost always what you want
 - `hairrig` — regex over MESH *or* MATERIAL names to build hair chains for a model that has none;
   `island:N` addresses the Nth-largest connected island for a part with no name of its own, and
-  the build prints where each island sits so a recipe can be written from its own output
+  the build prints where each island sits so a recipe can be written from its own output.
+  **Two things it refuses, both added 2026-11-15 and both printed when they fire.** A mesh taken
+  only because it SHARES a matching material is declined when its own name says it is not hair
+  (`lash`, `brow`, `eye`, `teeth`, `tongue`, `mouth`, `lip`…) — a material is shared by whatever
+  the author chose, and on an anime-styled model that is routinely the lashes and brows; a mesh
+  the pattern NAMES is still taken, so `hairrig lashes` still rigs the lashes
+  (`VRM_HAIRRIG_FACE=1` to disable). And a strand that is ≥50% SEALED inside a mesh rigidly
+  parented to the head — a hat, helmet, hood or crown — is not rigged at all, because hair that
+  cannot be seen cannot be seen to swing and can only be seen to clip (`VRM_HAIR_SEALED`).
+  Killer Clown hit both at once; see "Killer Clown's hat, 2026-11-15"
 
 **More than one group.** The positional `hairrig` is the hair, and `VRM_RIG_MORE` adds further
 groups — a dress as well as hair, a cape as well as a tail:
@@ -498,6 +507,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Peach | eyes missing; dress springs so reactive her legs clip through it | **BOTH FIXED 2026-11-11, and neither was what the report implied.** The eyes are the alpha fault: her eye is a STACK of meshes from a Smash rip -- `Peach_eye` is a blank white sclera with no iris, `Peach_Blink_Ottotto` is the iris and `Peach_Blink_VoiceA` is the eyelid-and-lash plate that fills a rectangular hole in `Peach_faceN` -- and all three shipped `OPAQUE`, so the top layer drew as a solid plate. The skirt is NOT too reactive: her skirt chains are stiffer and more damped than her hair's (0.85/0.80 against 0.60/0.45). They are UNGUARDED -- eight of her nine chains hang around her thighs and she had two colliders, both on her torso. See below. **~~BOTH FIXED~~ — REOPENED 2026-11-15 and fixed again, and "BOTH FIXED" is what let it happen.** Reported a second time, for clipping legs AND a dress moving as one piece. Two causes: her skirt was damped to near-rigidity by the 0.85/0.80 cloth default, which had itself been set in answer to the *first* Peach report before that report's cause was withdrawn; and the limb capsules fitted on 2026-11-11 use the MEDIAN flesh radius, so half of every limb sits outside its own collider and her calf reaches 24 mm past the only thing her hem can feel. See "Peach's dress, 2026-11-15" |
 | Link | eye textures misplaced; still holding the master sword and shield | **both fixed.** His rig has bones named `Sword` and `Shield`, so `VRM_DROP_ISLAND="LinkEquipment=Sword+Shield"` takes 41 islands and leaves `Fourreau`, his scabbard, on his back. His eye material `Material.003` was taking the body atlas while `Eye.png` sat unused beside it |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and ~~finger bones that are mapped but not weighted~~ **corrected 2026-11-11 by `bundle_audit.py`: he has ZERO finger bones in his humanoid map**, and 21 humanoid bones in total against a typical 52. The symptom was right, the stated cause was wrong |
+| Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
 
 ### Two colliders was never enough, and nothing counted
@@ -676,6 +686,134 @@ bone *subtree* and the patcher by *dominant weight*.
 Rem, Link, Power Girl and Yoda** — and every character built before today carries median limb
 capsules. `patch_springs.py --cloth --limbs` is the tool for all of them and none of them has been
 done. And nothing here has been seen in game: Peach is verified file-side only.
+
+### Killer Clown's hat, 2026-11-15: the hat was the smaller half
+
+Reported as hair clipping through her jester hat. Measuring it turned up a second fault that was
+not reported and is worse, and both come from the same place: not the hair rigger's PARAMETERS,
+which is where the last two rounds of spring work went, but its **SELECTION** — which vertices it
+decided were loose hair. No stiffness, drag or collider fixes a chain that is on the wrong
+geometry.
+
+**Fault A — her eyebrows and eyelashes are on hair springs.** The rigger takes a group by mesh
+name, and failing that by MATERIAL name, and the material fallback takes every mesh that shares
+the material. Her hair, lashes and brows are one material, so `hairrig hair` took all three:
+
+| mesh | vertices on a hair spring chain |
+|---|---|
+| `brows` | **146 of 146** |
+| `lashes` | **2,357 of 4,640** (and all 4,640 carry some spring weight) |
+| `hair` | 387 of 731 |
+
+So 2,503 of the 2,890 vertices her four chains move are facial features, swinging on hair physics
+across her face, and her own mesh names say `brows` and `lashes`. Nothing asked them. A material
+is shared by whatever the author chose to share it with, and on an anime-styled model that is
+routinely the lashes and brows, drawn with the hair's own texture — a mesh-name match is a
+deliberate instruction and a shared material is an inference, and the two were treated as the same
+evidence. The name is now consulted when the evidence is only a shared material; a mesh the
+pattern names directly is still taken, so `hairrig lashes` still rigs the lashes.
+`VRM_HAIRRIG_FACE=1` restores the old behaviour.
+
+**Fault B — the hair it did rig is sealed inside the hat.** Of the 387 hair vertices on the
+chains, **371 (96%) are inside the hat shell**, up to 51.8 mm deep, while **95% of the 344 the
+rigger left rigid are outside it**. The physics went on the hair nobody can see and the visible
+hair stayed rigid. The only observable effect those chains have is the reported fault.
+
+The shell test is the sign of the dot product between a point and the nearest surface's normal.
+Its control is the head's own flesh: a scalp vertex must read inside the hat and a nose vertex
+outside it, and they do — scalp −26 to −12 mm, nose +68 to +72 mm.
+
+**Why not an inside collider.** UniVRM does implement `SphereInside` and `CapsuleInside`
+(`SpringBoneCollision.TryResolveSphereCollisionInside`), and confining the hair under the hat is
+the physically right description, so this was the first candidate. Her own numbers rule it out. A
+collider constrains a JOINT — a sphere of `hit_radius`, 20 mm, at the bone's tail — and what
+breaches the hat is the MESH, hanging up to 64 mm past that joint. Dividing each vertex's
+clearance by its lever arm gives the angle at which it comes through:
+
+| | breach angle |
+|---|---|
+| 16 of the 387 | already outside the shell at rest |
+| p10 of the rest | **2.9°** |
+| median | 9.3° |
+| max | 62.7° |
+
+Nothing that confines the joints saves geometry with 3 mm of room at 60 mm of radius, and
+shrinking the sphere until it did would pull her hair into her scalp at rest. So the chains were
+removed, not re-parameterised — and for the same reason stiffening them is not a fix either: a
+stiffer spring still moves, and these have 2.9° of room.
+
+**The attachment test was not the bug, and the margin says why.** The rigger measures which end of
+a hair group is attached by comparing the two ends against the MIDDLE of the anchor bone, and runs
+the chain away from the nearer one. On her hair it chose the BOTTOM — chains running *upward* —
+over the TOP by **13.4 mm out of 135, a 9.9% margin**. That test asks which end is attached and
+assumes the other one swings. On a cap of hair both ends sit on the scalp, so it is deciding
+between two nearly equal numbers. The answer is not that it picked the wrong end; it is that
+neither end is loose, which is what the new rule measures directly.
+
+**Two sweeps, and the first one was wrong.** The sweep written to ask whether any other character
+has sprung hair sealed inside a rigid head mesh pooled EVERY spring-driven vertex and tested it
+against any rigid head mesh with no bound on distance. A nearest-vertex normal describes the
+surface it belongs to and nothing further away, so at range it returned confident nonsense:
+**Peach's SKIRT as 1,583 mm "inside" her crown**, and Heels' hem 447 mm inside a mesh called
+`CC_Base_TearLine`, which was only in the shell list because `ear` is a substring of `TearLine`.
+It also diluted Killer Clown's own 96% to 8%, by averaging her hair in with the 4,200 vertices her
+CHEST springs drive. Corrected — hair chains only, reported per chain, and a point outside the
+shell's bounding box or more than 50 mm from its surface gets NO answer rather than a wrong one —
+it reproduces her 371 and reports zero elsewhere. Both tools now carry that bound.
+
+Swept over all 65 installed bundles with the corrected test, **Killer Clown is the only character
+with a facial feature on a spring chain**, and the only one with hair sealed in a shell. The tool
+itself was then run as a dry run over all 65 as its own control, and flags her four chains and
+nothing else: 29 characters with spring chains report nothing to remove, and 36 have no spring
+chains at all. The sweep's limit is worth stating: it can only see a mesh whose NAME says what it
+is, and a dozen characters have theirs on `Plane`, `Mesh.001` or `default`, where no name test can
+look.
+
+**Patched, and the rebuild is the control.** `patch_springs.py --unrig-hair` removes a chain from
+the `Vrm10Instance.SpringBone.Springs` array, which is the single source of truth — the runtime
+builds its simulation buffers from it and never looks for joint components on its own, so an
+orphaned `VRM10SpringBoneJoint` is inert. Her BONES stay, all 16 of them, so every vertex keeps the
+position the model gives it and only the motion stops. Her four chains went, both chest chains
+stayed at 1.00/0.90, and her two colliders were untouched.
+
+Her source does still exist (`killer-clown-v2-balatro-style.zip`, `source/Catwalk Walking.fbx` —
+a Mixamo export, which is where her stripped-prefix bone names come from), so she was also rebuilt
+with the fixed rigger. That is not what was installed; it is the control, and it is two independent
+implementations of the same two rules agreeing:
+
+```
+hair rig: 'brows' shares a material matching /hair/, but its own name says it is not hair -- NOT rigged
+hair rig: 'lashes' shares a material matching /hair/, but its own name says it is not hair -- NOT rigged
+hair rig: 'jester hat' is rigid on 'Head' -- treating it as a shell the hair must stay out of
+hair rig: strand 0 is 74% sealed inside 'jester hat' (deepest 28 mm) -- NOT rigged
+hair rig: strand 1 is 86% sealed inside 'jester hat' (deepest 50 mm) -- NOT rigged
+hair rig: strand 2 is 71% sealed inside 'jester hat' (deepest 50 mm) -- NOT rigged
+hair rig: strand 3 is 82% sealed inside 'jester hat' (deepest 19 mm) -- NOT rigged
+spring bone chains added: 0        breast spring chains added: 2
+```
+
+Blender uses `closest_point_on_mesh`, an exact FACE normal; the patcher has only nearest-vertex
+normals on the exported geometry. The deepest depths agree to about 2 mm — 28/29.0, 50/47.2,
+50/47.6, 19/19.7 — and the rebuild lands on the same outcome the patch did, 0 hair chains and 2
+chest chains. The sealed FRACTIONS differ (71–86% against 93–97%) because the denominators are
+different populations: Blender's is the strand's loose vertices, the patcher's is what the chain
+dominates in the exported mesh. Both are far above the 50% the rule needs.
+
+**Verified four ways**, as with Peach. The patcher's read-back fingerprints every object's full
+typetree: **1 of 325 objects changed, 0 gone, 0 added** — the one `Vrm10Instance`. `verify_rebuild.py`
+against the installed file: **CULL-ONLY, DIFFERS BEYOND CULL 0**. `texdims.py`: the same 10
+textures at 1024×1024. `bundle_audit.py`: the same 6 clips / 1 controller / 52 humanoid / 30
+fingers / 14 meshes. A second `--unrig-hair` run on the result reports "nothing to do", so it is
+idempotent and at target. Backup `character-backups/Killer Clown.prehairrig-2026-11-15.yargchar`,
+md5 `2521f356…`, matched against the live file before it was replaced; installed md5
+`ca62c1fd…`, 7,880,410 bytes against 8,133,085.
+
+**What is still wrong.** The orphaned collider group is still in her file, referenced by nothing —
+harmless, and left rather than add a second kind of edit to verify. Her hair is now entirely rigid
+on her head, which is what 344 of its 731 vertices already were and what the hat requires; if she
+is ever reported as having stiff hair, the fringe below the hat brim is the part that could
+legitimately swing and it has never been rigged. And none of this has been seen in game.
+
 
 ### FOUND, exactly: the POSE RESET, and her authored pose is her shape
 
@@ -1786,15 +1924,22 @@ right.
   round trip that produces the `.vrm` changes 60 bone orientations on a character whose rig
   matches his bundle exactly. The state is COPIED from a real cutout (Heels' `Heels_17`),
   not invented, and it reads the file back to prove only the named material changed
-- `patch_springs.py <yargchar> [--cloth] [--limbs] [--out X] [--dry-run]` — fixes the spring
-  simulation IN THE INSTALLED BUNDLE, two independent defects, either or both. `--cloth`
+- `patch_springs.py <yargchar> [--cloth] [--limbs] [--unrig-hair] [--out X] [--dry-run]` — fixes
+  the spring simulation IN THE INSTALLED BUNDLE, three independent defects, any or all. `--cloth`
   re-parameterises every cloth-named chain to the authored reference 0.50/0.05/0.00 (the old
   0.85/0.80 damps a skirt into near-rigidity and is above every value in any author-made bundle
   here); `--limbs` re-radiuses the arm and leg capsules from the median flesh distance to the
   90th percentile, because a median leaves half of every limb outside its own collider and a
   VRM spring joint is deflected by a collider and by nothing else. Both carry the clearance
   guard — a collider that CONTAINS a joint ejects it, which is what ballooned Gadget's hair —
-  and both skip the chain's anchor joint, as `vrm_colliders.fit` does. Its read-back
+  and both skip the chain's anchor joint, as `vrm_colliders.fit` does. `--unrig-hair` is the
+  third and it REMOVES chains rather than tuning them: a hair chain that drives a facial feature
+  (Killer Clown's eyebrows were 146 of 146 vertices on hers) or whose hair is sealed inside a
+  rigid head-mounted mesh (371 of her 387 were inside her jester hat) is a selection fault that
+  no parameter fixes. It drops the chain from `Vrm10Instance.SpringBone.Springs`, which is the
+  single source of truth the runtime builds its buffers from, and leaves the bones, joints and
+  meshes alone — so every vertex keeps the position the model gives it and only the motion
+  stops. Its read-back
   fingerprints every object's full typetree, so an unintended change cannot hide and a failed
   check writes nothing at all. For the 35 characters with no source left, and for the ones like
   Peach whose recorded recipe no longer reproduces them
@@ -2611,7 +2756,7 @@ code -- the other 57 were written and correct.
 | Jessica Rabbit | rigify_plain | 1.80 | **Corrected 2026-11-12 — the values that were here described a build that was never installed.** Source is `jessica_rabbit.glb`, proven by the installed bundle's own node names (`GLTF_created_0_rootJoint` and sixteen `Object_NN` meshes, which exist only in the GLB). Exclude `^(Icosphere|Object_12|Object_13|Object_15|Object_17|Object_19|Object_21)$` — the stray sphere and the six `metal` mic-stand parts, the same seven objects the old blend-era `^(BezierCurve|Cylinder|Cube)` dropped under `.blend` names. **Without it the build refuses to run**: those unrigged meshes inflate the scene's Z by 3.33x and it aborts *implausibly narrow, 0.1397 m wide for 1.8000 m tall*. **Pass NO `VRM_TEX` and an EMPTY texture directory** — the recorded `rskin=Skin_makup_0003_Body_multires_sculpt.001_m.jpg` is an atlas for the `.blend`'s UV layout on a black background, and on the GLB's UVs it paints half her face and the inside of her mouth solid black; the installed bundle carries the GLB's own `Image_5` and none of the zip's `Body_resculpt1*` maps. Keep `VRM_RIG_MORE='^glitter-transprnt$@spine#4,4,0.2'` for the skirt, hairrig `^hair`, then **round-trip through `add_colliders.py` with `VRM_RECOLLIDE=1`** — that is where her colliders come from and it normalises bone rolls; without it 31 bones disagree on rotation, with it zero. Result against the original bundle: 178 of 178 names, 0 rotation mismatches, 177 of 178 lengths within 0.5 mm, 15,706,041 bytes against 15,590,635. The one residual is `GLTF_created_0_rootJoint`, 13.4 mm longer in the original. Her 1.867 m is NOT a height: her REST mesh data spans 1.8672 m while her POSED model measures 1.8000 m, and the sweep reads rest bounds. The same 1.8672 is in the `.vrm` behind the original build. She is the only one of 52 characters with a documented target that misses it, so it is hers alone and not an exporter fault |
 | Alice Ivy | cc_base | 1.70 | exclude `^COLLIDER`. **As installed 2026-11-12:** `VRM_BREASTRIG=1 VRM_VISEME_GAIN=2.2 VRM_VALUE_ALPHA=1` and `VRM_BLEND_MATERIALS="Std_Eyelash"`. **`VRM_VALUE_ALPHA=1` is not optional for her**: her `Custom_Eye` mesh carries `EyeMoisture_Left`/`_Right`, a wet-film shell in front of the eyeballs that is black at **alpha 0.051, `blend_method=HASHED`, no texture**, and without the switch it ships `baseColorFactor [0,0,0,1]` — **a solid black disc over each eye**, with her correctly-textured eyes intact underneath. Checked before turning it on: on her it changes those two materials and nothing else (every other material either has an image in Alpha or sits at 1.0) — the lash only. **Her four hair materials stay cutouts on purpose**: they lose 1% of their ink to the 0.5 threshold, so a blend recovers nothing and gives up a cutout's sorting. Built both ways and compared on the podium before deciding. **Updated 2026-11-12:** add hairrig `Hair` (positional 10). She shipped with two chest chains and no hair chain; `Hair` matches her mesh `HS_SBH_Hair_G9_Shape`, 30,717 verts hanging to z=1.394 under a head bone at 1.533, and gives her four 4-joint `HairSpring` chains with 25,713 vertices weighted onto them. Adding it changes nothing else: `identify_build.py` compares 149 bones with **0 length and 0 rotation mismatches**, the names falling to 89.2% purely because of the 18 new bones |
 | Ariel | daz | 1.70 | hairrig `Hair`. The ARGV was recovered from her own `.yargchar` — `lPectoral` and `abdomenUpper` are DAZ names, and the mesh bounds give the height — but **she is not sourceless, and this row was read that way twice**: her model is `base-female-character.zip`, `source/Ariel For Sketchfab.fbx`. **As installed 2026-11-12:** `VRM_BREASTRIG=1` and `VRM_BLEND_MATERIALS="Eyelashes;Hair Cap"`. `EyeMoisture` and `Cornea` are deliberately left as cutouts and are the only `HARDCUT` and `INVISIBLE` left in the installed set: at a lowered cutoff `EyeMoisture` drew an opaque white film and erased her irises, and a blend is a different operation on the same suspect alpha |
-| Killer Clown | mixamo | 1.80 | hairrig `hair`. Her bones are Mixamo's with the prefix stripped (`Hips`, `LeftHandIndex1`, `HeadTop_End`), which the family auto-detects |
+| Killer Clown | mixamo | 1.80 | hairrig `hair`. Her bones are Mixamo's with the prefix stripped (`Hips`, `LeftHandIndex1`, `HeadTop_End`), which the family auto-detects. **Source confirmed 2026-11-15:** `killer-clown-v2-balatro-style.zip`, model `source/Catwalk Walking.fbx` (a Mixamo animation export, which is where those bone names come from) with `textures/`, no exclude and no spring pattern. Rebuilt from exactly that on 2026-11-15 and it is **NOT what is installed** — the rebuild was the control for the hair-rigger fix, and she was patched with `patch_springs.py --unrig-hair` instead. The rebuild agrees with the patch on the outcome (0 hair chains, 2 chest chains) but was never exported to a bundle, so nothing here claims her recipe reproduces her |
 | Heels | cc_base | 1.70 | hairrig `Hair`; the archive holds `source/untitled.zip` with the `.blend` inside. ~~Do not reinstall yet — a rebuild loses her transparency~~ **Resolved 2026-11-11**: that was the missing-alpha bug. A rebuild now keeps all five of her transparent materials and adds two more (`Std_Eye_Occlusion_R`, `Std_Tearline_R`). `High_Heels` and `Underwear_Bottoms` stay opaque, as installed — their "opacity" files are merged diffuses with no alpha channel left. **As installed 2026-11-12:** add `VRM_BREASTRIG=1 VRM_VISEME_GAIN=2.2` and `VRM_BLEND_MATERIALS="Std_Eyelash;Std_Tearline_R;Std_Tearline_L;Std_Eye_Occlusion_R;Std_Eye_Occlusion_L;front_hair_Transparency;tail_Transparency"` — seven blended, two cutouts left. Her hair IS in the blend list, unlike Alice Ivy's: hers loses 25.5% of its ink to the threshold and renders as speckle without it. Naming both the `_R` and `_L` of each pair is not redundant — the archive's merged texture is `Std_Eye_Occlusion_L_Diffuse-Std_Eye_Occlusion_R_Opacity.png`, so the opacity picker matched `_R` by name and left `_L` a cutout |
 | The Rock | mixamo | 1.96 | Archive `the-rock.zip` -> `source/The_Rock.7z` -> `Rock.fbx`, textures beside it. Two stages and **both are needed**: `scale_rig.py` (his skeleton spans 4.4726 m against a 1.96 m mesh with bones 1.7011 m below the floor; factor 0.3978 about the hips), then `fit_joints.py`. ~~SCALE ONLY, do not run fit_joints~~ — that was written off a REST-pose render, and on the podium the scale-only build's fingers stretch into strips past his knees. Only the posed render shows it. What IS removed from the fit is the **shoulder** joint, which doubled his span to 0.548 and is the gorilla-arm defect. Check with `proportion_check_installed.py` (expect shoulders near 0.249, reach near 0.938) AND a podium render of the hands — `bone_fit.py` alone rewards exactly what the fit does. **Installed 2026-11-12** with scale + fit-minus-shoulder: shoulders 0.548 -> 0.295, hands intact, wrist 24.9/25.1 -> 1.9/0.9, everything else identical (6 clips, 52 humanoid, 30 fingers, 21 meshes, 1.960 m). Backup `The Rock.pregorilla.yargchar` |
 | Mario | mariojnt | 1.55 | |

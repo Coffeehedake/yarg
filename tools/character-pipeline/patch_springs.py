@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """Fix the spring simulation in an INSTALLED .yargchar, in place.
 
-    python patch_springs.py <in.yargchar> [--cloth] [--limbs] [--out X]
-        [--dry-run]
+    python patch_springs.py <in.yargchar> [--cloth] [--limbs] [--unrig-hair]
+        [--out X] [--dry-run]
 
-Two independent defects, either or both:
+Three independent defects, any or all:
 
   --cloth   re-parameterise every cloth-named spring chain to the authored
             reference, 0.50 stiffness / 0.05 drag / 0.00 gravity. Characters
@@ -23,6 +23,27 @@ Two independent defects, either or both:
             deflected by a collider and by nothing else, so the capsule IS the
             leg as far as a skirt is concerned. Peach's calf reaches 0.080 from
             the bone axis against an 0.039 capsule.
+
+  --unrig-hair
+            REMOVE a generated hair chain that should never have been built:
+            one that drives a facial feature, or one whose hair is sealed
+            inside a rigid head mesh. Both are faults of the hair rigger's
+            selection rather than of its parameters, so no parameter fixes
+            them.
+
+            Killer Clown, reported 2026-11-15 as hair clipping through her hat,
+            is both at once. Her lashes, brows and hair share one material and
+            the rigger's material fallback took all three, so 2,503 of the 2,890
+            vertices her four chains move are her EYEBROWS (146 of 146) and
+            EYELASHES (2,357 of 4,640), swinging on hair physics across her
+            face. And of the 387 that are hair, 371 sit inside her jester hat,
+            up to 51.8 mm deep, while 95% of the hair the rigger left rigid is
+            outside it -- the physics went on the hair nobody can see.
+
+            Removing a chain leaves its BONES in place, so every vertex stays
+            exactly where the model skins it; what stops is the motion. That is
+            why this is a removal and not a re-parameterisation: a stiffer
+            spring still moves, and these have 2.9 degrees of room.
 
 WHY PATCH RATHER THAN REBUILD. For 35 of the 65 installed characters there is
 no source file left on this machine, so there is nothing to rebuild from. And
@@ -44,6 +65,7 @@ Verification is a full read-back: every object's state is fingerprinted before
 and after, and anything differing that was not named is reported as a reason
 NOT to install the result.
 """
+import math
 import os
 import re
 import struct
@@ -56,6 +78,23 @@ import cloth_collide_installed as cci
 CLOTH = r"(skirt|dress|cloth|cape|coat|robe|apron|tabard|sash|scarf)"
 CHEST = r"(breast|bust|pectoral|boob)"
 CLOTH_PARAMS = (0.5, 0.05, 0.0)
+# --unrig-hair. Same three patterns as build_vrm.py's hair rigger, so the
+# bundle patcher and the builder agree on what counts as hair, as a face and as
+# headwear.
+HAIRC = r"(hair|ponytail|braid|bang|fringe|twintail)"
+FACE = (r"(lash|brow|iris|cornea|sclera|pupil|teeth|tooth|tongue|gum|mouth"
+        r"|lip|eye)")
+SHELL = (r"(hat|helmet|hood|cap|crown|mask|beanie|visor|headgear|headband"
+         r"|horn)")
+SEALED = float(os.environ.get("VRM_HAIR_SEALED", "0.5"))
+# Beyond this, a nearest-VERTEX normal stops describing the local surface and
+# starts inventing. Without the bound the first sweep written for this reported
+# Peach's skirt as 1,583 mm "inside" her crown and Heels' hem as 447 mm inside
+# a mesh called CC_Base_TearLine. The builder does not need the bound in the
+# same way -- in Blender closest_point_on_mesh gives an exact face normal --
+# but it applies the same 50 mm for the same reason.
+SHELL_NEAR = 0.05
+RIGID = 0.99
 LIMB_PCT = float(os.environ.get("VRM_LIMB_PCT", "0.90"))
 LIMBS = [("LeftUpperLeg", "LeftLowerLeg"), ("LeftLowerLeg", "LeftFoot"),
          ("RightUpperLeg", "RightLowerLeg"), ("RightLowerLeg", "RightFoot"),
@@ -110,6 +149,17 @@ def xform(m, v):
 
 def decode(tt):
     """positions, blend weights and bone indices out of the vertex buffer."""
+    got = decode_ch(tt, (0, 12, 13))
+    return None if got is None else (got[0], got[12], got[13])
+
+
+def decode_ch(tt, idxs):
+    """{channel index: [tuple per vertex]} for the channels asked for.
+
+    Channel 0 is Position, 1 Normal, 12 BlendWeight, 13 BlendIndices.
+    m_Skin and m_BoneNameHashes are empty in these bundles; this buffer is
+    where the skinning actually is.
+    """
     vd = tt.get("m_VertexData") or {}
     n = vd.get("m_VertexCount") or 0
     chans = vd.get("m_Channels") or []
@@ -130,7 +180,7 @@ def decode(tt):
     if off != len(raw):
         return None
     out = {}
-    for idx in (0, 12, 13):
+    for idx in idxs:
         if idx >= len(chans) or not chans[idx].get("dimension"):
             return None
         c = chans[idx]
@@ -145,7 +195,7 @@ def decode(tt):
                 return None
             vals.append(struct.unpack_from(fmt, raw, p))
         out[idx] = vals
-    return out[0], out[12], out[13]
+    return out
 
 
 def _pct(vals, q):
@@ -194,6 +244,144 @@ def flesh_radii(env, tf, go_tf, world, human, bone_name):
     return per_bone, skipped
 
 
+def _skin_mesh(r, tt, world):
+    """(world positions, world-ish normals, dominant bone) per vertex."""
+    ch = decode_ch(tt, (0, 1, 12, 13))
+    bones = [b["m_PathID"] for b in (r.get("m_Bones") or [])]
+    bind = [mat4(m) for m in (tt.get("m_BindPose") or [])]
+    if ch is None or len(bind) != len(bones) or not bones:
+        return None
+    V, N, W, I = ch[0], ch[1], ch[12], ch[13]
+    skin = [mul(trs(*world(b)), bind[i]) for i, b in enumerate(bones)]
+    pts, nrm, dom = [], [], []
+    for vi in range(len(V)):
+        px = py = pz = 0.0
+        best, bw = None, -1.0
+        for k in range(len(W[vi])):
+            w, bi = W[vi][k], I[vi][k]
+            if w <= 0 or bi >= len(skin):
+                continue
+            q = xform(skin[bi], V[vi])
+            px += w * q[0]
+            py += w * q[1]
+            pz += w * q[2]
+            if w > bw:
+                best, bw = bones[bi], w
+        pts.append((px, py, pz))
+        # The normal is left in the mesh's own frame. These bundles place the
+        # figure upright with no rotation on the root, so for the only use it
+        # has here -- the SIGN of a dot product against a nearby face -- that
+        # is the same answer. Its control is in probe form: the head's own
+        # scalp must read inside the shell and the nose outside it.
+        nrm.append(N[vi][:3])
+        dom.append(best)
+    return pts, nrm, dom
+
+
+def _inside(p, pts, nrm, lo, hi):
+    """Signed distance into a shell, or None when out of range.
+
+    Declining is the point. A nearest-vertex normal describes the surface it
+    belongs to and nothing further away, so a point metres from the shell gets
+    no answer rather than a confident wrong one.
+    """
+    for i in range(3):
+        if not (lo[i] - SHELL_NEAR <= p[i] <= hi[i] + SHELL_NEAR):
+            return None
+    bi, bd = 0, 1e9
+    for i, q in enumerate(pts):
+        dd = ((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2)
+        if dd < bd:
+            bi, bd = i, dd
+    if bd > SHELL_NEAR ** 2:
+        return None
+    q, nv = pts[bi], nrm[bi]
+    v = (p[0] - q[0], p[1] - q[1], p[2] - q[2])
+    L = math.sqrt(nv[0] ** 2 + nv[1] ** 2 + nv[2] ** 2) or 1.0
+    return (v[0] * nv[0] + v[1] * nv[1] + v[2] * nv[2]) / L
+
+
+def hair_verdict(env, tf, go_tf, world, human, springs, joints):
+    """[(spring index, name, [reason, ...])] for hair chains to remove."""
+    owner = {}
+    for si, (sname, jids, gids) in enumerate(springs):
+        if not re.search(HAIRC, sname or "", re.I):
+            continue
+        for jid in jids:
+            j = joints.get(jid)
+            if not j:
+                continue
+            tid = go_tf.get(j[0])
+            if tid is not None:
+                owner[tid] = si
+    if not owner:
+        return [], 0
+
+    head_tf = None
+    for pid, n in tf.items():
+        if n["name"] == human.get("Head"):
+            head_tf = pid
+            break
+
+    tt_mesh, smrs = {}, []
+    for o in env.objects:
+        if o.type.name == "Mesh":
+            tt_mesh[o.path_id] = o.read_typetree()
+        elif o.type.name == "SkinnedMeshRenderer":
+            smrs.append(o.read_typetree())
+
+    shells, driven, undec = [], {}, 0
+    for r in smrs:
+        tt = tt_mesh.get((r.get("m_Mesh") or {}).get("m_PathID"))
+        if tt is None:
+            continue
+        mn = tt.get("m_Name") or "?"
+        got = _skin_mesh(r, tt, world)
+        if got is None:
+            undec += 1
+            continue
+        pts, nrm, dom = got
+        cnt = {}
+        for d in dom:
+            cnt[d] = cnt.get(d, 0) + 1
+        top = max(cnt.items(), key=lambda kv: kv[1]) if cnt else (None, 0)
+        if (top[0] is not None and top[0] == head_tf
+                and top[1] >= RIGID * len(pts)
+                and re.search(SHELL, mn, re.I)):
+            shells.append((mn, pts, nrm,
+                           tuple(min(p[i] for p in pts) for i in range(3)),
+                           tuple(max(p[i] for p in pts) for i in range(3))))
+        for p, d in zip(pts, dom):
+            if d in owner:
+                driven.setdefault(owner[d], []).append((mn, p))
+
+    out = []
+    for si, items in sorted(driven.items()):
+        sname = springs[si][0]
+        reasons = []
+        faces = {}
+        for mn, _p in items:
+            if re.search(FACE, mn, re.I):
+                faces[mn] = faces.get(mn, 0) + 1
+        if faces:
+            reasons.append("drives a facial feature: "
+                           + ", ".join("%s %d vert(s)" % kv
+                                       for kv in sorted(faces.items())))
+        rest = [p for mn, p in items if not re.search(FACE, mn, re.I)]
+        for mn, pts, nrm, lo, hi in shells:
+            sd = [_inside(p, pts, nrm, lo, hi) for p in rest]
+            ins = [s for s in sd if s is not None and s < 0]
+            if rest and len(ins) >= SEALED * len(rest):
+                reasons.append("%d of its %d non-facial vertices (%.0f%%) are "
+                               "sealed inside '%s', deepest %.1f mm"
+                               % (len(ins), len(rest),
+                                  100.0 * len(ins) / len(rest), mn,
+                                  -1000.0 * min(ins)))
+        if reasons:
+            out.append((si, sname, reasons))
+    return out, undec
+
+
 def fingerprint(env):
     """Everything readable, so an unintended change cannot hide."""
     fp = {}
@@ -212,19 +400,18 @@ def main():
     args = [a for a in sys.argv[1:]]
     do_cloth = "--cloth" in args
     do_limbs = "--limbs" in args
+    do_hair = "--unrig-hair" in args
     dry = "--dry-run" in args
     out = None
     if "--out" in args:
         out = args[args.index("--out") + 1]
     files = [a for a in args
              if not a.startswith("--") and a != out]
-    if len(files) != 1 or not (do_cloth or do_limbs):
+    if len(files) != 1 or not (do_cloth or do_limbs or do_hair):
         print(__doc__)
         return 2
     src = files[0]
     out = out or src
-    if not do_cloth and not do_limbs:
-        return 2
 
     human, tf, go_tf, springs, joints, colliders, groups, world = cci.read(src)
     if not springs:
@@ -295,8 +482,26 @@ def main():
             if want > 1e-5:
                 want_col[bn] = (hk, want, shrunk)
 
+    # ---- which hair chains should not exist at all ------------------------
+    drop = []
+    if do_hair:
+        drop, undec = hair_verdict(env, tf, go_tf, world, human, springs,
+                                   joints)
+        if undec:
+            print("  hair: %d mesh(es) could not be decoded -- their vertices "
+                  "are NOT in the measurement, so a chain that only drives "
+                  "those will not be found" % undec)
+        for si, sname, reasons in drop:
+            print("  hair: REMOVE chain %d '%s'" % (si, sname))
+            for r in reasons:
+                print("          %s" % r)
+        if not drop:
+            print("  hair: no chain drives a facial feature or sits sealed "
+                  "inside a rigid head mesh")
+
     # ---- apply -----------------------------------------------------------
     done_j, done_c, skip_j, skip_c = [], [], 0, 0
+    done_h = 0
     found_col = set()
     for obj in env.objects:
         if obj.type.name != "MonoBehaviour":
@@ -305,7 +510,36 @@ def main():
             cn = obj.read().m_Script.read().m_ClassName
         except Exception:                                        # noqa: BLE001
             continue
-        if do_cloth and cn == "VRM10SpringBoneJoint" \
+        if do_hair and drop and cn == "Vrm10Instance":
+            # The Springs array is the single source of truth: the runtime
+            # builds its simulation buffers from vrm.SpringBone.Springs and
+            # never looks for joint components on its own, so an orphaned
+            # VRM10SpringBoneJoint is inert and is left where it is. The BONES
+            # stay too, which is the whole point -- every vertex keeps the
+            # position the model gives it and only the motion stops.
+            tt = obj.read_typetree()
+            sb = tt.get("SpringBone") or {}
+            arr = sb.get("Springs") or []
+            if len(arr) != len(springs):
+                print("  hair: this Vrm10Instance lists %d spring(s) but the "
+                      "read found %d -- NOT touching it" % (len(arr),
+                                                            len(springs)))
+                continue
+            bad = [si for si, _n, _r in drop]
+            for si in bad:
+                got = (arr[si].get("Name") or "?")
+                if got != springs[si][0]:
+                    print("  hair: index %d is '%s' here and '%s' in the read "
+                          "-- NOT touching it" % (si, got, springs[si][0]))
+                    bad = None
+                    break
+            if bad is None:
+                continue
+            sb["Springs"] = [s for i, s in enumerate(arr) if i not in bad]
+            tt["SpringBone"] = sb
+            obj.save_typetree(tt)
+            done_h = len(bad)
+        elif do_cloth and cn == "VRM10SpringBoneJoint" \
                 and obj.path_id in want_joint:
             tt = obj.read_typetree()
             s, d, g = want_joint[obj.path_id]
@@ -362,7 +596,10 @@ def main():
     if skip_c:
         print("  limbs: %d collider(s) left alone (head, torso, or already "
               "right)" % skip_c)
-    if not done_j and not done_c:
+    if done_h:
+        print("  hair: %d chain(s) removed from the Springs array; their "
+              "bones, joints and meshes are untouched" % done_h)
+    if not done_j and not done_c and not done_h:
         print("nothing to do")
         return 2
     if dry:
@@ -382,7 +619,10 @@ def main():
     changed = [k for k in before if before.get(k) != after.get(k)]
     gone = [k for k in before if k not in after]
     added = [k for k in after if k not in before]
-    expect = len(done_j) + len(done_c)
+    # One object per changed joint, one per resized collider, and ONE for the
+    # whole hair removal however many chains it dropped -- they all live in the
+    # single Vrm10Instance.
+    expect = len(done_j) + len(done_c) + (1 if done_h else 0)
     print("  read-back: %d object(s) readable, %d changed (expected %d), "
           "%d gone, %d added"
           % (len(after), len(changed), expect, len(gone), len(added)))

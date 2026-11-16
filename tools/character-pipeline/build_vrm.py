@@ -4274,6 +4274,30 @@ for _gi, (HAIRRIG, _ANCHOR_BONE, _PREFIX, _S_SEG, _S_STR, _S_ANC,
                 else:
                     print("  hair rig: island %d does not exist (only %d)"
                           % (_w, len(ranked)))
+        # A MATERIAL match and a MESH-NAME match are not the same evidence, and
+        # until 2026-11-15 they were treated as if they were.
+        #
+        # The material fallback exists for hair that has no mesh of its own --
+        # one `body` mesh with a hair material on some of its faces. But a
+        # material is shared by whatever the author chose to share it with, and
+        # on an anime-styled model that is routinely the EYELASHES and
+        # EYEBROWS, which are drawn with the hair's own texture.
+        #
+        # Killer Clown: `hairrig hair`, and her hair, lashes and brows are one
+        # material. Measured off her installed bundle, her eyebrows are 146 of
+        # 146 vertices driven by hair spring chains and her eyelashes 2,357 of
+        # 4,640, with every one of the 4,640 carrying some spring weight. Her
+        # brows and lashes swing on hair physics across her face, and they are
+        # 2,503 of the 2,890 vertices those chains move -- the hair itself is
+        # 387. Her mesh names say `lashes` and `brows`; nothing asked them.
+        #
+        # So the name is consulted when the evidence is only a shared material.
+        # A mesh the pattern names DIRECTLY is still taken, because that is a
+        # deliberate instruction rather than an inference -- `hairrig lashes`
+        # still rigs the lashes. VRM_HAIRRIG_FACE=1 restores the old behaviour.
+        _NOTHAIR = (r"(lash|brow|iris|cornea|sclera|pupil|teeth|tooth|tongue"
+                    r"|gum|mouth|lip|eye)")
+        _face_ok = os.environ.get("VRM_HAIRRIG_FACE") == "1"
         for o in (meshes if not hair else []):
             if re.search(HAIRRIG, o.name, re.I):
                 hair[o] = {v.index for v in o.data.vertices}
@@ -4281,6 +4305,12 @@ for _gi, (HAIRRIG, _ANCHOR_BONE, _PREFIX, _S_SEG, _S_STR, _S_ANC,
             slots = [i for i, ms in enumerate(o.material_slots)
                      if ms.material and re.search(HAIRRIG, ms.material.name, re.I)]
             if not slots:
+                continue
+            if re.search(_NOTHAIR, o.name, re.I) and not _face_ok:
+                print("  hair rig: '%s' shares a material matching /%s/, but "
+                      "its own name says it is not hair -- NOT rigged "
+                      "(VRM_HAIRRIG_FACE=1 to include it)"
+                      % (o.name, HAIRRIG))
                 continue
             vs = set()
             for poly in o.data.polygons:
@@ -4412,6 +4442,123 @@ for _gi, (HAIRRIG, _ANCHOR_BONE, _PREFIX, _S_SEG, _S_STR, _S_ANC,
                 for co, o, i in pts:
                     xy = Vector((co.x, co.y))
                     assign[(o.name, i)] = min(keep, key=lambda j: (xy - cen[j]).length)
+
+                # A strand SEALED INSIDE A RIGID HAT is not loose hair, however
+                # far it spans, and rigging it can only ever clip.
+                #
+                # Killer Clown, reported 2026-11-15: her hair clips through her
+                # jester hat. Measured off her installed bundle, 371 of the 387
+                # hair vertices this rigger put on spring bones -- 96% -- are
+                # INSIDE the hat shell, up to 51.8 mm deep, while 95% of the
+                # 344 it left rigid are outside it. The physics went on the
+                # hair nobody can see and the visible hair stayed rigid, which
+                # is the wrong way round, and the springs' only observable
+                # effect was the fault.
+                #
+                # Her numbers also rule out the other candidate fix, an
+                # `SphereInside` collider for the hat -- UniVRM does implement
+                # one. A collider constrains a JOINT, a 20 mm sphere at the
+                # bone's tail; what breaches the hat is the MESH, hanging up to
+                # 64 mm past that joint. Dividing each vertex's clearance by
+                # its lever arm gives the angle at which it breaks through: a
+                # tenth of her sprung hair is through the hat at 2.9 degrees of
+                # swing and half of it by 9.3. Nothing that confines the joints
+                # saves geometry with 3 mm of room at 60 mm of radius, and
+                # shrinking the sphere until it did would pull her hair into
+                # her scalp at rest.
+                #
+                # The attachment test above does not catch this, and the margin
+                # says why: on her hair it chose the BOTTOM as the attached end
+                # over the top by 13.4 mm out of 135 -- 9.9%. That test asks
+                # which end is attached, and assumes the other one swings; on a
+                # cap of hair both ends sit on the scalp, so it is deciding
+                # between two nearly equal numbers. The answer is not that it
+                # picked the wrong end. It is that neither end is loose.
+                #
+                # So the test is geometric and not a name: a mesh RIGIDLY on
+                # the head (99% of its vertices dominated by the head bone, so
+                # it cannot deform) and named like headwear. VRM_HAIR_SEALED=0
+                # turns it off; 1.01 would require more than every vertex.
+                _SHELL = (r"(hat|helmet|hood|cap|crown|mask|beanie|visor"
+                          r"|headgear|headband|horn)")
+                _SEALED = float(os.environ.get("VRM_HAIR_SEALED", "0.5"))
+                _shells = []
+                for _o in bpy.data.objects:
+                    if _o.type != "MESH" or _o in hair or not _o.data.vertices:
+                        continue
+                    if not re.search(_SHELL, _o.name, re.I):
+                        continue
+                    _gn = dict((_g.index, _g.name) for _g in _o.vertex_groups)
+                    _onhead = 0
+                    for _v in _o.data.vertices:
+                        _b, _bw = None, -1.0
+                        for _g in _v.groups:
+                            if _g.weight > _bw:
+                                _b, _bw = _gn.get(_g.group), _g.weight
+                        if _b == HEAD:
+                            _onhead += 1
+                    if _onhead >= 0.99 * len(_o.data.vertices):
+                        _shells.append(_o)
+                        print("  hair rig: '%s' is rigid on '%s' -- treating "
+                              "it as a shell the hair must stay out of"
+                              % (_o.name, HEAD))
+
+                def _sealed(members):
+                    """(fraction inside a shell, its name, deepest metres).
+
+                    closest_point_on_mesh gives the nearest surface point and
+                    its FACE normal, so the sign is exact rather than the
+                    nearest-vertex approximation a sweep has to use. Points
+                    more than 50 mm from the shell are not counted either way:
+                    beyond that the nearest face says nothing about whether a
+                    point is enclosed, which is how a first sweep came to
+                    report Peach's skirt as 1.58 m inside her crown.
+                    """
+                    best = (0.0, None, 0.0)
+                    if not members:
+                        return best
+                    for _s in _shells:
+                        _inv = _s.matrix_world.inverted()
+                        _in, _deep = 0, 0.0
+                        for _c, _ob, _i in members:
+                            _p = _inv @ (_ob.matrix_world @ _c)
+                            _hit, _loc, _nr, _ = _s.closest_point_on_mesh(_p)
+                            if not _hit:
+                                continue
+                            _d = _p - _loc
+                            if _d.length > 0.05:
+                                continue
+                            if _d.dot(_nr) < 0:
+                                _in += 1
+                                _deep = max(_deep, -_d.dot(_nr))
+                        _f = _in / float(len(members))
+                        if _f > best[0]:
+                            best = (_f, _s.name, _deep)
+                    return best
+
+                if _shells:
+                    for _k in list(keep):
+                        _own = [p for p in pts
+                                if assign[(p[1].name, p[2])] == _k]
+                        _f, _sh, _deep = _sealed(_own)
+                        if _f >= _SEALED:
+                            keep.remove(_k)
+                            print("  hair rig: strand %d is %.0f%% sealed "
+                                  "inside '%s' (deepest %.0f mm) -- NOT "
+                                  "rigged, it stays rigid on '%s'"
+                                  % (_k, 100.0 * _f, _sh, _deep * 1000, HEAD))
+                    # Drop the sealed vertices from `assign` rather than
+                    # reassigning them: whatever held them before is correct
+                    # and must survive. The weighting pass below strips every
+                    # other group off the vertices it finds in `assign`, so a
+                    # vertex left pointing at a strand that no longer exists
+                    # would lose its original weights and keep nothing.
+                    assign = {_kk: _vv for _kk, _vv in assign.items()
+                              if _vv in keep}
+                    if not keep:
+                        print("  hair rig: every strand is sealed inside a "
+                              "rigid head mesh -- nothing to rig, the hair "
+                              "stays as the model skins it")
 
                 bpy.context.view_layer.objects.active = arm
                 bpy.ops.object.mode_set(mode="EDIT")
