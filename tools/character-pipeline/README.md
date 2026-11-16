@@ -536,7 +536,7 @@ Gadget Hackwrench's hair into a mass bigger than she was.
 **17 of those joints carry our own arithmetic's fingerprint.** `add()` shrinks
 a collider to `near * 0.95` where `near` is the distance to the nearest
 non-anchor joint's **centre**, so wherever the guard is what set the radius,
-`radius / centre_distance` is exactly 0.950. It is, on 13 characters -- Jinx 6,
+`radius / centre_distance` is exactly 0.950. It is, on 10 characters -- Jinx 6,
 Sayuri 2, Power Girl 2, and one each on Xenomorph, Scott Hall, Lola Bunny,
 Jessica Rabbit, Gwen Stacy, Ariel and Aiko. Jessica was rebuilt the same day
 with this builder and is in the list, which is what ruled out "old builds".
@@ -625,10 +625,82 @@ Verified end to end on a scratch copy of Jinx -- **nothing has been installed**:
 0 added. `--limbs` alone leaves her bangs at 38.8 mm because the `head` sphere
 is not its to touch, which is the whole reason `--reclear` exists.
 
-**Not swept.** 13 characters carry the signature and 18 have at least one joint
-inside; applying this to them is a decision about appearance on 13 installed
-characters, and the last sweep offered in this file was wrong about all seven
-of its targets.
+**10 characters carry the signature** and 18 have at least one joint inside.
+*(An earlier version of this section said 13 characters; that was a miscount of
+this file's own table, corrected the same day.)*
+
+#### APPLIED to the 14 of ours, 2026-11-16
+
+Of the 18, **four are not ours and were not touched**: `Harq Alkahana`,
+`Hatsune Miku (Retry Now ver.)` and `Inforder Trogen` are downloaded VRoid
+bundles, and `Adachi Rei` carries 28 of the 87 on **author-made colliders** --
+hers sit on dedicated bones named `apronL0-collider`..`apronR3-collider` at a
+300 mm radius, which is not a shape `fit()` produces, and none of her findings
+carries the 0.950 signature. All six downloaded bundles still read
+`2026-11-06 19:16`.
+
+That leaves 14. Every one was backed up to `<name>.prereclear-2026-11-16` and
+each backup verified against its source with `cmp` before anything was written.
+
+| | before | after |
+|---|---|---|
+| bundles with a joint inside | 18 | **6** |
+| joints inside | 87 | **41** |
+| joints with OUR signature | 17 | **1** |
+
+All six that remain are accounted for: the four that are not ours, plus Sayuri
+and Yoda, where the floor refuses (below).
+
+**Thirteen changed; Yoda did not.** His only offending collider is below the
+floor, so `--reclear` wrote nothing and his file is byte-identical to his
+backup. Every other read-back reported exactly the expected number of objects
+changed, 0 gone and 0 added -- 1 object for nine of them, 2 for Power Girl and
+Sayuri, 3 for Chibi Rem, 6 for Jinx.
+
+Load-tested all 13 against their own backups in one run, 26 bundles: **every
+POST matches its PRE exactly** on renderers, materials, bones, skinned meshes,
+chains and joints, 0 failed.
+
+And measured in the engine, still, zero wind -- the number that matters:
+
+| character | before | after |
+|---|---|---|
+| Power Girl | **78.46 mm**, 11 of 432 bones | 0.65 mm, **0** |
+| Jinx | **76.04 mm**, 15 of 128 | 0.61 mm, **0** |
+| Scott Hall | **32.13 mm**, 8 of 98 | 0.05 mm, **0** |
+| Chibi Rem | **13.02 mm**, 4 of 181 | 0.09 mm, **0** |
+| Gwen Stacy | 2.82 mm, 1 of 95 | 0.00 mm, **0** |
+
+Not one bone on any of the five is now displaced by more than a millimetre
+while the character stands still.
+
+#### The floor, and why it exists
+
+The first run of this had no real floor -- only `near * 0.95 <= 1e-5`, which a
+clearance of 0.0001 m passes. It wrote a 0.1 mm collider, which is a deleted
+collider with extra steps:
+
+```
+reclear: CC_Base_R_Upperarm       0.019 -> 0.000 (-19.0 mm)
+reclear: Hips                     0.020 -> 0.002 (-17.9 mm)     (Yoda)
+```
+
+**That is the Xenomorph catastrophe, reintroduced by the guard written to
+prevent it.** Sayuri and Yoda were restored from their backups, the floor went
+in -- never below 5 mm, never below a quarter of the radius that was there --
+and both were re-run. Sayuri keeps her hip fix and her arm collider; Yoda is
+left exactly as he was. The floor refused those two and nothing else: the other
+nineteen reductions are all between 60% and 92% of the original radius.
+
+Past the floor the tool leaves the overlap and says why, because the honest
+reading is that a joint sitting on the bone axis has a hit radius too large for
+that geometry -- and a collider that is gone cannot deflect anything at all.
+
+Installed md5s: Aiko `72a5413`, Ariel `4af1c3e`, Chibi Rem `cd79f57`,
+Gwen Stacy `46eb986`, Heels `afdd17d`, Jessica Rabbit `bab26ee`, Jinx
+`2385017`, Lola Bunny `e0a347b`, Peach `9dfdb3a`, Power Girl `bb54236`,
+Sayuri `406a9bb`, Scott Hall `9e60553`, Xenomorph `3146949`. Yoda unchanged at
+`04fe94c`.
 
 ### Two colliders was never enough, and nothing counted
 
@@ -3386,7 +3458,7 @@ right.
   this of a chain before it HANDS it a group; nothing asked it of the 306 chains that already had
   one, where the answer was **87 joints in 18 of the 65 bundles**. It reports `r / centre_distance`
   per finding, because **0.950 is our own shrink guard's fingerprint** — that is how the
-  centre-vs-sphere defect was identified as ours rather than the authors', on 17 joints across 13
+  centre-vs-sphere defect was identified as ours rather than the authors', on 17 joints across 10
   characters. The chain's FIRST joint is reported separately and is not a fault: it is the anchor,
   its position comes from the skeleton, and no collider can eject it. Chest chains are excluded, as
   everywhere else here. `INSIDE_CONTROL=3.0` multiplies every radius so the sweep must flag — it

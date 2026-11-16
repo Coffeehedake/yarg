@@ -2,9 +2,9 @@
 """Fix the spring simulation in an INSTALLED .yargchar, in place.
 
     python patch_springs.py <in.yargchar> [--cloth] [--limbs] [--unrig-hair]
-        [--collide] [--group N] [--out X] [--dry-run]
+        [--collide] [--group N] [--reclear] [--out X] [--dry-run]
 
-Four independent defects, any or all:
+Five independent defects, any or all:
 
   --cloth   re-parameterise every cloth-named spring chain to the authored
             reference, 0.50 stiffness / 0.05 drag / 0.00 gravity. Characters
@@ -70,6 +70,40 @@ Four independent defects, any or all:
             clear the torso capsule at rest. A physical check cannot see an
             intent, which is why the intent has to be written in the code
             rather than inferred from the geometry.
+
+  --reclear SHRINK a collider that swallows a non-anchor spring joint's
+            sphere, to 0.95 of the real clearance. A joint inside a collider
+            is not restrained by it, it is EJECTED to its surface and held
+            there, so this is a permanent displacement rather than a glitch.
+
+            The cause is one line in two places. `vrm_colliders.add()` and
+            `--limbs` both shrank a collider to 0.95 of the distance to the
+            nearest non-anchor joint's CENTRE, while the solver's condition
+            is centre_distance >= collider_radius + joint_radius. Clearing
+            the centre by 5% therefore leaves the nearest joint overlapping
+            by (joint_radius - 5% of the distance): 14 to 19 mm at our 0.02
+            hit radius. Both guards were corrected; this is for the bundles
+            that will not be rebuilt, and it is the only fix that reaches the
+            HEAD sphere and the TORSO capsule, which --limbs does not own.
+
+            Measured in the spring runtime with YargSpringProbe's -still
+            mode, which holds the character perfectly still so that any
+            displacement at all is a collider ejecting a joint. Jinx, as
+            installed, wind 0,0,0: peak 76.04 mm, 15 of 128 bones over 1 mm,
+            her braid tips 76.0 and 70.2 mm out of place while she does
+            nothing. After: 0.61 mm, 0 of 128.
+
+            It only ever shrinks, it skips chest chains like every other fix
+            here, and it leaves the limb capsules to --limbs when both are
+            asked for so the two compose rather than race.
+
+            AND IT HAS A FLOOR: never below 5 mm, and never below a quarter
+            of the radius that was there. Without one it took Sayuri's
+            `CC_Base_R_Upperarm` from 19 mm to 0.000 and Yoda's `Hips` from
+            20 mm to 2 mm -- the Xenomorph catastrophe, reintroduced by the
+            very guard meant to prevent it. Both were reverted from backups.
+            Past the floor it leaves the overlap and says so, because a
+            collider that is gone cannot deflect anything at all.
 
 WHY PATCH RATHER THAN REBUILD. For 35 of the 65 installed characters there is
 no source file left on this machine, so there is nothing to rebuild from. And
@@ -729,11 +763,30 @@ def main():
                          for _g, _jr in rguard), default=None)
             if _near is None or _near * 0.95 >= _rw:
                 continue
-            if _near * 0.95 <= 1e-5:
-                print("  reclear: WARNING %s left alone -- a non-anchor "
-                      "joint's sphere reaches its centre (clearance %.4f m); "
-                      "shrinking it would delete the collider"
-                      % ((_bn or "?")[:22], _near))
+            # A FLOOR, and it is not optional. `1e-5` was the first guard
+            # here and it is far too lenient: a clearance of 0.0001 m passes
+            # it and writes a 0.1 mm collider, which is a deleted collider
+            # with extra steps. Applied to the roster it took Sayuri's
+            # `CC_Base_R_Upperarm` from 19 mm to 0.000 and Yoda's `Hips` from
+            # 20 mm to 2 mm -- the Xenomorph catastrophe, reintroduced by the
+            # guard meant to prevent it. Both were reverted from backups.
+            #
+            # So: never below 5 mm, and never below a quarter of what was
+            # there. A reduction past either means the nearest joint sits
+            # essentially ON the bone axis, and the honest answer is that the
+            # joint radius is too large for that geometry -- not that the
+            # body part should stop existing. Leaving the overlap is the
+            # lesser fault, because a collider that is gone cannot deflect
+            # anything at all.
+            _floor = max(0.005, 0.25 * _rw)
+            if _near * 0.95 < _floor:
+                print("  reclear: WARNING %s left alone -- clearing it would "
+                      "need %.4f m, below the floor of %.4f (5 mm, or a "
+                      "quarter of its %.3f). A non-anchor joint sits almost "
+                      "on this bone's axis; its %.0f mm radius is too large "
+                      "for this geometry. The overlap stays."
+                      % ((_bn or "?")[:22], _near * 0.95, _floor, _rw,
+                         min(jr for _g, jr in rguard) * 1000))
                 continue
             reclear[_cp] = (_bn, _rw, _near * 0.95, _near, _ws)
         if do_reclear and not reclear:
