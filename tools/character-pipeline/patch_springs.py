@@ -82,8 +82,9 @@ is the smaller claim and the one that can be checked.
 The clearance guard is applied here too, and it is not optional: a collider
 that CONTAINS a spring joint ejects it on frame one, which is the fault that
 ballooned Gadget Hackwrench's hair into a mass bigger than she was. A capsule
-is shrunk to 0.95 of the nearest non-anchor joint rather than being allowed to
-swallow it. The chain's FIRST joint is skipped, as in vrm_colliders.fit: it is
+is shrunk to 0.95 of the clearance to the nearest non-anchor joint's SPHERE
+rather than being allowed to swallow it -- its surface, not its centre, since
+the solver's condition is centre_distance >= collider_radius + joint_radius. The chain's FIRST joint is skipped, as in vrm_colliders.fit: it is
 an anchor, its position comes from the skeleton rather than the simulation, and
 guarding against it emptied the Xenomorph's torso capsule.
 
@@ -428,6 +429,7 @@ def main():
     do_limbs = "--limbs" in args
     do_hair = "--unrig-hair" in args
     do_collide = "--collide" in args
+    do_reclear = "--reclear" in args
     dry = "--dry-run" in args
     want_group = None
     if "--group" in args:
@@ -437,7 +439,8 @@ def main():
         out = args[args.index("--out") + 1]
     files = [a for a in args
              if not a.startswith("--") and a != out and a != want_group]
-    if len(files) != 1 or not (do_cloth or do_limbs or do_hair or do_collide):
+    if len(files) != 1 or not (do_cloth or do_limbs or do_hair
+                              or do_collide or do_reclear):
         print(__doc__)
         return 2
     src = files[0]
@@ -492,7 +495,12 @@ def main():
                     continue
                 tid = go_tf.get(j[0])
                 if tid is not None:
-                    guard.append(world(tid)[0])
+                    # Position AND the joint's own hit radius, j[4]. It was
+                    # read into `joints` all along and never used here; see
+                    # the same fix in vrm_colliders.add() for why a guard
+                    # that clears only centres leaves the nearest joint
+                    # ejected by (joint_radius - 5% of the distance).
+                    guard.append((world(tid)[0], j[4]))
         for hk, hc in LIMBS:
             bn, cn = cci.hname(human, hk), cci.hname(human, hc)
             if not bn or not cn or bn not in bone_name or cn not in bone_name:
@@ -504,9 +512,18 @@ def main():
                       "left alone" % (hk, len(pts)))
                 continue
             want = _pct([cci.seg_dist(p, A, B) for p in pts], LIMB_PCT)
-            near = min((cci.seg_dist(g, A, B) for g in guard), default=None)
+            # Clearance to the nearest joint's SURFACE, which is what the
+            # solver compares against -- not to its centre.
+            near = min((cci.seg_dist(g, A, B) - jr for g, jr in guard),
+                       default=None)
             shrunk = None
             if near is not None and near * 0.95 < want:
+                if near * 0.95 <= 1e-5:
+                    print("  limbs: WARNING %s not resized -- a non-anchor "
+                          "spring joint's sphere reaches the bone axis "
+                          "(clearance %.4f); the joint radius is too large "
+                          "for this limb" % (hk, near))
+                    continue
                 shrunk = (want, near * 0.95, near)
                 want = near * 0.95
             if want > 1e-5:
@@ -649,6 +666,81 @@ def main():
                   % (len(attach), len(_mine),
                      ", ".join(n for _i, n in attach)))
 
+    # ---- --reclear: shrink a collider that SWALLOWS a spring joint -------
+    #
+    # The same arithmetic as the --limbs guard, applied to the colliders
+    # --limbs does not own: the head sphere and the torso capsule. Both are
+    # written by vrm_colliders.add(), whose guard cleared a joint's CENTRE and
+    # not its sphere, so the nearest non-anchor joint of every chain that
+    # references them starts (joint_radius - 5% of the distance) inside.
+    #
+    # Measured in the spring runtime on Jinx, standing perfectly still with
+    # zero external force, her chains are ejected permanently: braid tips
+    # 76.0 and 70.2 mm out of place, 15 bones over 1 mm. --limbs with the
+    # fixed guard takes the braids to 0.6 mm; her bangs stay at 38.8 mm
+    # because they ride the `head` sphere, which is this fix's job.
+    #
+    # It only ever SHRINKS, which is the direction vrm_colliders already
+    # argues for ("err SMALL"), and it costs nothing in reach: the surface
+    # the solver actually tests is radius + joint_radius, so taking the
+    # radius down by the joint radius leaves that surface where the joint
+    # rests -- on the body -- instead of 19 mm outside it.
+    reclear = {}
+    if do_reclear:
+        rguard = []
+        for _sn, _jids, _gids in springs:
+            if re.search(CHEST, _sn or "", re.I):
+                continue
+            for _jid in _jids[1:]:
+                _j = joints.get(_jid)
+                if not _j:
+                    continue
+                _tid = go_tf.get(_j[0])
+                if _tid is not None:
+                    rguard.append((world(_tid)[0], _j[4]))
+        if not rguard:
+            print("  reclear: no non-anchor spring joint in this bundle -- "
+                  "nothing to clear against")
+        for _cp, _ct in colliders.items():
+            _tid = go_tf.get((_ct.get("m_GameObject") or {}).get("m_PathID"))
+            if _tid is None:
+                continue
+            _bn = tf[_tid]["name"]
+            # --limbs owns the limb capsules; keep the two fixes disjoint so
+            # they compose instead of racing to set the same radius.
+            if _bn in want_col:
+                continue
+            _wp, _wq, _wsv = world(_tid)
+            _ws = _wsv[0] if isinstance(_wsv, (tuple, list)) else _wsv
+            if _ws <= 1e-9:
+                continue
+            _o, _t = _ct["Offset"], _ct["Tail"]
+            _a = cci.qrot(_wq, (_o["x"] * _ws, _o["y"] * _ws,
+                                _o["z"] * _ws))
+            _a = (_wp[0] + _a[0], _wp[1] + _a[1], _wp[2] + _a[2])
+            if _ct.get("ColliderType") == 1:
+                _b = cci.qrot(_wq, (_t["x"] * _ws, _t["y"] * _ws,
+                                    _t["z"] * _ws))
+                _b = (_wp[0] + _b[0], _wp[1] + _b[1], _wp[2] + _b[2])
+            else:
+                _b = _a
+            _rw = float(_ct.get("Radius", 0.0)) * _ws
+            _near = min((cci.seg_dist(_g, _a, _b) - _jr
+                         for _g, _jr in rguard), default=None)
+            if _near is None or _near * 0.95 >= _rw:
+                continue
+            if _near * 0.95 <= 1e-5:
+                print("  reclear: WARNING %s left alone -- a non-anchor "
+                      "joint's sphere reaches its centre (clearance %.4f m); "
+                      "shrinking it would delete the collider"
+                      % ((_bn or "?")[:22], _near))
+                continue
+            reclear[_cp] = (_bn, _rw, _near * 0.95, _near, _ws)
+        if do_reclear and not reclear:
+            print("  reclear: every collider outside --limbs' reach already "
+                  "clears every non-anchor joint's sphere")
+
+    done_rc = []
     found_col = set()
     for obj in env.objects:
         if obj.type.name != "MonoBehaviour":
@@ -738,10 +830,17 @@ def main():
             tt["m_dragForce"] = d
             tt["m_gravityPower"] = g
             obj.save_typetree(tt)
-        elif do_limbs and cn == "VRM10SpringBoneCollider":
+        elif (do_limbs or do_reclear) and cn == "VRM10SpringBoneCollider":
             tt = obj.read_typetree()
             tid = go_tf.get(tt["m_GameObject"]["m_PathID"])
             nm = tf.get(tid, {}).get("name") if tid is not None else None
+            if obj.path_id in reclear:
+                _bn, _rw, _new, _near, _ws = reclear[obj.path_id]
+                old_r = float(tt.get("Radius", 0.0))
+                tt["Radius"] = _new / _ws
+                obj.save_typetree(tt)
+                done_rc.append((_bn, _rw, _new, _near))
+                continue
             if nm not in want_col:
                 skip_c += 1
                 continue
@@ -777,13 +876,22 @@ def main():
             print("  limbs: %-14s %-24s NO COLLIDER on this bone -- --limbs "
                   "resizes one that exists, it cannot add a missing one "
                   "(wanted %.3f)" % (hk, nm[:24], want))
-    if skip_c:
+    # Gated on do_limbs: with only --reclear running, want_col is empty, so
+    # every collider lands in skip_c and this would report the whole file as
+    # "left alone" in the same breath as reclear reporting it changed.
+    if skip_c and do_limbs:
         print("  limbs: %d collider(s) left alone (head, torso, or already "
               "right)" % skip_c)
+    for _bn, _rw, _new, _near in sorted(done_rc, key=lambda x: x[1] - x[2],
+                                        reverse=True):
+        print("  reclear: %-24s %.3f -> %.3f (%+.1f mm) so it clears the "
+              "nearest non-anchor joint's SPHERE at %.3f"
+              % ((_bn or "?")[:24], _rw, _new, (_new - _rw) * 1000, _near))
     if done_h:
         print("  hair: %d chain(s) removed from the Springs array; their "
               "bones, joints and meshes are untouched" % done_h)
-    if not done_j and not done_c and not done_h and not done_g:
+    if (not done_j and not done_c and not done_h and not done_g
+            and not done_rc):
         print("nothing to do")
         return 2
     if dry:
@@ -806,7 +914,8 @@ def main():
     # One object per changed joint, one per resized collider, and ONE for the
     # whole hair removal however many chains it dropped -- they all live in the
     # single Vrm10Instance.
-    expect = len(done_j) + len(done_c) + (1 if (done_h or done_g) else 0)
+    expect = (len(done_j) + len(done_c) + len(done_rc)
+              + (1 if (done_h or done_g) else 0))
     print("  read-back: %d object(s) readable, %d changed (expected %d), "
           "%d gone, %d added"
           % (len(after), len(changed), expect, len(gone), len(added)))

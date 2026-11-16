@@ -517,7 +517,118 @@ not rebuilt, so the other installed builds are unaffected.
 | Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
 | Miku | twintails only move where they were repaired; the tie could be sprung too | ~~FIXED 2026-11-15 (evening)~~ — **RE-REPORTED UNCHANGED, FIXED AGAIN 2026-11-16.** Two faults. (1) `patch_add_springs.py` set each new joint's `m_GameObject` and never added it to that GameObject's `m_Component`, so **21 of 29 joints were orphans** — and both the tool's own read-back and the Unity load test missed it because they follow the Springs array's pointers, the one direction the patch had written. (2) `Bone06` and its mirror, **158 vertices** and a third of the twintails, were left rigid on an unmeasured assumption; the project's own `_trim_anchor` rule clears them (0.133 m against 0.774 m for the rest of the chain), so they are now sprung. **462 of 462 twintail vertices are on a chain**, against 304 and 38. **VERIFIED IN THE SPRING RUNTIME** with `YargSpringProbe.cs`: every twintail bone now peaks between 143 and 422 mm under a linear shake, the two sides within 10%, where `Bone07` and `Bone11` read **0.001 mm** yesterday. The necktie swings 161 and 359 mm. **The orphans were NOT the cause** — yesterday's build peaks at 706 mm with all 21 orphaned, because Unity attaches them at instantiate; what was rigid was the TOP (the crown plus the two chain-root pivots, ~187 vertices), which is exactly what "only the middle" described. See "Miku's twintails, 2026-11-16". Original note follows: Both right. Her two `HairSpring_*` chains run on eight bones an earlier hair-rigger run INVENTED, which dominate **38** vertices; her own twintail bones `Bone06`..`Bone15` and their `(mirrored)` twins dominate **462** and were on no chain, as were the three tie bones. Nothing found it because every rigger here selects by bone NAME and her rig has no bone whose name contains hair, tail, bang or tie — while `HairSpring_1_0` does. `patch_add_springs.py` put 7 new chains on her own bones: **324 vertices now move against 38**. `Bone06` stays rigid on purpose (it is the bun, 158 vertices, at the crown). The tie chain is given NO collider group — all three of its bones start 44.4/30.5/7.4 mm INSIDE the torso capsule, and attaching it would have thrown the knot forward and undone that morning's re-aim. See "Miku's twintails and necktie, 2026-11-15 (evening)" |
 | The Mandalorian | armour is not centred on his chest | **reported 2026-11-16, not yet measured.** Two existing measurements probably bear on it and should be read before anything is rebuilt. His body-yaw lines **disagree** (+2.50 deg mean, spread **11.10**), which `body_yaw_check_installed.py` reads as a displaced part rather than a turned body — he is one of seven on that list. And the edge-length ratio sweep puts his worst stretched edge at **234 mm**, the largest on the roster by a wide margin (Peacemaker's is 27 mm). His source is a glTF whose **both skeletons are collapsed**, so he was re-rigged through Mixamo; a chest plate that is a separate island riding one bone, or weighted to a bone the re-rig moved, would produce exactly this. Check first whether the armour is its own mesh/island and which bones dominate it — if it is one rigid island on one bone, this is the Joker's-pistol and Judy's-belt shape, not a weighting fault |
+| Prix | no hair, no pupils, eyelashes have no alpha — "a mess, she needs a lot of work" | **reported 2026-11-16, not yet measured.** Queued behind The Mandalorian. Four separate faults by the sound of it, and three of them are shapes this pipeline has solved before, so check the known remedy before inventing one: missing hair is usually a mesh dropped by an `exclude` or a hair mesh with no vertex groups (Alcina's case — hairrig on the material builds its weights from nothing); no pupils is the eye-STACK alpha fault (Peach) or an eye atlas pinned to the wrong frame (Shadow); lashes with no alpha is the `VRM_CUTOUT_MATERIALS` / `VRM_BLEND_MATERIALS` pair, where Alcina needed the lashes moved from cutout to **blend**. One thing already measured on her and worth carrying over: her `FemaleBody_Head` collider reaches **186.5 mm past her chest spring joints**, which for a head collider is absurd and suggests her collider fit is as confused as her materials |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
+
+### The clearance guard cleared a joint's CENTRE, not its sphere, 2026-11-16
+
+Nothing had ever checked the spring chains that **already have** a collider
+group. `--collide` checks a chain before it HANDS it one, and that is the
+easier direction: the groups that matter were written by `vrm_colliders.fit`
+and by the characters' own authors, not by that guard.
+
+`joint_inside_check_installed.py` asks the other question, and across the 65
+installed bundles **87 non-anchor spring joints in 18 characters start inside a
+collider of their own chain's group.** A joint inside a collider is not
+restrained by it, it is EJECTED to its surface -- the fault that ballooned
+Gadget Hackwrench's hair into a mass bigger than she was.
+
+**17 of those joints carry our own arithmetic's fingerprint.** `add()` shrinks
+a collider to `near * 0.95` where `near` is the distance to the nearest
+non-anchor joint's **centre**, so wherever the guard is what set the radius,
+`radius / centre_distance` is exactly 0.950. It is, on 13 characters -- Jinx 6,
+Sayuri 2, Power Girl 2, and one each on Xenomorph, Scott Hall, Lola Bunny,
+Jessica Rabbit, Gwen Stacy, Ariel and Aiko. Jessica was rebuilt the same day
+with this builder and is in the list, which is what ruled out "old builds".
+
+The solver's condition is `centre_distance >= collider_radius + joint_radius`.
+Clearing the centre by 5% therefore leaves the nearest joint overlapping by
+`joint_radius - 0.05 * centre_distance`, which at our 0.02 hit radius is
+**14 to 19 mm on every affected character**.
+
+**The file already knew.** Twenty lines above the guard, choosing a limb
+percentile, it reasons: *"A spring joint is a SPHERE of hit_radius 0.02, so the
+capsule only has to come within 0.02 of the furthest vertex."* The sizing rule
+accounted for the joint sphere and the guard forgot it, in the same function.
+
+#### What it costs, measured in the engine with the character standing still
+
+`YargSpringProbe.cs` gained `-still 1`: hold the character perfectly still and
+let the solver settle. A still run *should* read ~0 mm for every bone, so
+anything it reports is a collider shoving geometry off where the model was
+authored -- permanently, since this is a constraint and not an impulse.
+
+Jinx, as installed, `-wind 0,0,0`:
+
+```
+Jinx-ORIG: peak deflection during a STILL run (should be ~0) 76.04 mm
+Jinx-ORIG: 15 of 128 bone(s) moved more than 1 mm
+        braid_r.008_end       76.041 mm
+        braid_l.008_end       70.187 mm
+        bangs_d.002_end       38.807 mm
+```
+
+**Her braid tips are 76 mm out of place while she does nothing at all**, and
+the ejection is four times the overlap because it propagates down the chain: a
+17 mm push at `braid_r.005` is 76 mm by the tip.
+
+The run was repeated with the probe's default `-wind 14,0,6` and with
+`-wind 0,0,0`, and the two agree **to three decimal places on every bone**, so
+none of it is the external force. That control matters: a still run with wind
+on would have been a measurement of the wind.
+
+#### Fixed in both guards, because there are two copies
+
+The rule lives in `vrm_colliders.add()` (the builder) and in
+`patch_springs.py --limbs` (the patcher), and both ignored the joint radius
+while having it to hand -- the patcher had it in `joints[pid][4]` all along.
+Both now clear the joint's **surface**:
+
+```python
+near = min(_seg_dist(g, centre, tail) - jr for g, jr in guard)
+```
+
+It reduces to the old behaviour exactly when `jr` is 0, which is what the
+downloaded VRoid rigs carry, so nothing about them changes. Both warn instead
+of shrinking a collider out of existence -- deleting one is the documented
+catastrophe that cost the Xenomorph his torso capsule.
+
+**This costs nothing in reach**, which is the thing worth being clear about.
+The surface the solver actually tests is `radius + joint_radius`. Taking the
+radius down by the joint radius leaves that surface exactly where the joint
+rests, which is on the body; before the fix it sat 19 mm *outside* the body.
+The collider's number gets smaller and the barrier does not move.
+
+#### `--reclear` for the installed bundles
+
+The builder fix only reaches a character that gets rebuilt, and 35 of the 65
+have no source file left. `--limbs` reaches the limb capsules of the rest but
+not the head sphere or the torso capsule, which is where Jinx's bangs sit.
+
+`patch_springs.py --reclear` is a fifth independent fix: shrink **any**
+collider that swallows a non-anchor joint's sphere, to 0.95 of the real
+clearance. It only ever shrinks, it skips a chest chain like every other fix
+here, it leaves the limb capsules to `--limbs` when both are asked for so the
+two compose rather than race, and it refuses with a warning where shrinking
+would delete the collider.
+
+Verified end to end on a scratch copy of Jinx -- **nothing has been installed**:
+
+| | joints inside | still-run peak | bones over 1 mm |
+|---|---|---|---|
+| as installed | 15 | **76.04 mm** | 15 of 128 |
+| `--limbs` only | 8 | 38.81 mm | 3 of 128 |
+| `--reclear` | **0** | **0.61 mm** | **0 of 128** |
+
+`--reclear` changed 6 colliders -- `head`, `pelvis`, both thighs, both calves
+-- each by exactly **-19.0 mm**, and the read-back reports 6 changed, 0 gone,
+0 added. `--limbs` alone leaves her bangs at 38.8 mm because the `head` sphere
+is not its to touch, which is the whole reason `--reclear` exists.
+
+**Not swept.** 13 characters carry the signature and 18 have at least one joint
+inside; applying this to them is a decision about appearance on 13 installed
+characters, and the last sweep offered in this file was wrong about all seven
+of its targets.
 
 ### Two colliders was never enough, and nothing counted
 
@@ -3269,6 +3380,17 @@ right.
   the game. Alastor is the control, the one character of 65 built with the switch on: run against
   him it reports "already flat, nothing to do" on all three materials, which is the patcher and
   the exporter agreeing. `--smoothness S` writes S instead of 0 if matte looks dead
+- `joint_inside_check_installed.py <dir|yargchar...>` — does a spring joint START INSIDE a
+  collider of its own chain's group? A joint inside one is not restrained by it, it is EJECTED to
+  its surface, permanently, and that is what ballooned Gadget Hackwrench's hair. `--collide` asks
+  this of a chain before it HANDS it a group; nothing asked it of the 306 chains that already had
+  one, where the answer was **87 joints in 18 of the 65 bundles**. It reports `r / centre_distance`
+  per finding, because **0.950 is our own shrink guard's fingerprint** — that is how the
+  centre-vs-sphere defect was identified as ours rather than the authors', on 17 joints across 13
+  characters. The chain's FIRST joint is reported separately and is not a fault: it is the anchor,
+  its position comes from the skeleton, and no collider can eject it. Chest chains are excluded, as
+  everywhere else here. `INSIDE_CONTROL=3.0` multiplies every radius so the sweep must flag — it
+  reaches 27 bundles, which is what proves a quiet run walked the set
 - `limb_socket_check_installed.py <dir|yargchar...>` — is a LIMB out of its socket? The companion
   to `limb_check_installed.py`, which measures how a limb is BENT and is blind to one that has
   moved rigidly: Spartan Mark V's right leg sat 25 mm out of place with its knee and ankle angles
@@ -3333,7 +3455,7 @@ right.
   is checked by re-reading the written BYTES and, for the first patch here that adds objects
   rather than edits them, by Unity's own loader with the pre-patch file as the control
 - `patch_springs.py <yargchar> [--cloth] [--limbs] [--unrig-hair] [--collide] [--group <path_id>] [--out X] [--dry-run]` — fixes
-  the spring simulation IN THE INSTALLED BUNDLE, four independent defects, any or all. `--collide` gives a chain that has **no collider group at all** the file's own group, and only such a chain — nothing restrains one without, so it swings through the body (Peach's dress). **Two guards.** It refuses when a joint would START INSIDE one of those colliders, since the solver's first act is to push it out: on Miku's `Tie` it reports 44.4, 30.5 and 7.4 mm inside her torso capsule and writes nothing. And it skips a **chest** chain outright, because a chest chain with no group is `vrm_colliders.add()`'s deliberate choice rather than an omission — without that skip it attached the group to five characters' breast chains, every one of which passed the clearance guard, and all five had to be reverted. Across all 65 installed bundles it now finds **zero** chains that should be given a group. `--cloth`
+  the spring simulation IN THE INSTALLED BUNDLE, five independent defects, any or all. `--reclear` shrinks any collider that SWALLOWS a non-anchor spring joint's sphere, to 0.95 of the real clearance — the installed-bundle half of the centre-vs-sphere guard defect, and the only fix that reaches the head sphere and torso capsule. It only ever shrinks, leaves the limb capsules to `--limbs` when both are asked for, and warns rather than deleting a collider. On Jinx it takes a still character's hair from **76.04 mm out of place to 0.61 mm**. `--collide` gives a chain that has **no collider group at all** the file's own group, and only such a chain — nothing restrains one without, so it swings through the body (Peach's dress). **Two guards.** It refuses when a joint would START INSIDE one of those colliders, since the solver's first act is to push it out: on Miku's `Tie` it reports 44.4, 30.5 and 7.4 mm inside her torso capsule and writes nothing. And it skips a **chest** chain outright, because a chest chain with no group is `vrm_colliders.add()`'s deliberate choice rather than an omission — without that skip it attached the group to five characters' breast chains, every one of which passed the clearance guard, and all five had to be reverted. Across all 65 installed bundles it now finds **zero** chains that should be given a group. `--cloth`
   re-parameterises every cloth-named chain to the authored reference 0.50/0.05/0.00 (the old
   0.85/0.80 damps a skirt into near-rigidity and is above every value in any author-made bundle
   here); `--limbs` re-radiuses the arm and leg capsules from the median flesh distance to the

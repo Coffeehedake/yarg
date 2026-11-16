@@ -135,10 +135,22 @@ public static class YargSpringProbe
                 var peak = new Dictionary<Transform, float>();
                 foreach (var kv in before) peak[kv.Key] = 0f;
                 var rootStart = ch.transform.position;
+                // -still 1 holds the character PERFECTLY still and lets the
+                // solver settle. That measures a different thing from the
+                // shake, and a thing nothing else can see: a joint that
+                // starts inside a collider is EJECTED to its surface on the
+                // first frames, so with no motion at all its displacement is
+                // the overlap. A still run should read ~0 mm for every bone;
+                // anything it reports is the collider pushing geometry away
+                // from where the model was authored, permanently.
+                var still = Arg("-still") != null;
+                if (still) Say(string.Format("{0}: STILL run -- no root motion, "
+                    + "so any displacement is a collider ejecting a joint", name));
                 for (int i = 0; i < 240; i++)
                 {
-                    ch.transform.position = rootStart
-                        + new Vector3(Mathf.Sin(i * 0.25f) * 0.30f, 0f, 0f);
+                    if (!still)
+                        ch.transform.position = rootStart
+                            + new Vector3(Mathf.Sin(i * 0.25f) * 0.30f, 0f, 0f);
                     // STRAIGHT LINE, not an ellipse. A circular shake is
                     // chiral: it reaches one side of the character before the
                     // other, so the two tails deflect by different amounts
@@ -158,8 +170,9 @@ public static class YargSpringProbe
                     }
                 }
                 ch.transform.position = rootStart;
-                Say(string.Format("{0}: peak deflection during motion {1:0.00} mm",
-                                  name, maxSeen));
+                Say(string.Format("{0}: peak deflection during {1} {2:0.00} mm",
+                                  name, still ? "a STILL run (should be ~0)" : "motion",
+                                  maxSeen));
 
                 var moved = new List<KeyValuePair<float, string>>();
                 foreach (var kv in peak)

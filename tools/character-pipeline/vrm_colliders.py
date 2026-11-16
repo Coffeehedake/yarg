@@ -233,7 +233,22 @@ def fit(arm, ext, MAP, bone_names, log=print):
         for j in list(sp.joints)[1:]:
             b = arm.data.bones.get(j.node.bone_name)
             if b is not None:
-                guard.append(b.head_local)
+                # The joint's own SPHERE, not just its centre. This file
+                # already reasons that way when it SIZES a capsule -- "a
+                # spring joint is a SPHERE of hit_radius 0.02, so the capsule
+                # only has to come within 0.02 of the furthest vertex" -- and
+                # then forgot it when guarding. The solver's condition is
+                # centre_distance >= collider_radius + joint_radius, so a
+                # guard that only clears centres leaves every nearest joint
+                # overlapping by (joint_radius - 5% of the distance).
+                #
+                # Measured on the installed set before this fix: 17 joints
+                # across 13 of our characters sat inside a collider at
+                # exactly r/centre = 0.950, the guard's own limit, each
+                # ejected 14-19 mm on frame one. Jessica Rabbit, rebuilt the
+                # same day with this builder, was one of them.
+                guard.append((b.head_local, float(getattr(j, "hit_radius",
+                                                          0.0) or 0.0)))
 
     def _seg_dist(p, a, b):
         ab = b - a
@@ -249,15 +264,30 @@ def fit(arm, ext, MAP, bone_names, log=print):
         b = arm.data.bones.get(bone)
         radius = radius * SCALE
         if guard:
+            # `near` is the clearance to the nearest joint's SURFACE, so the
+            # comparison below is the solver's own condition rather than a
+            # centre-to-centre one.
             if kind == "Sphere":
-                near = min((g - centre).length for g in guard)
+                near = min((g - centre).length - jr for g, jr in guard)
             else:
-                near = min(_seg_dist(g, centre, tail) for g in guard)
+                near = min(_seg_dist(g, centre, tail) - jr for g, jr in guard)
             if near * 0.95 < radius:
-                print("  collider: %s on %s shrunk %.3f -> %.3f so it clears "
-                      "the nearest spring joint at %.3f"
-                      % (kind, bone[:22], radius, near * 0.95, near))
-                radius = near * 0.95
+                if near * 0.95 <= 1e-5 < radius:
+                    # Dropping a collider entirely is the documented
+                    # catastrophe (the Xenomorph lost his torso capsule that
+                    # way), so say it out loud rather than letting the
+                    # radius <= 1e-5 return below do it quietly.
+                    print("  collider: WARNING %s on %s would be DROPPED -- a "
+                          "non-anchor spring joint's sphere reaches its "
+                          "centre (clearance %.4f). Keeping it at %.4f and "
+                          "accepting the overlap; the joint radius is too "
+                          "large for this geometry."
+                          % (kind, bone[:22], near, radius))
+                else:
+                    print("  collider: %s on %s shrunk %.3f -> %.3f so it "
+                          "clears the nearest spring joint's SPHERE at %.3f"
+                          % (kind, bone[:22], radius, near * 0.95, near))
+                    radius = near * 0.95
         if b is None or radius <= 1e-5:
             return
         c = sb.colliders.add()
