@@ -607,12 +607,52 @@ Whatever those are, they are not lashes at eye height. **Where her lashes
 actually live is unresolved**, and the only materials carrying a real alpha
 channel are the two hair ones.
 
+#### Confirmed by eye, from a render that already existed
+
+`scratchpad/prix/full.png`, made 2026-11-12 during the lens work, shows it
+without any new measurement: she is **completely bald**, her eyes read blank,
+and there is a **small white speck between her ankles** -- the hair pellet,
+visible in the render, exactly where the arithmetic puts it.
+
+#### The scale factor CANNOT be derived from the file
+
+The hair has to be scaled as well as moved, and the factor has no answer in
+the bundle. Her raw mesh data really is 14 x 22 x 13 mm -- RAW and SKINNED
+extents agree exactly on all three meshes checked, so nothing is being shrunk
+by a bind pose. Four independent ways of fitting it disagree:
+
+| basis | factor |
+|---|---|
+| hair box against the scalp box (183.4 / 14.0 etc.) | 8.2 - 15.4 per axis |
+| hair box against her OTHER, correctly-placed hair piece | 7.0 - 12.9 per axis |
+| per-bone sub-boxes against the scalp | 13 - 69 |
+| cap vertices fitted to the scalp ellipsoid, median r = 1 | ~28.6 |
+
+They disagree because a hair mesh is not head-shaped: `Mesh.009`'s aspect is
+1 : 1.6 : 0.96 against the scalp's 1 : 1.01 : 1.12, so no pair of boxes has a
+common quantity to match. The ellipsoid fit is the only principled one of the
+four and it lands at 28.6, which would make the hair **400 mm wide** against a
+183 mm head -- so it is wrong too, and its own r-distribution says why: the
+cap's vertices sit 3.2 mm from their centroid where the scalp's sit 92 mm.
+
+**Picking one of these by eye is exactly the move this file keeps recording as
+a mistake**, so the hair is not being moved until there is a picture to fit
+against.
+
+#### And the podium render is broken for EVERYBODY
+
+Which is the actual blocker, and it is not about Prix. Run against Jinx and
+Prix together, the tool logs `VRMCharacter init skipped:
+NullReferenceException` for **both** and writes two **identical 12,477-byte**
+blank frames. A known-good character renders exactly as blank as she does, so
+this is the shot path, not the subject -- and it means no visual verification
+of anything is available on this project right now. The 2026-11-12 renders
+came from a different route (flat grey, T-pose, not the podium).
+
 **What this pass settles:** the hair, completely, including why it is where it
-is and what it would take to move it. **What it does not:** the pupils and the
-lashes, both of which want a look at her rather than more static inspection --
-and the podium render path returned a blank frame in batch mode
-(`VRMCharacter init skipped: NullReferenceException`), so that wants fixing
-first.
+is -- and that moving it needs a scale factor the file cannot supply. **What it
+does not:** the pupils, the lashes, and the scale, all three of which need a
+working render first.
 
 ### Jessica Rabbit's right leg is 92 mm higher than her left, 2026-11-16
 
