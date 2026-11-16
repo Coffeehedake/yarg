@@ -401,13 +401,17 @@ def main():
     do_cloth = "--cloth" in args
     do_limbs = "--limbs" in args
     do_hair = "--unrig-hair" in args
+    do_collide = "--collide" in args
     dry = "--dry-run" in args
+    want_group = None
+    if "--group" in args:
+        want_group = args[args.index("--group") + 1]
     out = None
     if "--out" in args:
         out = args[args.index("--out") + 1]
     files = [a for a in args
-             if not a.startswith("--") and a != out]
-    if len(files) != 1 or not (do_cloth or do_limbs or do_hair):
+             if not a.startswith("--") and a != out and a != want_group]
+    if len(files) != 1 or not (do_cloth or do_limbs or do_hair or do_collide):
         print(__doc__)
         return 2
     src = files[0]
@@ -502,6 +506,94 @@ def main():
     # ---- apply -----------------------------------------------------------
     done_j, done_c, skip_j, skip_c = [], [], 0, 0
     done_h = 0
+    # ---- --collide: give a chain that has NO collider group one ----------
+    attach, gpid, done_g = [], None, 0
+    if do_collide:
+        from patch_add_springs import qrot as _qrot, seg_dist as _seg
+        # cci.read returns `groups` as {group path_id: [collider path_ids]} --
+        # the MEMBERS, not a name. So a group is chosen by being the only one,
+        # or by its path_id, and not by a name this structure does not carry.
+        if want_group:
+            try:
+                gpid = int(want_group)
+            except ValueError:
+                print("ABORT: --group takes a collider-group path_id (this "
+                      "file has %s), because the group list carries members "
+                      "rather than names" % sorted(groups))
+                return 2
+            if gpid not in groups:
+                print("ABORT: no collider group with path_id %d; this file "
+                      "has %s" % (gpid, sorted(groups)))
+                return 2
+        elif len(groups) == 1:
+            gpid = list(groups)[0]
+        else:
+            print("ABORT: this file has %d collider groups (%s); name one "
+                  "with --group <path_id>" % (len(groups), sorted(groups)))
+            return 2
+        # the group's colliders, in world space. Offset and Tail are in the
+        # collider BONE's frame, so they go through that bone's matrix.
+        _cols = []
+        for _cp, _ct in colliders.items():
+            _gid = _ct.get("m_GameObject", {}).get("m_PathID")
+            _tp = go_tf.get(_gid)
+            if _tp is None:
+                continue
+            _wp, _wq, _wsv = world(_tp)
+            # cci.read's world() hands back scale as a 3-tuple, where
+            # patch_add_springs' own returns a float. These colliders are
+            # uniformly scaled, so take one component -- and take it
+            # deliberately rather than by multiplying a tuple by a float,
+            # which is what the first version did.
+            _ws = _wsv[0] if isinstance(_wsv, (tuple, list)) else _wsv
+            _o1 = _ct["Offset"]
+            _t1 = _ct["Tail"]
+            _a = _qrot(_wq, (_o1["x"] * _ws, _o1["y"] * _ws, _o1["z"] * _ws))
+            _a = (_wp[0] + _a[0], _wp[1] + _a[1], _wp[2] + _a[2])
+            if _ct.get("ColliderType") == 1:
+                _b = _qrot(_wq, (_t1["x"] * _ws, _t1["y"] * _ws,
+                                 _t1["z"] * _ws))
+                _b = (_wp[0] + _b[0], _wp[1] + _b[1], _wp[2] + _b[2])
+            else:
+                _b = _a
+            _cols.append((_cp, tf[_tp]["name"], _ct["Radius"] * _ws, _a, _b))
+        _mine = [c for c in _cols if c[0] in (groups.get(gpid) or [])]
+        _bad = []
+        for _si, (_sn, _jids, _gids) in enumerate(springs):
+            if _gids:
+                continue
+            for _jid in _jids:
+                _j = joints.get(_jid)
+                if not _j:
+                    continue
+                _t = go_tf.get(_j[0])
+                if _t is None:
+                    continue
+                _jp = world(_t)[0]
+                _jr = _j[4]
+                for _cp, _cn, _r, _a, _b in _mine:
+                    _clear = _seg(_jp, _a, _b) - _r - _jr
+                    if _clear < 0.0:
+                        _bad.append((_sn, tf[_t]["name"], _cn, _clear))
+            attach.append((_si, _sn))
+        if _bad:
+            print("ABORT: these joints START INSIDE a collider of the group "
+                  "they would be given:")
+            for _sn, _bn, _cn, _c in _bad[:8]:
+                print("    chain %-18s joint %-20s is %6.1f mm inside the "
+                      "collider on %r" % (_sn, _bn, -_c * 1000, _cn))
+            print("  The solver's first act is to push a joint out to the "
+                  "collider's surface, so this would displace the chain on "
+                  "frame one rather than restrain it. Nothing written.")
+            return 2
+        if not attach:
+            print("  collide: every chain already has a collider group")
+        else:
+            print("  collide: %d chain(s) have no collider group and clear "
+                  "all %d colliders of the group at rest -- attaching it: %s"
+                  % (len(attach), len(_mine),
+                     ", ".join(n for _i, n in attach)))
+
     found_col = set()
     for obj in env.objects:
         if obj.type.name != "MonoBehaviour":
@@ -510,7 +602,42 @@ def main():
             cn = obj.read().m_Script.read().m_ClassName
         except Exception:                                        # noqa: BLE001
             continue
-        if do_hair and drop and cn == "Vrm10Instance":
+        if do_collide and attach and cn == "Vrm10Instance" and not done_g:
+            # A chain with NO collider group is not restrained by anything:
+            # it swings straight through the body. That is Peach's dress, and
+            # it is why --cloth alone did not fix her. Jessica Rabbit's two
+            # breast chains shipped the same way, so her arms pass through her
+            # chest and the chest through whatever is over it.
+            #
+            # Only chains that have NO group at all are touched. A chain
+            # somebody gave a group already has an answer, right or wrong, and
+            # this is not the tool to second-guess it.
+            tt = obj.read_typetree()
+            sb = tt.get("SpringBone") or {}
+            arr = sb.get("Springs") or []
+            if len(arr) != len(springs):
+                print("  collide: this Vrm10Instance lists %d spring(s) but "
+                      "the read found %d -- NOT touching it"
+                      % (len(arr), len(springs)))
+                continue
+            ok = True
+            for si, _nm in attach:
+                if (arr[si].get("Name") or "?") != springs[si][0]:
+                    print("  collide: index %d is '%s' here and '%s' in the "
+                          "read -- NOT touching it"
+                          % (si, arr[si].get("Name"), springs[si][0]))
+                    ok = False
+                    break
+            if not ok:
+                continue
+            for si, _nm in attach:
+                arr[si]["ColliderGroups"] = [{"m_FileID": 0,
+                                              "m_PathID": gpid}]
+            sb["Springs"] = arr
+            tt["SpringBone"] = sb
+            obj.save_typetree(tt)
+            done_g = len(attach)
+        elif do_hair and drop and cn == "Vrm10Instance":
             # The Springs array is the single source of truth: the runtime
             # builds its simulation buffers from vrm.SpringBone.Springs and
             # never looks for joint components on its own, so an orphaned
@@ -599,7 +726,7 @@ def main():
     if done_h:
         print("  hair: %d chain(s) removed from the Springs array; their "
               "bones, joints and meshes are untouched" % done_h)
-    if not done_j and not done_c and not done_h:
+    if not done_j and not done_c and not done_h and not done_g:
         print("nothing to do")
         return 2
     if dry:
@@ -622,7 +749,7 @@ def main():
     # One object per changed joint, one per resized collider, and ONE for the
     # whole hair removal however many chains it dropped -- they all live in the
     # single Vrm10Instance.
-    expect = len(done_j) + len(done_c) + (1 if done_h else 0)
+    expect = len(done_j) + len(done_c) + (1 if (done_h or done_g) else 0)
     print("  read-back: %d object(s) readable, %d changed (expected %d), "
           "%d gone, %d added"
           % (len(after), len(changed), expect, len(gone), len(added)))

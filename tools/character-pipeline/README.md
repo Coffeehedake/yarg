@@ -889,6 +889,50 @@ place, so nothing lands on them; that is not done here because the hips are not
 known at the point the weighting runs, and a rule that guesses which parentless
 bone is the stray is worth more thought than this evening.
 
+#### Her chest chains had no colliders either, and nineteen characters share it
+
+Her two `breast.L`/`breast.R` chains shipped with **no collider group at all**,
+so nothing restrained them: her arms pass through her chest and the chest
+through whatever is over it. That is Peach's fault again -- a chain with no
+collider is not a parameter problem, and `--cloth` could never have fixed it.
+
+`patch_springs.py --collide` is a fourth independent fix in that tool. It gives
+a chain that has NO group the file's own collider group, and only such a chain:
+one somebody already gave a group has an answer, right or wrong, and this is
+not the tool to second-guess it.
+
+It carries the same guard as `patch_add_springs.py`, for the same reason --
+**a joint that starts INSIDE a collider is displaced on frame one rather than
+restrained**. Her chest clears everything at rest, the tightest being
+`breast.R` at **+19.5 mm** from the torso capsule at its own 40 mm joint
+radius, so the attachment is safe. Miku is the control, and a useful one: run
+against her the guard refuses, reporting her `Tie` chain's three joints at
+**44.4, 30.5 and 7.4 mm inside** the `Bip01 Spine` capsule -- the same three
+figures a different tool measured the day before, reproduced independently.
+
+Installed: 10 of 10 chains now have a group, the read-back reports **1 object
+changed, 0 gone, 0 added**, the load test passes at 16 renderers / 11 materials
+/ 194 bones, and the chest still deflects **90.62 mm** under a shake -- the
+same as before, so the colliders restrain the motion without suppressing it.
+md5 `4a2f0e0b...`, backup `Jessica Rabbit.prechestcollide-2026-11-16.yargchar`.
+
+**NINETEEN installed characters have at least one chain with no collider
+group**, and the pattern is unmistakable:
+
+| character | chains with no group | what they are |
+|---|---|---|
+| Killer Clown | **2 of 2** | `breast_r`, `breast_l` |
+| Tenna | 2 of 4 | `DEF-breast.L/R` |
+| Power Girl, Prix, Sayuri | 2 of 16 / 5 / 6 | `BreastSpring_L/R` |
+| Heels | 2 of 6 | `CC_Base_L/R_Breast` |
+| Lola Bunny | 1 of 3 | `fml_un_C_breast` |
+| Miku | 1 of 9 | `Tie` -- and the guard REFUSES it |
+| Harq Alkahana, both Hatsune Mikus, Inforder Trogen, Kaiser Aufhanger | 10..30 each | **downloaded VRoid bundles, not ours** |
+
+The chest chains are ours and are the same fault Jessica had. The downloaded
+bundles were parameterised by their own authors and are the control this file
+keeps; they are not to be swept. Nothing but Jessica has been touched.
+
 #### FIXED in the builder: re-weight a mesh once it has been CARRIED into place
 
 The cure is one step in `build_vrm.py`, placed after the T-pose bake. By then
@@ -3244,8 +3288,8 @@ right.
   no API for adding an object — so it refuses on a file with no joint to copy, and the result
   is checked by re-reading the written BYTES and, for the first patch here that adds objects
   rather than edits them, by Unity's own loader with the pre-patch file as the control
-- `patch_springs.py <yargchar> [--cloth] [--limbs] [--unrig-hair] [--out X] [--dry-run]` — fixes
-  the spring simulation IN THE INSTALLED BUNDLE, three independent defects, any or all. `--cloth`
+- `patch_springs.py <yargchar> [--cloth] [--limbs] [--unrig-hair] [--collide] [--group <path_id>] [--out X] [--dry-run]` — fixes
+  the spring simulation IN THE INSTALLED BUNDLE, four independent defects, any or all. `--collide` gives a chain that has **no collider group at all** the file's own group, and only such a chain — nothing restrains one without, so it swings through the body (Peach's dress, Jessica Rabbit's chest). It refuses when a joint would START INSIDE one of those colliders, since the solver's first act is to push it out: on Miku's `Tie` it reports 44.4, 30.5 and 7.4 mm inside her torso capsule and writes nothing. `--cloth`
   re-parameterises every cloth-named chain to the authored reference 0.50/0.05/0.00 (the old
   0.85/0.80 damps a skirt into near-rigidity and is above every value in any author-made bundle
   here); `--limbs` re-radiuses the arm and leg capsules from the median flesh distance to the
