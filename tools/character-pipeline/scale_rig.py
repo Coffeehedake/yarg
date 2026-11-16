@@ -50,10 +50,30 @@ if not meshes:
 
 # The MESH is the authority for height. The skeleton is the thing being
 # corrected, so measuring against it would be circular.
-lo = min((o.matrix_world @ Vector(c)).z for o in meshes for c in o.bound_box)
-hi = max((o.matrix_world @ Vector(c)).z for o in meshes for c in o.bound_box)
+#
+# READ THE VERTICES, NOT bound_box. `Object.bound_box` is a CACHED value and
+# Blender does not always refresh it: applying a transform to an armature
+# leaves every parented child's cached box describing the old space, and
+# `evaluated_get(depsgraph).bound_box` hands back the same stale numbers. On
+# The Rock on 2026-11-16 that read a 1.9638 m character as **3.2915 m**, a
+# factor of 1.676, and the skeleton was then scaled onto a height the model
+# has never had -- silently, with a plausible number printed.
+#
+# The vertices cannot go stale, and 22,844 of them cost nothing to read. The
+# cached box is still computed, and disagreement is reported rather than
+# ignored, because a stale box upstream is worth knowing about.
+lo = min((o.matrix_world @ v.co).z for o in meshes for v in o.data.vertices)
+hi = max((o.matrix_world @ v.co).z for o in meshes for v in o.data.vertices)
 height = hi - lo
 print("mesh: %.4f .. %.4f  height %.4f" % (lo, hi, height))
+_blo = min((o.matrix_world @ Vector(c)).z for o in meshes for c in o.bound_box)
+_bhi = max((o.matrix_world @ Vector(c)).z for o in meshes for c in o.bound_box)
+if abs((_bhi - _blo) - height) > 1e-3:
+    print("  NOTE: the cached bound_box says %.4f .. %.4f (height %.4f), which "
+          "disagrees with the vertices by a factor of %.4f -- it is stale, and "
+          "the vertices are what is used"
+          % (_blo, _bhi, _bhi - _blo,
+             (_bhi - _blo) / height if height else 0.0))
 
 hips_name = os.environ.get("RIG_HIPS_BONE", "")
 if not hips_name:

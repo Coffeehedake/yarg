@@ -508,7 +508,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Link | eye textures misplaced; still holding the master sword and shield | **both fixed.** His rig has bones named `Sword` and `Shield`, so `VRM_DROP_ISLAND="LinkEquipment=Sword+Shield"` takes 41 islands and leaves `Fourreau`, his scabbard, on his back. His eye material `Material.003` was taking the body atlas while `Eye.png` sat unused beside it |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and ~~finger bones that are mapped but not weighted~~ **corrected 2026-11-11 by `bundle_audit.py`: he has ZERO finger bones in his humanoid map**, and 21 humanoid bones in total against a typical 52. The symptom was right, the stated cause was wrong |
 | Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor. Applied to her alone and put to Jay as a question, since an appearance change across a third of the roster is his call; he said **"yes, all 26"**, so the other 26 were flattened too — **132 materials across 26 characters**, each hash-backed up and verified five ways. See "Sophia's shine, 2026-11-15" |
-| The Rock | arms are squiggly | **DIAGNOSED 2026-11-15, NOT FIXED, nothing installed.** His upper arm is **61% over** the population norm and his forearm 13% under — upper/forearm ratio **2.37** where his own source `Rock.fbx` has **0.96**. Every existing check passes him because nothing is BENT (elbow 0.0/0.0) and nothing is DISPLACED; the segments are the wrong LENGTHS, which nothing measured. Reproduced exactly: `fit_joints.py` places a joint at the midpoint of two flesh centroids, and his upper-arm group keeps dominant weight 209 mm past his elbow, so it lands at 70% of the arm where it belongs at 49% — the shipped bundle is 70.3%. His legs go the same way, 1.06 before the fit and 4.97 after. Three fixes tried and all three measured wrong; see "The Rock's arms, 2026-11-15" |
+| The Rock | arms are squiggly | **FIXED 2026-11-16 BY A REBUILD.** His upper arm is **61% over** the population norm and his forearm 13% under — upper/forearm ratio **2.37** where his own source `Rock.fbx` has **0.96**. Every existing check passes him because nothing is BENT (elbow 0.0/0.0) and nothing is DISPLACED; the segments are the wrong LENGTHS, which nothing measured. Reproduced exactly: `fit_joints.py` places a joint at the midpoint of two flesh centroids, and his upper-arm group keeps dominant weight 209 mm past his elbow, so it lands at 70% of the arm where it belongs at 49% — the shipped bundle is 70.3%. ~~His legs go the same way~~ and ~~three fixes tried and all three measured wrong~~ — **all of that was an artefact of a broken staging** that applied the armature's transform and its 21 parented meshes' together, counting it twice and reading a 1.9638 m model as 3.2915 m. The real cause is `scale_rig.py` sizing the skeleton from `Object.bound_box`, which is a CACHE and goes stale (and survives `evaluated_get(depsgraph)`): it scaled him by **0.6668** where his recipe records **0.3978**, and the midpoint rule then landed the elbow at 69.5% of a wrongly scaled arm against the shipped 70.3%. `fit_joints.py` was innocent — on a correctly scaled rig it puts the elbow at 50.7% against the rig's own 48.9%. scale_rig now reads vertices. Rebuilt: upper arm 0.344 → **0.176** (human 0.186), reach 1.272 → **0.932** (documented 0.938). See "The Rock's arms, 2026-11-16" |
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" — **but see the correction below: the patch is correct and the GAME DISCARDS IT** |
 | Spartan Mark V | ~~asymmetric right leg~~ **leg still sticking out at the right hip** | **FIXED 2026-11-16 BY A REBUILD, and the earlier patch provably did nothing in game.** Two separate findings. (1) The patch IS in the file and IS right — his hip offsets read L 161.8 mm / R 161.8 mm at instantiate, against 161.8 / 244.5 before. (2) **Unity's humanoid Animator re-poses the skeleton from the AVATAR, and the four rest structures are not what the Avatar retargets from.** After `Animator.Rebind()` the patched bundle reads L 161.8 / R **244.5** — byte-for-byte the unpatched figure. (3) Separately, the whole character is **turned 20.00°**: hips, shoulders, knees and feet all agree to two decimals, because his source is a perfect mirror about a plane 20° off the x axis and nothing straightens him. His left hip faces the camera, which is the hip reported. **No bundle patch can fix either** — the Avatar has to be regenerated, so he was REBUILT and installed. Today's `build_vrm.py` already carries a facing stage that detects and corrects the 20° itself, so his plain recorded recipe was enough and now reproduces him. Verified through the Animator, which is where the patch failed: hips L/R 143.3 / 143.3 mm after `Rebind()` against 161.8 / 244.5, and post-`Rebind` yaw 4.56° / −7.96° against Doom Slayer's control 4.20° / −7.89°. Both hips were wrong in the old build, not only the right one. See "Spartan Mark V, 2026-11-16: the Animator does not read what we patch" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
@@ -1409,7 +1409,94 @@ twintails (`Bone06`–`Bone13`) is on a spring chain at all, so that fix is doin
 claimed for it. That is a separate thing to answer for.
 
 
-### The Rock's arms, 2026-11-15: the flesh does not locate the joint
+### The Rock's arms, 2026-11-16: a cached bounding box, and a day spent on the wrong suspect
+
+**FIXED AND INSTALLED.** Upper arm 0.344 → **0.176** of height against a human
+0.186, forearm 0.145 → 0.142 against 0.146, reach 1.272 → **0.932** against the
+0.938 his own recipe row says to expect.
+
+**Everything in the section below this one is wrong, and it is wrong because
+of a bug in the scaffolding, not in the pipeline it accused.** It is kept
+because the way it failed is the lesson.
+
+#### The cause: `Object.bound_box` is a cache, and it goes stale
+
+`scale_rig.py` sized the skeleton from `o.matrix_world @ o.bound_box`. That
+box is a CACHED value. Applying a transform to an armature leaves every
+parented child's cached box describing the old space, and
+`evaluated_get(depsgraph).bound_box` hands back the same stale numbers — so
+the staleness survives the one call that looks like it would clear it. On him
+the cached box read a **1.9638 m** character as **3.2915 m**, a factor of
+1.6761. Measured side by side in one file:
+
+```
+bound_box[0]   [ 75.2318, 186.50391, -265.62634]
+a vertex .co   [-13.1399, 160.2856,     8.3811 ]
+```
+
+The skeleton was then scaled by **0.6668** where his recipe row records
+**0.3978**, and nothing complained: a plausible number was printed about a
+height the model has never had.
+
+`scale_rig.py` now reads the vertices. They cannot go stale, 22,844 of them
+cost nothing, and the cached box is still computed and reported when it
+disagrees — a stale box upstream is worth knowing about.
+
+#### `fit_joints.py` was innocent, and the midpoint rule is right
+
+On a correctly scaled rig, the rule the section below convicts agrees with the
+rig's own joints almost exactly:
+
+| | the rig says | midpoint of the two flesh centroids |
+|---|---|---|
+| elbow | 48.9% | **50.7%** |
+| knee | 51.5% | **51.9%** |
+
+And on the rig scaled by the stale factor it lands at **69.5%** — against the
+shipped bundle's **70.3%**. That is the reproduction. The shipped character is
+what the correct rule produces on an incorrectly scaled skeleton, which is why
+every attempt to fix the rule made things worse.
+
+#### How a day went into the wrong suspect
+
+The staging written to reproduce his build selected the armature **and all 21
+of its meshes** and applied transforms to all of them at once. The meshes are
+parented to the armature, so their world transform already contains the
+armature's, and applying both counts it twice: a 1.9638 m model came out at
+3.2915 m. Every measurement after that was of a character two thirds too big,
+and all of it was self-consistent — which is exactly why it read as a finding
+rather than as a broken rig.
+
+The new staging applies the armature's transform **only**, and then checks:
+the mesh's world bounding box before and after must agree to a tenth of a
+millimetre or nothing is saved. It reads 0.000000 m. A staging step that
+silently resizes the model is worse than one that fails, and this one had no
+way to fail.
+
+So the three rejected "fixes" below — excluding the arm chain, scale-only, and
+taking the interior joints from the rig's proportions — were all answers to a
+question that was never asked. The legs tell the same story: "1.06 before the
+fit and 4.97 after" was the double-applied staging, and the rebuilt character's
+thigh and shin (0.315 / 0.224) are **identical to the shipped ones**, so his
+leg proportions were never touched by the fit at all and are simply the model's.
+
+#### What shipped
+
+Staged (prefix stripped, armature transform applied, geometry verified
+unmoved), `scale_rig.py` at the correct 0.3978, `fit_joints.py`, then
+`build_vrm.py` at 1.96 m with `mixamo` and the 10 textures in `rocksrc`.
+`patch_shine.py '*'` afterwards, because he is one of the 26 flattened on
+2026-11-15 and a rebuild predates that.
+
+Same character: 25,083 vertices installed against **25,093** rebuilt, 21 meshes
+both, and the load test reads 21 renderers / 21 materials / 52 bones, 0 failed.
+`limb_check` elbow 0.0/0.0 and knee 0.0/0.0; `limb_socket_check` 0 limbs out of
+socket. Installed at 7,834,248 bytes, md5 `57dc0bc2…`; the old file is
+`character-backups/The Rock.prearms-2026-11-16.yargchar`, md5 `e16ed2d5…`.
+
+---
+
+### ~~The Rock's arms, 2026-11-15: the flesh does not locate the joint~~ (SUPERSEDED — see above)
 
 Reported in the first thirteen as "arms are squiggly", twice worked on, and still wrong — seen in
 game on 2026-11-15 with the words "the arms have not changed at all", which is exactly right.
@@ -1480,6 +1567,12 @@ the root as well, which none of the three attempts addresses. `fit_joints.py` is
 disk.
 
 #### Two things the recorded recipe does not say, and cannot run without
+
+> **The second one below is right about WHAT is needed and wrong about HOW.**
+> Applying the transforms of the armature and its parented meshes together
+> counts the armature's twice and resizes the model by 1.676. Apply the
+> ARMATURE'S ONLY — Blender keeps parented children where they are — and
+> verify the mesh's world bounding box did not move. See the correction above.
 
 Reproducing "scale_rig.py then fit_joints.py" on his source fails twice before it gets anywhere,
 and both are properties of the tools rather than of him.
