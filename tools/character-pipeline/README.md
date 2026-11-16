@@ -510,7 +510,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor. Applied to her alone and put to Jay as a question, since an appearance change across a third of the roster is his call; he said **"yes, all 26"**, so the other 26 were flattened too — **132 materials across 26 characters**, each hash-backed up and verified five ways. See "Sophia's shine, 2026-11-15" |
 | The Rock | arms are squiggly | **FIXED 2026-11-16 BY A REBUILD.** His upper arm is **61% over** the population norm and his forearm 13% under — upper/forearm ratio **2.37** where his own source `Rock.fbx` has **0.96**. Every existing check passes him because nothing is BENT (elbow 0.0/0.0) and nothing is DISPLACED; the segments are the wrong LENGTHS, which nothing measured. Reproduced exactly: `fit_joints.py` places a joint at the midpoint of two flesh centroids, and his upper-arm group keeps dominant weight 209 mm past his elbow, so it lands at 70% of the arm where it belongs at 49% — the shipped bundle is 70.3%. ~~His legs go the same way~~ and ~~three fixes tried and all three measured wrong~~ — **all of that was an artefact of a broken staging** that applied the armature's transform and its 21 parented meshes' together, counting it twice and reading a 1.9638 m model as 3.2915 m. The real cause is `scale_rig.py` sizing the skeleton from `Object.bound_box`, which is a CACHE and goes stale (and survives `evaluated_get(depsgraph)`): it scaled him by **0.6668** where his recipe records **0.3978**, and the midpoint rule then landed the elbow at 69.5% of a wrongly scaled arm against the shipped 70.3%. `fit_joints.py` was innocent — on a correctly scaled rig it puts the elbow at 50.7% against the rig's own 48.9%. scale_rig now reads vertices. Rebuilt: upper arm 0.344 → **0.176** (human 0.186), reach 1.272 → **0.932** (documented 0.938). See "The Rock's arms, 2026-11-16" |
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" — **but see the correction below: the patch is correct and the GAME DISCARDS IT** |
-| Jessica Rabbit | dress clips through the body, not rigged to it, and the sprung parts of the body and the dress move separately | **SKIRT FIXED 2026-11-16, BODICE NOT.** Her dress is two meshes and **every vertex of both was weighted to ONE bone** — `spine`, her humanoid hips — at one influence: bodice 24,035 verts, skirt 13,275. It followed her hips and nothing else, and her only chains (`breast.L`/`breast.R`) had **no collider group**, so the one part of her that moved swung out through cloth that did not. Shaken in the spring runtime the installed character's only moving bones were the two breast tips at 90.6 mm. Rebuilt from her documented recipe: skirt now **17 bones, 1-3 influences**, chains 2 → **10**, colliders 2 (referenced by none) → **10 (referenced by 8 of 10)**, skirt peak deflection **1024 mm**; clips, meshes, textures and materials all identical. **The bodice is still 24,035 verts on `spine`**: it is auto-weighted correctly to 87 groups and then the orphan-bone step moves 26,804 vertices off the GLB's undrivable root onto the hips. See "Jessica Rabbit's dress, 2026-11-16" |
+| Jessica Rabbit | dress clips through the body, not rigged to it, and the sprung parts of the body and the dress move separately | **FIXED 2026-11-16, both halves.** Her dress is two meshes and **every vertex of both was weighted to ONE bone** — `spine`, her humanoid hips — at one influence: bodice 24,035 verts, skirt 13,275. It followed her hips and nothing else, and her only chains (`breast.L`/`breast.R`) had **no collider group**, so the one part of her that moved swung out through cloth that did not. Shaken in the spring runtime the installed character's only moving bones were the two breast tips at 90.6 mm. Rebuilt from her documented recipe: skirt now **17 bones, 1-3 influences**, chains 2 → **10**, colliders 2 (referenced by none) → **10 (referenced by 8 of 10)**, skirt peak deflection **1024 mm**; clips, meshes, textures and materials all identical. ~~The bodice is still 24,035 verts on `spine`~~ — **also fixed**, by a new step in `build_vrm.py` that re-weights a mesh once the build has CARRIED it into place: the bodice is now on **9 bones** including `breast.L`/`breast.R`, so the cloth over her chest deforms with the sprung chest instead of being a shell it swings through, and the skirt on **21** including both thighs. Geometry moved 0.0000 mm. The step is gated on a mesh this script auto-weighted itself landing ≥90% on a bone ABOVE the humanoid root, and the control proves it inert: Spartan Mark V rebuilt before and after is **byte-identical**, md5 `b68ce9e4…`. See "Jessica Rabbit's dress, 2026-11-16" |
 | Aiko | *(not reported — found by the yaw sweep)* | **MEASURED 2026-11-16, NOT FIXED, nothing installed.** She stands **29.95° off**, the worst on the roster. Today's builder detects and corrects it unprompted (`facing: feet point (-0.5, -0.87, 0.0), 30 deg off forward`) and the rebuild reads **+0.03°, spread 0.15** — but it puts her hair as a flat sheet over her face, with AND without the hair rigger, so `GirlsInAction.blend` with `^Girl2\.[0-9]` is not her whole recipe. The turn has never been reported and the hair would be, so she keeps the 30°. See "Aiko, 2026-11-16" |
 | Spartan Mark V | ~~asymmetric right leg~~ **leg still sticking out at the right hip** | **FIXED 2026-11-16 BY A REBUILD, and the earlier patch provably did nothing in game.** Two separate findings. (1) The patch IS in the file and IS right — his hip offsets read L 161.8 mm / R 161.8 mm at instantiate, against 161.8 / 244.5 before. (2) **Unity's humanoid Animator re-poses the skeleton from the AVATAR, and the four rest structures are not what the Avatar retargets from.** After `Animator.Rebind()` the patched bundle reads L 161.8 / R **244.5** — byte-for-byte the unpatched figure. (3) Separately, the whole character is **turned 20.00°**: hips, shoulders, knees and feet all agree to two decimals, because his source is a perfect mirror about a plane 20° off the x axis and nothing straightens him. His left hip faces the camera, which is the hip reported. **No bundle patch can fix either** — the Avatar has to be regenerated, so he was REBUILT and installed. Today's `build_vrm.py` already carries a facing stage that detects and corrects the 20° itself, so his plain recorded recipe was enough and now reproduces him. Verified through the Animator, which is where the patch failed: hips L/R 143.3 / 143.3 mm after `Rebind()` against 161.8 / 244.5, and post-`Rebind` yaw 4.56° / −7.96° against Doom Slayer's control 4.20° / −7.89°. Both hips were wrong in the old build, not only the right one. See "Spartan Mark V, 2026-11-16: the Animator does not read what we patch" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
@@ -888,6 +888,59 @@ The remedy is to keep undrivable bones out of automatic weighting in the first
 place, so nothing lands on them; that is not done here because the hips are not
 known at the point the weighting runs, and a rule that guesses which parentless
 bone is the stray is worth more thought than this evening.
+
+#### FIXED in the builder: re-weight a mesh once it has been CARRIED into place
+
+The cure is one step in `build_vrm.py`, placed after the T-pose bake. By then
+the scale stage has carried the mesh to where it belongs and bone heat works in
+WORLD space, so the fix is simply to weight it again there. No geometry is
+baked and nothing is moved: the useless weights are thrown away and recomputed
+against a skeleton that is finally around the mesh instead of thirty units
+away.
+
+It is deliberately narrow. A mesh qualifies only if **this script auto-weighted
+it itself** (it was in `UNRIGGED`) **and** at least 90% of it then landed on
+**one bone that is an ancestor of the humanoid hips** -- a bone nothing can
+ever drive. A binding somebody authored is never touched, and neither is a prop
+legitimately riding a single DRIVEN bone: Joker's pistol keeps `Gun_joker`.
+`VRM_NO_RECARRY=1` switches it off; `VRM_RECARRY_MIN` moves the 0.9.
+
+It refuses rather than shipping a bad result: if re-weighting leaves the mesh
+on fewer than two bones, or leaves over half of it unweighted, or moves the
+geometry by more than a micron, the build aborts.
+
+```
+carried mesh: 'Object_10' (13275 verts) came out of automatic weighting with
+  100% of itself on 'GLTF_created_0_rootJoint', a bone ABOVE the humanoid root
+  that nothing can drive -- it was weighted while it stood away from the
+  skeleton. Weighting it again now that it is in place.
+    now on 13 bone(s); 13275/13275 vertices weighted; geometry moved 0.0000 mm
+carried mesh: 'Object_9' (24035 verts) ... 100% of itself on 'GLTF_created_0_rootJoint'
+    now on 10 bone(s); 24035/24035 vertices weighted; geometry moved 0.0000 mm
+```
+
+What shipped, measured on the installed bundle:
+
+| mesh | before | after |
+|---|---|---|
+| bodice `Object_1` | 1 bone, `{1: 24035}` | **9 bones**, `{1: 913, 2: 4318, 3: 5411, 4: 13393}` |
+| skirt `Object_2` | 1 bone, `{1: 13275}` | **21 bones**, `{1: 3258, 2: 5618, 3: 3488, 4: 911}` |
+
+The bodice's bones now include **`breast.L` and `breast.R`**, which is the
+reported fault answered directly: the cloth over her chest deforms WITH the
+sprung chest underneath it instead of being a shell it swings through. The
+skirt's include `thigh.L` and `thigh.R`, so it follows her legs. Her extents
+are unchanged to the millimetre (bodice y −0.107..+0.397 against −0.108..+0.397),
+and the orphan-bone step's load falls from 26,804 vertices to 13,856.
+
+**The control is what makes this safe to put in a builder every character goes
+through.** Spartan Mark V, rebuilt from the same source and arguments before
+and after the change: the step does not fire, and the two `.vrm` files are
+**byte-identical**, md5 `b68ce9e41e52a49a` both times.
+
+Installed at md5 `f6192dce…`, 15,989,409 bytes; load test 16 renderers / 11
+materials / 194 bones / 10 chains, 0 failed. Backup
+`character-backups/Jessica Rabbit.prebodice-2026-11-16.yargchar`.
 
 #### Chasing the bodice, 2026-11-16: why it is not a weights problem you can patch
 

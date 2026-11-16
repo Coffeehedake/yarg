@@ -3840,6 +3840,108 @@ if (not os.environ.get("VRM_NO_TPOSE")) and (
     lo, hi = bounds()
     size = hi - lo
 
+# ------------------------------------------------- re-weight a CARRIED mesh
+# An unrigged mesh is auto-weighted up near the top of this script, and at that
+# moment it may be nowhere near the skeleton. Jessica Rabbit's GLB is the case:
+# everything with vertex groups stands at z 32..44 and everything WITHOUT them
+# -- her dress sculpt, beside the mic-stand cubes -- stands at z 0..10.6. The
+# only bone within reach of the dress is the file's own root joint, a single
+# bone 38.56 units long running the height of the scene, so bone heat gives it
+# the whole garment. The orphan-bone step then moves that weight down to the
+# hips because the root sits above the humanoid root, and the dress arrives
+# welded to ONE bone: it follows her hips and cannot bend with her legs, her
+# torso or her chest, so the body moves inside a rigid shell and her sprung
+# chest swings out through it. Reported, exactly, as the dress clipping through
+# her and moving separately from her.
+#
+# By HERE the mesh is in the right place -- the scale stage carried it -- and
+# bone heat works in world space, so the cure is simply to weight it again now.
+# Nothing is baked and no geometry is touched: the weights are thrown away and
+# recomputed against a skeleton that is finally around the mesh instead of
+# thirty units away.
+#
+# NARROW ON PURPOSE. Only a mesh that this script auto-weighted itself, and
+# whose weight then landed almost entirely on ONE bone that the humanoid rig
+# can never drive, qualifies. A mesh somebody authored is never touched, and
+# neither is a prop legitimately riding a single DRIVEN bone -- Joker's pistol
+# on `Gun_joker` keeps its binding.
+_CARRY_MIN = float(os.environ.get("VRM_RECARRY_MIN", "0.9"))
+if UNRIGGED and not os.environ.get("VRM_NO_RECARRY"):
+    _hipsb = arm.data.bones.get(MAP.get("hips") or "")
+    _undrivable = set()
+    if _hipsb is not None:
+        _chain = {_hipsb.name}
+        _p = _hipsb.parent
+        while _p is not None:
+            _undrivable.add(_p.name)       # strictly ABOVE the humanoid root
+            _p = _p.parent
+    _recarry = []
+    for _o in UNRIGGED:
+        if not _o.vertex_groups or not _o.data.vertices:
+            continue
+        _g2n = {g.index: g.name for g in _o.vertex_groups}
+        _dom = {}
+        for _v in _o.data.vertices:
+            _best = None
+            _bw = 0.0
+            for _g in _v.groups:
+                if _g.weight > _bw:
+                    _best, _bw = _g.group, _g.weight
+            if _best is not None:
+                _n = _g2n.get(_best)
+                _dom[_n] = _dom.get(_n, 0) + 1
+        if not _dom:
+            continue
+        _top, _cnt = max(_dom.items(), key=lambda kv: kv[1])
+        _share = float(_cnt) / len(_o.data.vertices)
+        if _share < _CARRY_MIN or _top not in _undrivable:
+            continue
+        _recarry.append((_o, _top, _share))
+    for _o, _top, _share in _recarry:
+        print("  carried mesh: '%s' (%d verts) came out of automatic weighting "
+              "with %.0f%% of itself on %r, a bone ABOVE the humanoid root that "
+              "nothing can drive -- it was weighted while it stood away from "
+              "the skeleton. Weighting it again now that it is in place."
+              % (_o.name, len(_o.data.vertices), 100.0 * _share, _top))
+        _was = [(_o.matrix_world @ _v.co) for _v in _o.data.vertices]
+        for _m in [m for m in _o.modifiers if m.type == "ARMATURE"]:
+            _o.modifiers.remove(_m)
+        for _g in list(_o.vertex_groups):
+            _o.vertex_groups.remove(_g)
+        _o.parent = None
+        _o.matrix_parent_inverse.identity()
+        bpy.ops.object.select_all(action="DESELECT")
+        _o.select_set(True)
+        arm.select_set(True)
+        bpy.context.view_layer.objects.active = arm
+        try:
+            bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+        except Exception as _e:                                  # noqa: BLE001
+            raise SystemExit("ABORT: could not re-weight carried mesh '%s': %s"
+                             % (_o.name, _e))
+        bpy.context.view_layer.update()
+        _now = [(_o.matrix_world @ _v.co) for _v in _o.data.vertices]
+        _moved = max((a - b).length for a, b in zip(_was, _now)) if _was else 0.0
+        _g2n = {g.index: g.name for g in _o.vertex_groups}
+        _bones = {_g2n.get(_g.group) for _v in _o.data.vertices
+                  for _g in _v.groups if _g.weight > 1e-4}
+        _unw = sum(1 for _v in _o.data.vertices
+                   if not any(_g.weight > 1e-4 for _g in _v.groups))
+        print("      now on %d bone(s); %d/%d vertices weighted; geometry "
+              "moved %.4f mm" % (len(_bones), len(_o.data.vertices) - _unw,
+                                 len(_o.data.vertices), _moved * 1000))
+        if len(_bones) < 2 or _unw > len(_o.data.vertices) * 0.5:
+            raise SystemExit(
+                "ABORT: re-weighting '%s' left it on %d bone(s) with %d "
+                "unweighted vertices. That is no better than what it had, and "
+                "shipping it would hide the fault rather than fix it."
+                % (_o.name, len(_bones), _unw))
+        if _moved > 1e-3:
+            raise SystemExit(
+                "ABORT: re-weighting '%s' moved its geometry by %.3f mm. It "
+                "must only change which bones carry the mesh, never where the "
+                "mesh is." % (_o.name, _moved * 1000))
+
 # ---------------------------------------------------------------- drop material faces
 # VRM_DROP_MATERIAL_FACES="Material.001;..." deletes every face that uses a named material, and
 # the vertices only they used. For a toon outline shell: an untextured, slightly larger copy of the
