@@ -713,8 +713,70 @@ needs a build-time correction to her Hips orientation and a rebuild**, not a
 patch. Her source carries the same roll, so a rebuild from her recipe as it
 stands reproduces it; that is why all four of her snapshots agree.
 
-**Not attempted.** The builder already corrects FACING (yaw); this is ROLL, and
-whether the same machinery can be pointed at it is unexamined.
+#### Attempted 2026-11-16, and stopped before deforming her
+
+The builder corrects FACING (yaw) and can STAND a character up
+(`VRM_STANDUP`), so the first question was whether either reaches this. Neither
+does, and the measurements say why.
+
+**There are two different tilts, not one.**
+
+```
+Hips -> Head is (-0.0823 +0.5126 +0.0362),  9.95 deg off vertical
+the hip line L->R is (+0.1918 +0.0924 +0.0030), 25.71 deg out of horizontal
+```
+
+`VRM_STANDUP` aligns hips->head to vertical and then straightens each leg onto
+-Z. It would address the 9.95 and **not the 25.71**: straightening a leg makes
+it vertical *from its own socket*, and the sockets are what is 92.4 mm apart.
+Her feet would stay exactly as unlevel as they are. (Its gate is 25 deg of
+SPINE tilt and she reads 9.95, so it never fires for her either -- which this
+file already recorded, for her, by name.)
+
+**Her legs are the same length**, thigh to toe 0.997 m on both sides, so
+nothing can be blamed on one being short.
+
+So a new step would be needed, and every form of it deforms her:
+
+* **Rotate the hips bone to level the socket line.** Its children are both the
+  thighs AND the spine chain, so a 25.71 deg rotation carries her whole torso
+  with it. Counter-rotating the spine child by the inverse puts the torso back
+  and leaves 25.71 deg of twist concentrated in the pelvis -- her most visible
+  silhouette.
+* **Translate the left leg chain up 92.4 mm.** Rigid for the leg, but it tears
+  the hip join, and it breaks a pair mirrored to seven decimal places.
+* **Shorten one leg to reach the floor.** 92 mm on a 997 mm leg is 9%.
+
+This project's own note on the stand-up path says the same thing in advance:
+*"straightening a leg is a DEFORMATION and on weights taken from a contorted
+pose it is the deformation that tears"*.
+
+#### Is it even visible? Yes -- 67 mm of it
+
+Worth asking before deforming anything, because she wears a floor-length gown.
+The lowest vertex of each mesh:
+
+| mesh | what | lowest y |
+|---|---|---|
+| `Object_2` | the skirt | **-0.0245** |
+| `Object_21` | shoe | -0.0917 |
+| `mesh_11` | her body | -0.0908 |
+
+Her **right** foot at +0.0007 sits 26 mm *above* the hem and is covered. Her
+**left** foot reaches -0.0917, **67 mm below the hem** and 92 mm below the
+plane her right foot stands on. So it is not hidden: one shoe hangs out under
+the dress and into the podium.
+
+*(A podium render was attempted as a second opinion and produced a blank frame
+-- `VRMCharacter init skipped: NullReferenceException` in batch mode. Not
+chased; the geometry answers the question quantitatively and the render would
+only have illustrated it.)*
+
+**Stopped here deliberately.** The fault is real, visible and precisely
+located, but every correction available trades a buried shoe for a distorted
+pelvis, and that is a judgement about how she should look rather than a
+measurement. Her reported fault -- the dress -- is fixed, and nobody has
+reported her leg.
 
 ### The Mandalorian is two half-skeletons, 2026-11-16
 
