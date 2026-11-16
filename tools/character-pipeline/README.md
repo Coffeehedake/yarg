@@ -510,12 +510,13 @@ not rebuilt, so the other installed builds are unaffected.
 | Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor. Applied to her alone and put to Jay as a question, since an appearance change across a third of the roster is his call; he said **"yes, all 26"**, so the other 26 were flattened too — **132 materials across 26 characters**, each hash-backed up and verified five ways. See "Sophia's shine, 2026-11-15" |
 | The Rock | arms are squiggly | **FIXED 2026-11-16 BY A REBUILD.** His upper arm is **61% over** the population norm and his forearm 13% under — upper/forearm ratio **2.37** where his own source `Rock.fbx` has **0.96**. Every existing check passes him because nothing is BENT (elbow 0.0/0.0) and nothing is DISPLACED; the segments are the wrong LENGTHS, which nothing measured. Reproduced exactly: `fit_joints.py` places a joint at the midpoint of two flesh centroids, and his upper-arm group keeps dominant weight 209 mm past his elbow, so it lands at 70% of the arm where it belongs at 49% — the shipped bundle is 70.3%. ~~His legs go the same way~~ and ~~three fixes tried and all three measured wrong~~ — **all of that was an artefact of a broken staging** that applied the armature's transform and its 21 parented meshes' together, counting it twice and reading a 1.9638 m model as 3.2915 m. The real cause is `scale_rig.py` sizing the skeleton from `Object.bound_box`, which is a CACHE and goes stale (and survives `evaluated_get(depsgraph)`): it scaled him by **0.6668** where his recipe records **0.3978**, and the midpoint rule then landed the elbow at 69.5% of a wrongly scaled arm against the shipped 70.3%. `fit_joints.py` was innocent — on a correctly scaled rig it puts the elbow at 50.7% against the rig's own 48.9%. scale_rig now reads vertices. Rebuilt: upper arm 0.344 → **0.176** (human 0.186), reach 1.272 → **0.932** (documented 0.938). See "The Rock's arms, 2026-11-16" |
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" — **but see the correction below: the patch is correct and the GAME DISCARDS IT** |
-| Jessica Rabbit | dress clips through the body, not rigged to it, and the sprung parts of the body and the dress move separately | **FIXED 2026-11-16, both halves.** Her dress is two meshes and **every vertex of both was weighted to ONE bone** — `spine`, her humanoid hips — at one influence: bodice 24,035 verts, skirt 13,275. It followed her hips and nothing else, and her only chains (`breast.L`/`breast.R`) had **no collider group**, so the one part of her that moved swung out through cloth that did not. Shaken in the spring runtime the installed character's only moving bones were the two breast tips at 90.6 mm. Rebuilt from her documented recipe: skirt now **17 bones, 1-3 influences**, chains 2 → **10**, colliders 2 (referenced by none) → **10 (referenced by 8 of 10)**, skirt peak deflection **1024 mm**; clips, meshes, textures and materials all identical. ~~The bodice is still 24,035 verts on `spine`~~ — **also fixed**, by a new step in `build_vrm.py` that re-weights a mesh once the build has CARRIED it into place: the bodice is now on **9 bones** including `breast.L`/`breast.R`, so the cloth over her chest deforms with the sprung chest instead of being a shell it swings through, and the skirt on **21** including both thighs. Geometry moved 0.0000 mm. The step is gated on a mesh this script auto-weighted itself landing ≥90% on a bone ABOVE the humanoid root, and the control proves it inert: Spartan Mark V rebuilt before and after is **byte-identical**, md5 `b68ce9e4…`. See "Jessica Rabbit's dress, 2026-11-16" |
+| Jessica Rabbit | dress clips through the body, not rigged to it, and the sprung parts of the body and the dress move separately | **FIXED 2026-11-16, both halves.** Her dress is two meshes and **every vertex of both was weighted to ONE bone** — `spine`, her humanoid hips — at one influence: bodice 24,035 verts, skirt 13,275. It followed her hips and nothing else, so the one part of her that moved (`breast.L`/`breast.R`) swung inside cloth that did not. *(Those two chains having no collider group was separately called a fault and "fixed" on five characters; that was wrong -- the builder skips chest chains deliberately -- and all five were reverted.)* Shaken in the spring runtime the installed character's only moving bones were the two breast tips at 90.6 mm. Rebuilt from her documented recipe: skirt now **17 bones, 1-3 influences**, chains 2 → **10**, colliders 2 (referenced by none) → **10 (referenced by 8 of 10)**, skirt peak deflection **1024 mm**; clips, meshes, textures and materials all identical. ~~The bodice is still 24,035 verts on `spine`~~ — **also fixed**, by a new step in `build_vrm.py` that re-weights a mesh once the build has CARRIED it into place: the bodice is now on **9 bones** including `breast.L`/`breast.R`, so the cloth over her chest deforms with the sprung chest instead of being a shell it swings through, and the skirt on **21** including both thighs. Geometry moved 0.0000 mm. The step is gated on a mesh this script auto-weighted itself landing ≥90% on a bone ABOVE the humanoid root, and the control proves it inert: Spartan Mark V rebuilt before and after is **byte-identical**, md5 `b68ce9e4…`. See "Jessica Rabbit's dress, 2026-11-16" |
 | Aiko | *(not reported — found by the yaw sweep)* | **MEASURED 2026-11-16, NOT FIXED, nothing installed.** She stands **29.95° off**, the worst on the roster. Today's builder detects and corrects it unprompted (`facing: feet point (-0.5, -0.87, 0.0), 30 deg off forward`) and the rebuild reads **+0.03°, spread 0.15** — but it puts her hair as a flat sheet over her face, with AND without the hair rigger, so `GirlsInAction.blend` with `^Girl2\.[0-9]` is not her whole recipe. The turn has never been reported and the hair would be, so she keeps the 30°. See "Aiko, 2026-11-16" |
 | Spartan Mark V | ~~asymmetric right leg~~ **leg still sticking out at the right hip** | **FIXED 2026-11-16 BY A REBUILD, and the earlier patch provably did nothing in game.** Two separate findings. (1) The patch IS in the file and IS right — his hip offsets read L 161.8 mm / R 161.8 mm at instantiate, against 161.8 / 244.5 before. (2) **Unity's humanoid Animator re-poses the skeleton from the AVATAR, and the four rest structures are not what the Avatar retargets from.** After `Animator.Rebind()` the patched bundle reads L 161.8 / R **244.5** — byte-for-byte the unpatched figure. (3) Separately, the whole character is **turned 20.00°**: hips, shoulders, knees and feet all agree to two decimals, because his source is a perfect mirror about a plane 20° off the x axis and nothing straightens him. His left hip faces the camera, which is the hip reported. **No bundle patch can fix either** — the Avatar has to be regenerated, so he was REBUILT and installed. Today's `build_vrm.py` already carries a facing stage that detects and corrects the 20° itself, so his plain recorded recipe was enough and now reproduces him. Verified through the Animator, which is where the patch failed: hips L/R 143.3 / 143.3 mm after `Rebind()` against 161.8 / 244.5, and post-`Rebind` yaw 4.56° / −7.96° against Doom Slayer's control 4.20° / −7.89°. Both hips were wrong in the old build, not only the right one. See "Spartan Mark V, 2026-11-16: the Animator does not read what we patch" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
 | Miku | twintails only move where they were repaired; the tie could be sprung too | ~~FIXED 2026-11-15 (evening)~~ — **RE-REPORTED UNCHANGED, FIXED AGAIN 2026-11-16.** Two faults. (1) `patch_add_springs.py` set each new joint's `m_GameObject` and never added it to that GameObject's `m_Component`, so **21 of 29 joints were orphans** — and both the tool's own read-back and the Unity load test missed it because they follow the Springs array's pointers, the one direction the patch had written. (2) `Bone06` and its mirror, **158 vertices** and a third of the twintails, were left rigid on an unmeasured assumption; the project's own `_trim_anchor` rule clears them (0.133 m against 0.774 m for the rest of the chain), so they are now sprung. **462 of 462 twintail vertices are on a chain**, against 304 and 38. **VERIFIED IN THE SPRING RUNTIME** with `YargSpringProbe.cs`: every twintail bone now peaks between 143 and 422 mm under a linear shake, the two sides within 10%, where `Bone07` and `Bone11` read **0.001 mm** yesterday. The necktie swings 161 and 359 mm. **The orphans were NOT the cause** — yesterday's build peaks at 706 mm with all 21 orphaned, because Unity attaches them at instantiate; what was rigid was the TOP (the crown plus the two chain-root pivots, ~187 vertices), which is exactly what "only the middle" described. See "Miku's twintails, 2026-11-16". Original note follows: Both right. Her two `HairSpring_*` chains run on eight bones an earlier hair-rigger run INVENTED, which dominate **38** vertices; her own twintail bones `Bone06`..`Bone15` and their `(mirrored)` twins dominate **462** and were on no chain, as were the three tie bones. Nothing found it because every rigger here selects by bone NAME and her rig has no bone whose name contains hair, tail, bang or tie — while `HairSpring_1_0` does. `patch_add_springs.py` put 7 new chains on her own bones: **324 vertices now move against 38**. `Bone06` stays rigid on purpose (it is the bun, 158 vertices, at the crown). The tie chain is given NO collider group — all three of its bones start 44.4/30.5/7.4 mm INSIDE the torso capsule, and attaching it would have thrown the knot forward and undone that morning's re-aim. See "Miku's twintails and necktie, 2026-11-15 (evening)" |
+| The Mandalorian | armour is not centred on his chest | **reported 2026-11-16, not yet measured.** Two existing measurements probably bear on it and should be read before anything is rebuilt. His body-yaw lines **disagree** (+2.50 deg mean, spread **11.10**), which `body_yaw_check_installed.py` reads as a displaced part rather than a turned body — he is one of seven on that list. And the edge-length ratio sweep puts his worst stretched edge at **234 mm**, the largest on the roster by a wide margin (Peacemaker's is 27 mm). His source is a glTF whose **both skeletons are collapsed**, so he was re-rigged through Mixamo; a chest plate that is a separate island riding one bone, or weighted to a bone the re-rig moved, would produce exactly this. Check first whether the armour is its own mesh/island and which bones dominate it — if it is one rigid island on one bone, this is the Joker's-pistol and Judy's-belt shape, not a weighting fault |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
 
 ### Two colliders was never enough, and nothing counted
@@ -841,9 +842,14 @@ bone.** Measured on the installed bundle, in the hips' own frame:
 
 `spine` IS her humanoid hips, so the dress follows her hips and nothing else.
 It cannot bend with her legs, her torso or her chest: the body moves inside a
-rigid shell. Her only spring chains are `breast.L` and `breast.R`, with **no
-collider group at all**, so the one part of her that does move swings straight
-out through cloth that is not following it. That is the "huge mess", exactly.
+rigid shell. Her only spring chains are `breast.L` and `breast.R`, and the one
+part of her that does move therefore swings inside cloth that is not following
+it. That is the "huge mess", exactly.
+
+*(Those two chains carry no collider group. An earlier version of this file
+called that a second fault and attached one; it is the builder's deliberate
+choice for a chest chain, and the change was reverted -- see "RETRACTED: her
+chest chains had no collider group BY DESIGN" below.)*
 
 A control: shaken in the spring runtime, the installed character's ONLY moving
 bones are the two breast tips, at 90.6 mm. Everything else reads 0.000.
@@ -889,49 +895,87 @@ place, so nothing lands on them; that is not done here because the hips are not
 known at the point the weighting runs, and a rule that guesses which parentless
 bone is the stray is worth more thought than this evening.
 
-#### Her chest chains had no colliders either, and nineteen characters share it
+#### RETRACTED: her chest chains had no collider group BY DESIGN
 
-Her two `breast.L`/`breast.R` chains shipped with **no collider group at all**,
-so nothing restrained them: her arms pass through her chest and the chest
-through whatever is over it. That is Peach's fault again -- a chain with no
-collider is not a parameter problem, and `--cloth` could never have fixed it.
+**Everything in this sub-section's first version was wrong, and the change it
+describes has been reverted on all five characters it reached.** It is kept
+because the way it passed every check is the lesson.
 
-`patch_springs.py --collide` is a fourth independent fix in that tool. It gives
-a chain that has NO group the file's own collider group, and only such a chain:
-one somebody already gave a group has an answer, right or wrong, and this is
-not the tool to second-guess it.
+What was claimed: her `breast.L`/`breast.R` chains shipped with no collider
+group, nothing restrained them, this was Peach's fault again, and nineteen
+installed characters shared it.
 
-It carries the same guard as `patch_add_springs.py`, for the same reason --
-**a joint that starts INSIDE a collider is displaced on frame one rather than
-restrained**. Her chest clears everything at rest, the tightest being
-`breast.R` at **+19.5 mm** from the torso capsule at its own 40 mm joint
-radius, so the attachment is safe. Miku is the control, and a useful one: run
-against her the guard refuses, reporting her `Tie` chain's three joints at
-**44.4, 30.5 and 7.4 mm inside** the `Bip01 Spine` capsule -- the same three
-figures a different tool measured the day before, reproduced independently.
+What is true: **a chest chain with no collider group is this project's own
+decision.** `vrm_colliders.add()` skips exactly these when it attaches the
+group, and the reason is written beside `CHEST` in that file:
 
-Installed: 10 of 10 chains now have a group, the read-back reports **1 object
-changed, 0 gone, 0 added**, the load test passes at 16 renderers / 11 materials
-/ 194 bones, and the chest still deflects **90.62 mm** under a shake -- the
-same as before, so the colliders restrain the motion without suppressing it.
-md5 `4a2f0e0b...`, backup `Jessica Rabbit.prechestcollide-2026-11-16.yargchar`.
+> Chest springs sit ON the torso, so handing them the torso capsule would push
+> them out of the body they belong to.
 
-**NINETEEN installed characters have at least one chain with no collider
-group**, and the pattern is unmistakable:
+The torso capsule is a crude cylinder fitted outside the ribcage. A chain that
+sits on the chest is inside it almost by definition, so the group does not
+restrain such a chain, it holds it off the body. `cloth_collide_installed.py`
+carries the same constant for the same reason, and says so in as many words:
+*"A check that flags a decision as a fault teaches the reader to skim its
+output."* That is precisely what happened, to the author of the check.
 
-| character | chains with no group | what they are |
+**`patch_springs.py` already carried `CHEST` itself**, defined at the top and
+used twice -- to exclude chest chains from `--cloth` and from the `--limbs`
+clearance guard. The `--collide` block was written three hundred lines below
+the constant, in the same file, and named Jessica's breast chains as its
+motivating case.
+
+**The clearance guard did not catch it, and could not.** It asks whether a
+joint starts INSIDE a collider, and four of the five characters cleared every
+collider of the group at rest -- Jessica's tightest was `breast.R` at
+**+19.5 mm**. The geometry really is clear; it is the intent that is not. A
+physical check can only answer the question it is given, and *"is this
+possible"* is not *"is this what the builder decided"*.
+
+**The one measurement that should have stopped it was already in hand.**
+Jessica's chest deflected **90.62 mm** under the spring probe before the attach
+and **90.62 mm** after. That was written up as the colliders restraining the
+motion without suppressing it. It is nothing of the kind: an identical figure
+means the joints never reach the collider under that motion, so the attach did
+nothing at all. A change with no measured effect is not a validated change, and
+"unchanged" is the weakest possible evidence for a benefit.
+
+**Reverted.** All five restored from their `prechestcollide-2026-11-16`
+backups and verified byte-identical with `cmp`: Jessica Rabbit (md5
+`f6192dce...`, 15,989,409 bytes -- note the patched file was 1.9 MB *smaller*,
+which is the repacker, not content), Tenna `5a29b774`, Power Girl `69803005`,
+Sayuri `dd918f1a`, Heels `63f95aad`. Nothing else was ever touched.
+
+**And the roster claim collapses.** Re-swept across all 65 installed bundles
+with the chest skip in place, the number of characters carrying a non-chest
+chain that has no collider group and clears the group's colliders at rest is
+**zero**:
+
+| what the sweep finds | characters | verdict |
 |---|---|---|
-| Killer Clown | **2 of 2** | `breast_r`, `breast_l` |
-| Tenna | 2 of 4 | `DEF-breast.L/R` |
-| Power Girl, Prix, Sayuri | 2 of 16 / 5 / 6 | `BreastSpring_L/R` |
-| Heels | 2 of 6 | `CC_Base_L/R_Breast` |
-| Lola Bunny | 1 of 3 | `fml_un_C_breast` |
-| Miku | 1 of 9 | `Tie` -- and the guard REFUSES it |
-| Harq Alkahana, both Hatsune Mikus, Inforder Trogen, Kaiser Aufhanger | 10..30 each | **downloaded VRoid bundles, not ours** |
+| chest chains only | Jessica Rabbit, Killer Clown, Tenna, Power Girl, Prix, Sayuri, Heels, Lola Bunny | **by design** -- `--collide` now names them and declines |
+| a non-chest chain, joint starts inside a collider | Miku (`Tie`: 44.4, 30.5, 7.4 mm inside `Bip01 Spine`) | refused by the clearance guard |
+| several collider groups, so no group to infer | Adachi Rei, Harq Alkahana, both Hatsune Mikus, Inforder Trogen, Kaiser Aufhanger | tool declines without `--group`; the five VRoid bundles are not ours |
+| a genuine candidate | **none** | |
 
-The chest chains are ours and are the same fault Jessica had. The downloaded
-bundles were parameterised by their own authors and are the control this file
-keeps; they are not to be swept. Nothing but Jessica has been touched.
+The sweep printed those seven lines while walking all 65 bundles, so the zero
+is a measured zero rather than a search that never ran.
+
+So the sweep offered after the first version of this section -- seven
+characters, "exactly Jessica's fault" -- would have changed seven characters
+and been wrong about every one.
+
+**`--collide` keeps its purpose**, which is real: a NON-chest chain with no
+collider group is restrained by nothing and swings through the body, and that
+is half of Peach's dress. It now has two guards rather than one, the clearance
+check and the chest skip, and the docstring says why each exists. Miku remains
+a good control for the first, reporting her `Tie` joints at 44.4, 30.5 and
+7.4 mm inside `Bip01 Spine` -- the same three figures a different tool measured
+the day before, reproduced independently.
+
+**What is actually open on Jessica.** Her two chest chains peak at 90.6 mm, and
+whether that is too much is a question about the chains' own stiffness and
+drag, not about colliders. Untouched and unmeasured against anything.
 
 #### FIXED in the builder: re-weight a mesh once it has been CARRIED into place
 
@@ -3289,7 +3333,7 @@ right.
   is checked by re-reading the written BYTES and, for the first patch here that adds objects
   rather than edits them, by Unity's own loader with the pre-patch file as the control
 - `patch_springs.py <yargchar> [--cloth] [--limbs] [--unrig-hair] [--collide] [--group <path_id>] [--out X] [--dry-run]` — fixes
-  the spring simulation IN THE INSTALLED BUNDLE, four independent defects, any or all. `--collide` gives a chain that has **no collider group at all** the file's own group, and only such a chain — nothing restrains one without, so it swings through the body (Peach's dress, Jessica Rabbit's chest). It refuses when a joint would START INSIDE one of those colliders, since the solver's first act is to push it out: on Miku's `Tie` it reports 44.4, 30.5 and 7.4 mm inside her torso capsule and writes nothing. `--cloth`
+  the spring simulation IN THE INSTALLED BUNDLE, four independent defects, any or all. `--collide` gives a chain that has **no collider group at all** the file's own group, and only such a chain — nothing restrains one without, so it swings through the body (Peach's dress). **Two guards.** It refuses when a joint would START INSIDE one of those colliders, since the solver's first act is to push it out: on Miku's `Tie` it reports 44.4, 30.5 and 7.4 mm inside her torso capsule and writes nothing. And it skips a **chest** chain outright, because a chest chain with no group is `vrm_colliders.add()`'s deliberate choice rather than an omission — without that skip it attached the group to five characters' breast chains, every one of which passed the clearance guard, and all five had to be reverted. Across all 65 installed bundles it now finds **zero** chains that should be given a group. `--cloth`
   re-parameterises every cloth-named chain to the authored reference 0.50/0.05/0.00 (the old
   0.85/0.80 damps a skirt into near-rigidity and is above every value in any author-made bundle
   here); `--limbs` re-radiuses the arm and leg capsules from the median flesh distance to the

@@ -2,9 +2,9 @@
 """Fix the spring simulation in an INSTALLED .yargchar, in place.
 
     python patch_springs.py <in.yargchar> [--cloth] [--limbs] [--unrig-hair]
-        [--out X] [--dry-run]
+        [--collide] [--group N] [--out X] [--dry-run]
 
-Three independent defects, any or all:
+Four independent defects, any or all:
 
   --cloth   re-parameterise every cloth-named spring chain to the authored
             reference, 0.50 stiffness / 0.05 drag / 0.00 gravity. Characters
@@ -44,6 +44,32 @@ Three independent defects, any or all:
             exactly where the model skins it; what stops is the motion. That is
             why this is a removal and not a re-parameterisation: a stiffer
             spring still moves, and these have 2.9 degrees of room.
+
+  --collide give the file's collider group to a spring chain that has NO
+            group at all. A chain with no group is restrained by nothing and
+            swings straight through the body, which is half of Peach's dress.
+            Only a chain with no group is touched: one somebody gave a group
+            has an answer, right or wrong, and this is not the tool to
+            second-guess it.
+
+            TWO guards, and the second one is the one that was missing.
+
+            A joint that STARTS inside a collider is not restrained by it, it
+            is EJECTED by it on frame one, so the fix aborts and names the
+            joints rather than attaching the group. That refuses Killer Clown
+            (both chains 7.6 mm inside the collider on `Hips`), Prix (186.5 mm
+            inside the one on `FemaleBody_Head`) and Lola Bunny (51.2 mm
+            inside `fml_un_C_pelvis_att`), and it refuses Miku's necktie,
+            whose three joints sit 44.4, 30.5 and 7.4 mm inside `Bip01 Spine`.
+
+            And a CHEST chain is skipped outright, because a chest chain with
+            no collider group is this project's DECISION and not an omission
+            -- see CHEST below. Without that skip this fix attached the group
+            to the breast chains of five characters, all since reverted, and
+            the clearance guard passed every one of them: they genuinely do
+            clear the torso capsule at rest. A physical check cannot see an
+            intent, which is why the intent has to be written in the code
+            rather than inferred from the geometry.
 
 WHY PATCH RATHER THAN REBUILD. For 35 of the 65 installed characters there is
 no source file left on this machine, so there is nothing to rebuild from. And
@@ -559,8 +585,32 @@ def main():
             _cols.append((_cp, tf[_tp]["name"], _ct["Radius"] * _ws, _a, _b))
         _mine = [c for c in _cols if c[0] in (groups.get(gpid) or [])]
         _bad = []
+        _chest = []
         for _si, (_sn, _jids, _gids) in enumerate(springs):
             if _gids:
+                continue
+            # A CHEST chain with no collider group is this project's own
+            # DECISION, not an omission. vrm_colliders.add() skips exactly
+            # these when it attaches the group, for the reason written beside
+            # CHEST there and at the top of this file: a chest chain sits ON
+            # the torso, and the torso capsule is a crude cylinder outside the
+            # ribcage, so handing it over pushes the chest out of the body it
+            # belongs to.
+            #
+            # --collide shipped WITHOUT this check and attached the group to
+            # the breast chains of Jessica Rabbit, Tenna, Power Girl, Sayuri
+            # and Heels before anyone read the constant three hundred lines
+            # above, in this same file, that already excludes them from
+            # --cloth and from the --limbs guard. All five were reverted.
+            #
+            # The clearance guard did not catch it and could not: it asks
+            # whether a joint starts INSIDE a collider, and four of the five
+            # cleared every collider of the group at rest -- Jessica's
+            # tightest was +19.5 mm. "Is this physically possible" is not
+            # "is this what the builder decided", and the measurement only
+            # ever answered the first one.
+            if re.search(CHEST, _sn or "", re.I):
+                _chest.append(_sn)
                 continue
             for _jid in _jids:
                 _j = joints.get(_jid)
@@ -586,8 +636,13 @@ def main():
                   "collider's surface, so this would displace the chain on "
                   "frame one rather than restrain it. Nothing written.")
             return 2
+        if _chest:
+            print("  collide: %d chest chain(s) deliberately left with no "
+                  "collider group (%s) -- see CHEST above, and "
+                  "vrm_colliders.add()" % (len(_chest), ", ".join(_chest)))
         if not attach:
-            print("  collide: every chain already has a collider group")
+            print("  collide: no chain is missing a collider group it is "
+                  "meant to have")
         else:
             print("  collide: %d chain(s) have no collider group and clear "
                   "all %d colliders of the group at rest -- attaching it: %s"
@@ -605,9 +660,11 @@ def main():
         if do_collide and attach and cn == "Vrm10Instance" and not done_g:
             # A chain with NO collider group is not restrained by anything:
             # it swings straight through the body. That is Peach's dress, and
-            # it is why --cloth alone did not fix her. Jessica Rabbit's two
-            # breast chains shipped the same way, so her arms pass through her
-            # chest and the chest through whatever is over it.
+            # it is why --cloth alone did not fix her.
+            #
+            # It was ALSO claimed of Jessica Rabbit's two breast chains, and
+            # that was wrong: a chest chain having no group is deliberate.
+            # See the CHEST skip in the candidate loop above.
             #
             # Only chains that have NO group at all are touched. A chain
             # somebody gave a group already has an answer, right or wrong, and
