@@ -15,6 +15,41 @@ first; this file is only how to *run* it.
 > measurements taken while she was installed, and those say **66** on purpose. A count of 66 is a
 > statement about when it was measured, not a stale 65; anything measured after that date says 65.
 
+## Where it stands, 2026-11-16
+
+The runlist further down is the full history. This is only what is OPEN, so a
+session picking this up does not have to reconstruct it.
+
+**Blocking everything visual: the podium render is broken for every
+character.** Run against Jinx and Prix together it logs `VRMCharacter init
+skipped: NullReferenceException` for both and writes two **identical
+12,477-byte blank frames**. A known-good character renders exactly as blank as
+a broken one, so this is the shot path, not any subject. Until it is fixed
+there is no way to look at anything, which is the project's own stated
+standard for accepting a change.
+
+| open | state |
+|---|---|
+| **Prix** | Hair found and fully explained: `Mesh.009`, 10,741 verts, at ankle height because her head bone is rotated 180° about Z and `hairAll` carries a local +1.411 m. **Blocked on a scale factor the bundle cannot supply** — four independent fits give 7, 10.6, 13–69 and 28.6. Jay has offered a differently-formatted source model, which would both settle the scale and make her **rebuildable for the first time**. Her pupils and lashes are unresolved and need a render |
+| **The Mandalorian** | Two half-skeletons 37.2 mm apart; every lower pair at −18.5 mm and every upper at +18.7 mm. Diagnosed, not fixed. A fix means moving bones while compensating bind poses, which wants its own tool |
+| **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. **DECIDED: leave her** — do not re-open |
+| **Kronk** | +30.9 mm half-body step, vertical legs: the same class as The Mandalorian. Never investigated |
+| **Aiko** | 29.95° off; a rebuild squares her but puts her hair over her face. Nothing installed |
+| **Limb capsules** | Every character built before 2026-11-15 still carries MEDIAN limb capsules. `patch_springs.py --limbs` re-radiuses them to p90 and now also clears the joint SPHERE; not swept |
+| **Arbiter** | 13 handoffs open and never pulled |
+
+**Settled on 2026-11-16**, each with its own section below: the clearance
+guard cleared a joint's CENTRE rather than its sphere, in two separate copies
+of the rule — fixed in both, and `--reclear` applied to the 14 characters of
+ours, taking Power Girl and Jinx from 78 and 76 mm of permanently displaced
+hair to under 1 mm. Chest chains with no collider group turned out to be
+**deliberate**, and five characters patched on that mistaken basis were
+reverted. Four new checks were added and swept across all 65:
+`joint_inside_check_installed.py`, `pair_offset_check_installed.py`,
+`half_body_check_installed.py` and `centreline_check_installed.py`. Between
+them they closed the long-standing "seven characters whose yaw lines disagree"
+item, naming the limb and the millimetres for each.
+
 ## The two steps
 
 **1. Model → VRM** (Blender 4.5, with the VRM add-on installed in the user profile — do **not**
@@ -494,6 +529,16 @@ noting — "his hair is still not right" has a simpler cause than any collider: 
 The Lola and Jessica fixes are general and apply to every rebuild; Pomni's two are general to
 material handling. Batman's is a per-character flag. None of them touches a character that is
 not rebuilt, so the other installed builds are unaffected.
+
+## The runlist
+
+Everything reported, and what became of it. **This table had no header row and
+no blank line before it until 2026-11-16, so every row of it rendered as
+literal pipe-separated text rather than a table** -- which is why it reads as
+a wall in any Markdown viewer. The rows themselves were always fine.
+
+| character | what was reported | what it is |
+|---|---|---|
 | Kasane Teto | does not animate at all, stands in her T-pose | **her bundle has no AnimatorController and no AnimationClip.** 1 of 66; every other character has both. **But that is not established as the CAUSE (2026-11-11):** the game's `LoadAnimationDefaults` already loads `Animations/Vocals/Default/DefaultController` when the animator has none, and that controller has the `Idle` and `Playing` states she is configured for. Ruled out: missing component (she has `VRMCharacter`), `UseCustomAnimations` (0), mismatched state names, failed Resources path. She is a DOWNLOADED bundle with no source, so there is nothing to re-export either. Needs the game rebuilt with logging to settle |
 | Lola Bunny | head floats detached above the neck | a part following a bone that does not follow the body — the same shape as Judy's belt and the static hair |
 | Judy Hopps | belt detached, arms and legs crossed | the crossing is the mirrored rig above; the belt is the detached-part case |
