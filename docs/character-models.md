@@ -1074,12 +1074,29 @@ faces changed, which is the next fault.
 **2. A cool purple tint and a blown-out face.** URP/Lit's default smoothness and environment
 reflections read as a sky tint on a flat toon character. `YARG_NO_SHINE_MATERIALS="Body.001;Head.001;
 Eyes.001"` (or `*` for every material) sets smoothness, metallic, specular highlights and
-environment reflections to zero. Alastor's hair and ears are red again in game. Heels, Gwen Stacy and
-Ariel were also installed no-shine (`*`) to compare; the editor shows the difference much less than
+environment reflections to zero. Alastor's hair and ears are red again in game. ~~Heels, Gwen Stacy and
+Ariel were also installed no-shine (`*`) to compare~~ — **not true as of 2026-11-15, and the files
+are the record**: all three read `_Smoothness` 0.50 with specular and reflections ON in the
+installed bundles, so those comparison builds either never shipped or were replaced. **Alastor is
+the only one of the 65 with the switch applied.** The editor shows the difference much less than
 the game does, so the editor is not a guide to how bad the shine looks. Ariel's aquamarine hairline
-was already like that before the shine was removed: it is not a regression. **Known bug:** the
+was already like that before the shine was removed: it is not a regression. ~~**Known bug:** the
 exporter sets `_Metallic` to 1 for any material with a metallic map AFTER this switch runs, so for
-those materials the switch is only partly applied.
+those materials the switch is only partly applied.~~ **FIXED 2026-11-15** — it was still true:
+the block zeroed four floats and three statements later `if (mr != null)` bound the gloss map,
+re-enabled `_METALLICSPECGLOSSMAP` and set `_Metallic` back to 1, which also routes smoothness
+through the map's alpha. Flattening now runs LAST and declines the map outright, since a material
+asked to have no shine does not want a gloss map either, and logs that it did.
+
+**The same default is why Sophia reads shiny**, reported 2026-11-15. It is not a defect of hers:
+she is one material, one base map, no normal or gloss map, at URP/Lit's own 0.50 — and **63 of the
+65 installed characters are at that default, 27 of them with no normal or gloss map either**. Her
+albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB
+like all 57, and she has no emission. She is simply the one on whom a uniform plastic specular
+over a photoscan of a real person shows. `patch_shine.py` applies the same switch to an installed
+bundle, and it was applied to her alone rather than swept across the 27 — smoothness 0 is fully
+matte, the editor understates the difference, and blanketing a roster on the strength of a tool
+default is the `doubleSided` mistake.
 
 **3. The coat, pants and boots looked inside-out.** Vertex normals agree with the face winding (0% of
 faces against it, mean dot 0.94) and the winding is identical in the source model and every build, so

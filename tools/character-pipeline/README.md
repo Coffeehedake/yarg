@@ -507,6 +507,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Peach | eyes missing; dress springs so reactive her legs clip through it | **BOTH FIXED 2026-11-11, and neither was what the report implied.** The eyes are the alpha fault: her eye is a STACK of meshes from a Smash rip -- `Peach_eye` is a blank white sclera with no iris, `Peach_Blink_Ottotto` is the iris and `Peach_Blink_VoiceA` is the eyelid-and-lash plate that fills a rectangular hole in `Peach_faceN` -- and all three shipped `OPAQUE`, so the top layer drew as a solid plate. The skirt is NOT too reactive: her skirt chains are stiffer and more damped than her hair's (0.85/0.80 against 0.60/0.45). They are UNGUARDED -- eight of her nine chains hang around her thighs and she had two colliders, both on her torso. See below. **~~BOTH FIXED~~ — REOPENED 2026-11-15 and fixed again, and "BOTH FIXED" is what let it happen.** Reported a second time, for clipping legs AND a dress moving as one piece. Two causes: her skirt was damped to near-rigidity by the 0.85/0.80 cloth default, which had itself been set in answer to the *first* Peach report before that report's cause was withdrawn; and the limb capsules fitted on 2026-11-11 use the MEDIAN flesh radius, so half of every limb sits outside its own collider and her calf reaches 24 mm past the only thing her hem can feel. See "Peach's dress, 2026-11-15" |
 | Link | eye textures misplaced; still holding the master sword and shield | **both fixed.** His rig has bones named `Sword` and `Shield`, so `VRM_DROP_ISLAND="LinkEquipment=Sword+Shield"` takes 41 islands and leaves `Fourreau`, his scabbard, on his back. His eye material `Material.003` was taking the body atlas while `Eye.png` sat unused beside it |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and ~~finger bones that are mapped but not weighted~~ **corrected 2026-11-11 by `bundle_audit.py`: he has ZERO finger bones in his humanoid map**, and 21 humanoid bones in total against a typical 52. The symptom was right, the stated cause was wrong |
+| Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor; applied to her alone, NOT swept. See "Sophia's shine, 2026-11-15" |
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15, and it is one number.** His `thigh.R` sits **92.12 mm** from the mirror of his `thigh.L` while every other bone in his rig mirrors exactly — rotations to six decimals, `shin`/`foot`/`toe`/`heel` to 0.000 mm — so his whole right leg hangs off one bad offset, 30 mm clear of a hip socket his left leg sits 5 mm inside. No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
@@ -933,6 +934,100 @@ the live file before replacing; installed md5 `cd31325a…`, 20,002,228 bytes ag
 rotation, so his limbs are mirrored in the SKELETON and still not mirrored in world space, his
 arms worst at 198 mm. That is his whole upper body, not his leg, and nobody has reported it. The
 six other candidate characters above are untouched. And none of this has been seen in game.
+
+
+### Sophia's shine, 2026-11-15: not her defect, the pipeline's default
+
+Reported as shiny, and explicitly not the Thanos fault — there is no glossiness map to invert
+because there is no second map at all. Her whole material state is five lines:
+
+```
+Sophia_0   Universal Render Pipeline/Lit
+  _Smoothness 0.50   _Metallic 0.00   _SpecularHighlights 1.00   _EnvironmentReflections 1.00
+  keywords: (none)
+  tex _BaseMap / _MainTex  rp_sophia_animated_003_dif
+```
+
+One material for the entire character, one base map, and nothing else — no normal map, no
+metallic/gloss map, no occlusion map. Her source archive holds exactly two files,
+`source/rp_sophia_animated_003_idling.fbx` and `textures/rp_sophia_animated_003_dif.jpeg`, so the
+build dropped nothing: a RenderPeople scan at this tier ships diffuse only.
+
+**That 0.50 is URP/Lit's own default, and it is not hers.** The exporter builds a fresh URP/Lit
+material and lowers nothing unless `YARG_NO_SHINE_MATERIALS` names it or it is an untextured
+near-black outline shell. So she inherits the shader's defaults, and so does most of the roster:
+
+| | |
+|---|---|
+| installed characters on URP/Lit at `_Smoothness` 0.50, specular and reflections ON | **63 of 65** |
+| of those, with NO normal map AND NO metallic/gloss map — a completely uniform specular | **27** |
+| with the no-shine switch actually applied | **1** — Alastor |
+
+**Three things ruled out, each measured rather than assumed.** Her albedo is not an outlier: 12.7%
+of it is above 0.80 luminance against Gwen Stacy's 79.1%, and its p99 is 0.859, so it is not a
+blown-out photograph. Her base map is sRGB (`m_ColorSpace` 1), like all 57 installed base maps, so
+this is not a colour-space fault. And her material carries no emission map and a black
+`_EmissionColor`, so nothing is glowing.
+
+What is left is the mechanism, and it is sufficient: a 0.5 specular lobe and a full sky reflection
+applied at one uniform value to photoscanned skin, denim and shoes alike, with no roughness map to
+vary it and no normal map to break up the reflection. Nothing else in her file can produce a
+highlight.
+
+**So this is a judgement about appearance, not a defect, and the project had already made it.**
+`docs/character-models.md` records it for Alastor: *"URP/Lit's default smoothness and environment
+reflections read as a sky tint on a flat toon character"*, fixed with `YARG_NO_SHINE_MATERIALS`,
+and *"the editor shows the difference much less than the game does, so the editor is not a guide to
+how bad the shine looks."* She is the character on whom it shows, because a uniform plastic
+specular over a photoscan of a real person reads as wrong in a way it does not on Shrek or Mickey
+Mouse.
+
+**It was applied to her alone and deliberately not swept.** Smoothness 0 is fully matte, the
+editor is on record as a poor guide, and 27 characters would be a roster-wide appearance change
+made on the strength of a tool default — which is the mistake a previous session nearly made with
+`doubleSided`, where every file reported `true` because Blender defaults it. `patch_shine.py`
+takes `--smoothness S` for exactly that reason, if matte skin turns out to look dead.
+
+**That documentation was also stale, and the files are the record.** The same passage says Heels,
+Gwen Stacy and Ariel *"were also installed no-shine (`*`) to compare"*. They are not: all three
+read `_Smoothness 0.50`, specular 1, reflections 1 in the installed bundles. Those comparison
+builds were never what shipped, or were replaced. Alastor is the only one.
+
+**A documented known bug, fixed while here.** The same passage records: *"the exporter sets
+`_Metallic` to 1 for any material with a metallic map AFTER this switch runs, so for those
+materials the switch is only partly applied."* It was still true — the no-shine block zeroed four
+floats and three statements later `if (mr != null)` bound the gloss map, re-enabled
+`_METALLICSPECGLOSSMAP` and set `_Metallic` back to 1, which also routes smoothness through the
+map's alpha. Flattening now happens LAST and declines the map outright, because a material asked
+to have no shine does not want a gloss map either, and it logs what it did. Of the installed set
+this would have affected Alcina (6 materials with a metallic map), Ariel (22), Scott Hall (13) and
+the others that carry one — nobody had asked them to be flat, so nothing shipped wrong, but the
+switch would not have worked if they had.
+
+**The keywords are the part that matters.** URP/Lit branches on `_SPECULARHIGHLIGHTS_OFF` and
+`_ENVIRONMENTREFLECTIONS_OFF`; the floats are what the material inspector uses to set them. A
+patch that wrote only the floats would look correct in a dump and change nothing in the game, so
+`patch_shine.py` writes both.
+
+**Alastor is the control, and he is a strong one.** He is the one character built with the switch
+on, so his material is the target state rather than a state I derived. Run against him the tool
+reports **"already flat, nothing to do"** on all three of his materials — the patcher and the
+exporter agree exactly. Sophia's patched material now matches his line for line: the same two
+keywords and the same seven shine values.
+
+**Verified.** 1 of 225 objects changed — the single Material — 0 gone, 0 added.
+`verify_rebuild.py` names it: `*** 1 material(s) differ beyond cull: Sophia_0`, with the rig,
+texture names and type counts identical. `bundle_audit.py` the same 6 clips / 1 controller / 52
+humanoid / 30 fingers / 1 mesh; `texdims.py` the same single texture at 2048×2048. A second run
+reports "already flat". Backup `character-backups/Sophia.preshine-2026-11-15.yargchar`, md5
+`74925073…`, matched against the live file before replacing; installed md5 `990bb92a…`, 6,159,657
+bytes against 6,357,467.
+
+**What is still wrong.** The other 26 characters with a uniform default specular are untouched,
+and whether they want the same treatment is a look-at-them question, not a measurement. Her base
+map is 2048×2048 against the house setting of 1024, which is hers alone among the one-material
+characters and was left alone. And none of this has been seen in game — which matters more here
+than anywhere else today, because the project's own note says the editor understates the shine.
 
 
 ### FOUND, exactly: the POSE RESET, and her authored pose is her shape
@@ -2044,6 +2139,15 @@ right.
   round trip that produces the `.vrm` changes 60 bone orientations on a character whose rig
   matches his bundle exactly. The state is COPIED from a real cutout (Heels' `Heels_17`),
   not invented, and it reads the file back to prove only the named material changed
+- `patch_shine.py <yargchar> [mat;mat|*] [--smoothness S] [--out X] [--dry-run]` — turns URP's
+  default shine off IN THE INSTALLED BUNDLE, the same change `YARG_NO_SHINE_MATERIALS` makes at
+  export: `_Smoothness`, `_Metallic`, `_SpecularHighlights` and `_EnvironmentReflections` to zero
+  plus the keywords `_SPECULARHIGHLIGHTS_OFF` and `_ENVIRONMENTREFLECTIONS_OFF`. **The keywords
+  are the part that matters** — URP/Lit branches on them and the floats are what the inspector
+  uses to set them, so writing only the floats would look right in a dump and change nothing in
+  the game. Alastor is the control, the one character of 65 built with the switch on: run against
+  him it reports "already flat, nothing to do" on all three materials, which is the patcher and
+  the exporter agreeing. `--smoothness S` writes S instead of 0 if matte looks dead
 - `mirror_check_installed.py <dir|yargchar...>` — is a LIMB in the wrong place? Compares each of
   the eight humanoid limb pairs on its LOCAL offset from its parent, X negated. The companion to
   `limb_check_installed.py`, which measures how a limb is BENT and is blind to one that has moved
@@ -2505,7 +2609,7 @@ Set in the environment of the step named. All are off unless set, so no other ch
 | `VRM_ORIENT_CONSISTENT="Body.001;Head.001;Eyes.001"` | build | the better one. Orients whole CONNECTED PIECES (faces joined by shared edges, vertices welded by position): propagates one winding through each piece, then decides it as a whole, by SIGNED VOLUME for a closed piece (exact, needs no bone) and by the driving-bone vote only for an open sheet. Replaces `VRM_ORIENT_OUTWARD`, whose group flips cut across pieces and left 3% winding conflicts (patches missing from gloves and cuffs). Judges pieces of any size, joined across every material of the mesh (nearest-neighbour weld, 0.1 mm); `VRM_ORIENT_DEBUG=1` prints each small piece's decision. Known miss: a closed 3 cm solid beside Alastor's eyes stays inside-out |
 | `YARG_CULL_OFF_MATERIALS="Head.001;Eyes.001"` | export | **override**: forces the named materials double-sided. The exporter now MEASURES sidedness per material (see "Single- and double-sided" below), so this is only for a judgement the measurement gets wrong |
 | `YARG_CULL_ON_MATERIALS="Hair"` | export | **override** the other way: forces the named materials back-face culled |
-| `YARG_NO_SHINE_MATERIALS="Body.001;..."` or `*` | export | smoothness, metallic, specular and environment reflections off. Partly overridden for materials with a metallic map (the exporter sets `_Metallic` 1 afterwards) |
+| `YARG_NO_SHINE_MATERIALS="Body.001;..."` or `*` | export | smoothness, metallic, specular and environment reflections off, plus the two keywords URP/Lit actually branches on. ~~Partly overridden for materials with a metallic map (the exporter sets `_Metallic` 1 afterwards)~~ — **fixed 2026-11-15**: flattening now runs LAST and declines the metallic map outright, so the switch is whole. For a bundle that will not be rebuilt, `patch_shine.py` makes the same change in place |
 | `YARG_SHELL_NO_SHADOW=1` | export | an untextured near-black material stops casting shadows. Made no visible difference on Alastor |
 | `YARG_SHADOWS=1` | hand render | soft shadows on the render light |
 

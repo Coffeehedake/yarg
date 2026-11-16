@@ -527,23 +527,29 @@ public static class YargCharExporter
                             // reflection and specular on every sheet read as a cool purple tint and
                             // blown-out highlights (Alastor in game). Name the materials to flatten.
                             var noShine = Environment.GetEnvironmentVariable("YARG_NO_SHINE_MATERIALS");
-                            if (!string.IsNullOrEmpty(noShine) && (noShine == "*" || Array.IndexOf(noShine.Split(';'), src.name) >= 0))
-                            {
-                                nm.SetFloat("_Smoothness", 0f);
-                                nm.SetFloat("_Metallic", 0f);
-                                nm.SetFloat("_SpecularHighlights", 0f);
-                                nm.SetFloat("_EnvironmentReflections", 0f);
-                                nm.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
-                                nm.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
-                            }
+                            bool flatten = !string.IsNullOrEmpty(noShine)
+                                && (noShine == "*" || Array.IndexOf(noShine.Split(';'), src.name) >= 0);
                             // An untextured near-black material is an outline shell. URP/Lit
                             // gives it a specular sheen that shows as pale lines along edges
-                            // (Alastor's fingers), so strip the shine.
-                            if (baseMap == null && col.maxColorComponent < 0.1f)
+                            // (Alastor's fingers), so strip the shine there too.
+                            bool shell = baseMap == null && col.maxColorComponent < 0.1f;
+                            if (shell)
                             {
                                 // The shell is a slightly larger copy of the body, so it shadows the body.
                                 if (Environment.GetEnvironmentVariable("YARG_SHELL_NO_SHADOW") == "1")
                                     nm.SetShaderPassEnabled("ShadowCaster", false);
+                                flatten = true;
+                            }
+                            // DO NOT MOVE THIS ABOVE THE METALLIC-MAP BLOCK BELOW. It used to be
+                            // above it and `docs/character-models.md` records the consequence as a
+                            // known bug: binding a metallic map sets `_Metallic` back to 1 and
+                            // routes smoothness through the map's alpha, so for any material with
+                            // one the switch was only PARTLY applied -- it zeroed four floats and
+                            // then two of them were overwritten three statements later. Flattening
+                            // now happens last and declines the map outright, because a material
+                            // asked to have no shine does not want a gloss map either.
+                            if (flatten)
+                            {
                                 nm.SetFloat("_Smoothness", 0f);
                                 nm.SetFloat("_Metallic", 0f);
                                 nm.SetFloat("_SpecularHighlights", 0f);
@@ -552,12 +558,17 @@ public static class YargCharExporter
                                 nm.EnableKeyword("_ENVIRONMENTREFLECTIONS_OFF");
                             }
                             if (normal != null) { nm.SetTexture("_BumpMap", normal); nm.EnableKeyword("_NORMALMAP"); }
-                            if (mr != null)
+                            if (mr != null && !flatten)
                             {
                                 nm.SetTexture("_MetallicGlossMap", mr);
                                 nm.EnableKeyword("_METALLICSPECGLOSSMAP");
                                 nm.SetFloat("_Metallic", 1f);
                             }
+                            if (flatten)
+                                Debug.Log($"[YARGCHAR] {outName}: no-shine {src.name} "
+                                          + "-> smoothness/metallic/specular/reflections 0"
+                                          + (mr != null ? ", metallic map DECLINED" : "")
+                                          + (shell ? " (untextured near-black shell)" : ""));
                             if (emis != null)
                             {
                                 nm.SetTexture("_EmissionMap", emis);
