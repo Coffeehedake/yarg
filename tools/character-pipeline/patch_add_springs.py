@@ -33,6 +33,23 @@ class_id -- given a fresh path_id and its own typetree. Nothing is invented:
 every joint this tool writes is structurally a copy of a joint the file was
 already carrying, which is also why it refuses to run on a file that has none.
 
+A COMPONENT IS A TWO-WAY LINK, AND THE FIRST VERSION OF THIS ONLY WROTE ONE
+SIDE. The MonoBehaviour names its GameObject in `m_GameObject`, and the
+GameObject must list the component back in `m_Component`. Setting only the
+first makes an orphan: deserialised, present, reachable by a direct pointer,
+and not a component of anything -- so the spring runtime does nothing with it.
+
+Miku shipped that way on 2026-11-15. All 21 joints were orphans, her twintails
+did not move, and every check agreed they would: the Unity load test followed
+the Springs array's own pointers and found 29 joints, 0 null, because that is
+the one direction that works whether or not the other does. The reporter saw
+no change at all.
+
+So the GameObject is updated too, and the verification pass re-reads the
+written bytes and requires every new joint to be LISTED BY ITS BONE. A check
+that only follows the pointers the patch wrote can only confirm the patch
+wrote them.
+
 THE GUARDS ARE THE TOOL. Writing the Springs array is six lines; being sure
 the result is a chain and not a crash is the rest:
 
@@ -291,14 +308,28 @@ def vert_census(objs, go_name):
 
 
 def reread(data):
-    """Chains, by bone name and parameters, out of bytes just written."""
+    """Chains, by bone name and parameters, out of bytes just written.
+
+    Also reports, per joint, whether the bone's GameObject LISTS it. Following
+    only the Springs array's own pointers confirms that the patch wrote the
+    pointers it wrote; it cannot see an orphan, which is how 21 of them
+    shipped.
+    """
     env2 = UnityPy.load(data)
-    jn2, name2, springs = {}, {}, []
+    jn2, name2, springs, gcomp = {}, {}, [], {}
     for o in env2.objects:
         try:
             ty = o.type.name
         except Exception:                                        # noqa: BLE001
             continue
+        if ty == "GameObject":
+            gt = o.read_typetree()
+            ids = []
+            for c in (gt.get("m_Component") or []):
+                d = c.get("component") if isinstance(c, dict) else None
+                if isinstance(d, dict):
+                    ids.append(d.get("m_PathID"))
+            gcomp[o.path_id] = ids
         if ty == "Transform":
             d = o.read()
             g = getattr(d, "m_GameObject", None)
@@ -322,14 +353,17 @@ def reread(data):
     for s in springs:
         bs = []
         for j in (s.get("Joints") or []):
-            t = jn2.get(j["m_PathID"])
+            jid = j["m_PathID"]
+            t = jn2.get(jid)
             if t is None:
                 die("the file that was written references joint %d, which is "
-                    "not in it" % j["m_PathID"])
-            bs.append((name2.get(t.get("m_GameObject", {}).get("m_PathID")),
+                    "not in it" % jid)
+            gid = t.get("m_GameObject", {}).get("m_PathID")
+            bs.append((name2.get(gid),
                        round(t.get("m_stiffnessForce", 0.0), 4),
                        round(t.get("m_dragForce", 0.0), 4),
-                       round(t.get("m_jointRadius", 0.0), 5)))
+                       round(t.get("m_jointRadius", 0.0), 5),
+                       jid in gcomp.get(gid, ())))
         out.append((s.get("Name"), bs, len(s.get("ColliderGroups") or [])))
     return out
 
@@ -435,7 +469,17 @@ def main():
     used = set(af.objects.keys())
     nxt = max(used) + 1
 
+    # the GameObject objects, so the component can be attached to its bone
+    go_obj = {}
+    for o in env.objects:
+        try:
+            if o.type.name == "GameObject":
+                go_obj[o.path_id] = o
+        except Exception:                                        # noqa: BLE001
+            pass
+
     added = []
+    attach = {}
     for ci, ch in enumerate(chains):
         jl = []
         for bn in ch:
@@ -452,6 +496,7 @@ def main():
             clone.save_typetree(t)
             af.objects[nxt] = clone
             used.add(nxt)
+            attach.setdefault(name_to_go[bn], []).append(nxt)
             jl.append({"m_FileID": 0, "m_PathID": nxt})
         nm = knob["name"] or ch[0]
         if knob["name"] and len(chains) > 1:
@@ -459,6 +504,19 @@ def main():
         springs.append({"Name": nm, "ColliderGroups": list(gref),
                         "Joints": jl, "Center": {"m_FileID": 0, "m_PathID": 0}})
         added.append((nm, ch))
+
+    # the other half of the link: each bone's GameObject must list its joint
+    for gid, jids in attach.items():
+        o = go_obj.get(gid)
+        if o is None:
+            die("bone GameObject %d is not in this file, so its joint could "
+                "not be attached to it" % gid)
+        gt = o.read_typetree()
+        comps = gt.get("m_Component") or []
+        for jid in jids:
+            comps.append({"component": {"m_FileID": 0, "m_PathID": jid}})
+        gt["m_Component"] = comps
+        o.save_typetree(gt)
 
     sb["Springs"] = springs
     itree["SpringBone"] = sb
@@ -485,8 +543,14 @@ def main():
                     or abs(b[2] - knob["drag"]) > 1e-4
                     or abs(b[3] - knob["radius"]) > 1e-5):
                 die("joint %r in chain %r reads back as %s, not the requested "
-                    "%s/%s/%s" % (b[0], nm, b[1:], knob["stiff"],
+                    "%s/%s/%s" % (b[0], nm, b[1:4], knob["stiff"],
                                   knob["drag"], knob["radius"]))
+            if not b[4]:
+                die("joint on %r in chain %r is an ORPHAN: the bone's "
+                    "GameObject does not list it in m_Component, so it is not "
+                    "a component of anything and the spring runtime will "
+                    "ignore it. This is the fault that shipped on Miku."
+                    % (b[0], nm))
     # and the chains that were already there must be untouched
     keep_before = {c[0]: c[1] for c in before}
     for nm, bs, _g in after:

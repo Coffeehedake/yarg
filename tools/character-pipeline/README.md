@@ -513,7 +513,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Spartan Mark V | ~~asymmetric right leg~~ **leg still sticking out at the right hip** | **FIXED 2026-11-16 BY A REBUILD, and the earlier patch provably did nothing in game.** Two separate findings. (1) The patch IS in the file and IS right — his hip offsets read L 161.8 mm / R 161.8 mm at instantiate, against 161.8 / 244.5 before. (2) **Unity's humanoid Animator re-poses the skeleton from the AVATAR, and the four rest structures are not what the Avatar retargets from.** After `Animator.Rebind()` the patched bundle reads L 161.8 / R **244.5** — byte-for-byte the unpatched figure. (3) Separately, the whole character is **turned 20.00°**: hips, shoulders, knees and feet all agree to two decimals, because his source is a perfect mirror about a plane 20° off the x axis and nothing straightens him. His left hip faces the camera, which is the hip reported. **No bundle patch can fix either** — the Avatar has to be regenerated, so he was REBUILT and installed. Today's `build_vrm.py` already carries a facing stage that detects and corrects the 20° itself, so his plain recorded recipe was enough and now reproduces him. Verified through the Animator, which is where the patch failed: hips L/R 143.3 / 143.3 mm after `Rebind()` against 161.8 / 244.5, and post-`Rebind` yaw 4.56° / −7.96° against Doom Slayer's control 4.20° / −7.89°. Both hips were wrong in the old build, not only the right one. See "Spartan Mark V, 2026-11-16: the Animator does not read what we patch" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
-| Miku | twintails only move where they were repaired; the tie could be sprung too | **FIXED 2026-11-15 (evening).** Both right. Her two `HairSpring_*` chains run on eight bones an earlier hair-rigger run INVENTED, which dominate **38** vertices; her own twintail bones `Bone06`..`Bone15` and their `(mirrored)` twins dominate **462** and were on no chain, as were the three tie bones. Nothing found it because every rigger here selects by bone NAME and her rig has no bone whose name contains hair, tail, bang or tie — while `HairSpring_1_0` does. `patch_add_springs.py` put 7 new chains on her own bones: **324 vertices now move against 38**. `Bone06` stays rigid on purpose (it is the bun, 158 vertices, at the crown). The tie chain is given NO collider group — all three of its bones start 44.4/30.5/7.4 mm INSIDE the torso capsule, and attaching it would have thrown the knot forward and undone that morning's re-aim. See "Miku's twintails and necktie, 2026-11-15 (evening)" |
+| Miku | twintails only move where they were repaired; the tie could be sprung too | ~~FIXED 2026-11-15 (evening)~~ — **RE-REPORTED UNCHANGED, FIXED AGAIN 2026-11-16.** Two faults. (1) `patch_add_springs.py` set each new joint's `m_GameObject` and never added it to that GameObject's `m_Component`, so **21 of 29 joints were orphans** — and both the tool's own read-back and the Unity load test missed it because they follow the Springs array's pointers, the one direction the patch had written. (2) `Bone06` and its mirror, **158 vertices** and a third of the twintails, were left rigid on an unmeasured assumption; the project's own `_trim_anchor` rule clears them (0.133 m against 0.774 m for the rest of the chain), so they are now sprung. **462 of 462 twintail vertices are on a chain**, against 304 and 38. Whether they SIMULATE was not verified: three Unity batch-mode spring probes all read 0 bones moved for two known-good controls. See "Miku's twintails, 2026-11-16". Original note follows: Both right. Her two `HairSpring_*` chains run on eight bones an earlier hair-rigger run INVENTED, which dominate **38** vertices; her own twintail bones `Bone06`..`Bone15` and their `(mirrored)` twins dominate **462** and were on no chain, as were the three tie bones. Nothing found it because every rigger here selects by bone NAME and her rig has no bone whose name contains hair, tail, bang or tie — while `HairSpring_1_0` does. `patch_add_springs.py` put 7 new chains on her own bones: **324 vertices now move against 38**. `Bone06` stays rigid on purpose (it is the bun, 158 vertices, at the crown). The tie chain is given NO collider group — all three of its bones start 44.4/30.5/7.4 mm INSIDE the torso capsule, and attaching it would have thrown the knot forward and undone that morning's re-aim. See "Miku's twintails and necktie, 2026-11-15 (evening)" |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
 
 ### Two colliders was never enough, and nothing counted
@@ -4878,6 +4878,64 @@ is the original conclusion reached for a reason that was not true.
 Note this is a different fault from "her dress does not move with her", which
 was undriven WEIGHT above the humanoid root and was fixed on 2026-11-11; the
 skirt follows her hips correctly and simply has nothing to make it swing.
+
+### Miku's twintails, 2026-11-16: two things wrong, and one of them was mine
+
+Re-reported the next day, unchanged: *"only the middle is spring-boned"*. The
+chains were all in the file and the report was right anyway.
+
+#### 1. A component is a two-way link, and only one side was written
+
+A Unity MonoBehaviour names its GameObject in `m_GameObject`, and the
+GameObject must list the component back in `m_Component`. `patch_add_springs.py`
+wrote the first and not the second, so **21 of her 29 joints were orphans**:
+present, deserialised, reachable by pointer, and not a component of anything.
+
+The verification missed it because it only ever followed the pointers the patch
+had written. The Unity load test did the same -- it walks the Springs array's
+own `Joints` list -- and reported `9c/29j`, 0 null, on the broken file and the
+fixed one alike. **A check that follows the links the patch created can only
+confirm the patch created them.** Both the tool and the load test now check the
+other direction, and the tool refuses to write an orphan.
+
+In fairness to the evidence: measured afterwards, Unity attaches those
+components at instantiate anyway, so the orphan state is a real defect in what
+was written and is NOT demonstrated to be what stopped the motion. It is fixed
+because it is wrong, not because it is proven guilty.
+
+#### 2. The crown was left rigid on an assumption, and the project's own rule says otherwise
+
+`Bone06` and its mirror carry **158 vertices** -- a third of her twintails --
+at the top of her head, and the 2026-11-15 pass deliberately left them rigid,
+reasoning that a chain rotates its first joint and swinging the bun would be
+Lola Bunny's attachment-bone fault. That reasoning was never measured against
+the rule written for it. `_trim_anchor` fires only when the first bone is
+LONGER than the rest of its chain **and** carries at least as much weight:
+
+| | `Bone06` | the rest of the chain |
+|---|---|---|
+| length | **0.133 m** | **0.774 m** |
+
+It fails the length test by a factor of six, so it is an ordinary first segment
+and not an anchor. It also clears the head collider at rest by +13.7 mm and
++11.9 mm, so the penetration guard accepts it.
+
+With the crown included, **462 of 462 twintail vertices are on a chain**,
+against 304 yesterday and 38 before that. Plus the 20 of the necktie.
+
+#### What could not be verified, and why it is said rather than skipped
+
+Whether the chains actually SIMULATE was not established here. Three versions
+of a Unity batch-mode spring probe were written -- stepping `Runtime.Process()`,
+then `Vrm10FastSpringboneRuntimeStandalone.Process(dt)`, then that again after
+driving `InitializeAsync` with an `ImmediateCaller` -- and every one reported
+**0 bones moved** for Gadget Hackwrench and Harq Alkahana, whose springs are
+known to work. The controls are what makes that a statement about the harness
+instead of a finding about Miku, and the probe was abandoned rather than
+believed. The job-based spring runtime wants a real player loop.
+
+So the file-level facts are solid and the motion is not confirmed. The game is
+the test.
 
 ### Miku's twintails and necktie, 2026-11-15 (evening): the rigger's own bones were the only ones moving
 
