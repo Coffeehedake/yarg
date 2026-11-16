@@ -25,6 +25,16 @@
 # ver.), Inforder Trogen, Iron Man Mark 85, K-2SO, Kaiser Aufhaenger, Skeleton
 # Mage, Spartan Mark V, Spider-Man.
 #
+# SPARTAN MARK V'S SOURCE WAS LOCATED on 2026-11-15, while fixing his right
+# leg: `halo-mk-v-model.zip` holds `source/MkVSKETCHFAB.blend` plus 20
+# textures, and his bundle is demonstrably built from it (its six mesh names
+# are his bundle's, bone for bone). He still has NO ROW, because he is
+# installed at 2.146 m and nothing says that is a chosen target rather than
+# whatever the build that made him produced -- writing it down would turn a
+# measurement of the file into a claim about intent, which is the whole
+# failure mode this file exists to catch. The line above is left as it was and
+# corrected here rather than edited, so the count below still reconciles.
+#
 # 52 + 13 = 65. If that stops adding up, a name here has drifted from a name on
 # disk and the tool is silently judging fewer characters than it reports.
 Aiko	1.70

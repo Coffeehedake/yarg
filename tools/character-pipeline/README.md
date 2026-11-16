@@ -507,6 +507,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Peach | eyes missing; dress springs so reactive her legs clip through it | **BOTH FIXED 2026-11-11, and neither was what the report implied.** The eyes are the alpha fault: her eye is a STACK of meshes from a Smash rip -- `Peach_eye` is a blank white sclera with no iris, `Peach_Blink_Ottotto` is the iris and `Peach_Blink_VoiceA` is the eyelid-and-lash plate that fills a rectangular hole in `Peach_faceN` -- and all three shipped `OPAQUE`, so the top layer drew as a solid plate. The skirt is NOT too reactive: her skirt chains are stiffer and more damped than her hair's (0.85/0.80 against 0.60/0.45). They are UNGUARDED -- eight of her nine chains hang around her thighs and she had two colliders, both on her torso. See below. **~~BOTH FIXED~~ — REOPENED 2026-11-15 and fixed again, and "BOTH FIXED" is what let it happen.** Reported a second time, for clipping legs AND a dress moving as one piece. Two causes: her skirt was damped to near-rigidity by the 0.85/0.80 cloth default, which had itself been set in answer to the *first* Peach report before that report's cause was withdrawn; and the limb capsules fitted on 2026-11-11 use the MEDIAN flesh radius, so half of every limb sits outside its own collider and her calf reaches 24 mm past the only thing her hem can feel. See "Peach's dress, 2026-11-15" |
 | Link | eye textures misplaced; still holding the master sword and shield | **both fixed.** His rig has bones named `Sword` and `Shield`, so `VRM_DROP_ISLAND="LinkEquipment=Sword+Shield"` takes 41 islands and leaves `Fourreau`, his scabbard, on his back. His eye material `Material.003` was taking the body atlas while `Eye.png` sat unused beside it |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and ~~finger bones that are mapped but not weighted~~ **corrected 2026-11-11 by `bundle_audit.py`: he has ZERO finger bones in his humanoid map**, and 21 humanoid bones in total against a typical 52. The symptom was right, the stated cause was wrong |
+| Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15, and it is one number.** His `thigh.R` sits **92.12 mm** from the mirror of his `thigh.L` while every other bone in his rig mirrors exactly — rotations to six decimals, `shin`/`foot`/`toe`/`heel` to 0.000 mm — so his whole right leg hangs off one bad offset, 30 mm clear of a hip socket his left leg sits 5 mm inside. No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
 
@@ -813,6 +814,125 @@ harmless, and left rather than add a second kind of edit to verify. Her hair is 
 on her head, which is what 344 of its 731 vertices already were and what the hat requires; if she
 is ever reported as having stiff hair, the fringe below the hat brim is the part that could
 legitimately swing and it has never been rigged. And none of this has been seen in game.
+
+
+### Spartan Mark V's right leg, 2026-11-15: a limb in the wrong PLACE, which no angle can see
+
+Reported as an asymmetric right leg. It is one number: his `thigh.R` sits **92.12 mm** from the
+mirror of his `thigh.L`, and every other bone in his rig is an exact mirror — rotations to six
+decimal places, and `shin`, `foot`, `toe` and `heel.02` to 0.000 mm. His whole right leg hangs off
+that one bad offset.
+
+**Why nothing caught it.** `limb_check_installed.py` measures joint ANGLES and their left/right
+asymmetry, and its own calibration is right that asymmetry is the signal to trust — elbow and knee
+asymmetry is exactly 0.0 across all 66 characters. But an angle is blind to a limb that is
+RIGIDLY displaced: his knee and ankle angles match his left side to four decimals, because the
+whole leg moved together. That is why the sweep for "bent or asymmetric limbs" closed at **0 new**
+while his right leg stood 30 mm clear of its own hip socket.
+
+**The seam is what proves which side is wrong.** Mirror arithmetic alone cannot say whether the
+right leg is misplaced or the left one is, so the question was asked without reference to either:
+how far is each thigh's flesh from the TORSO it hangs off?
+
+| | nearest torso vertex, over the top fifth of the thigh |
+|---|---|
+| `thigh.L` | min **4.6** mm, p10 10.4, median 33.9 |
+| `thigh.R`, as shipped | min **29.7** mm, p10 39.8, median 58.7 |
+| `thigh.R`, after the fix | min **4.6** mm, p10 10.4, median 33.9 |
+
+Identical to the left on every statistic. And the torso it joins is symmetric on its own account:
+every spine bone's flesh mirrors ITSELF in its own frame, `spine.001` — the hips, 2,509 vertices,
+1,168 a side — to a maximum of 0.00 mm. So the socket was in the right place and the leg was not.
+
+Two more measurements say the leg itself is intact rather than deformed. In each thigh's own frame
+his two legs are **identical to 0.0 mm** on all three joints, with the same vertex counts
+(665/1066/695 a side). And `spine` and `spine.001` went from a 6.85 mm self-mirror error to
+**0.00 mm** when the bone moved, because the displaced thigh had been dragging the blend-weighted
+vertices around his right hip out of symmetry with it.
+
+**His source is not like this.** `halo-mk-v-model.zip` → `source/MkVSKETCHFAB.blend` — which means
+the README's list of characters "whose source archive was never located" is stale for him. Its
+armature is an exact mirror, 0.000 mm on head and tail for every leg bone, and its FLESH is an
+exact mirror too, 0.00000 units, measured in armature space. His bundle is ours — `_Character`
+root, `SpartanMarkV_0..5` materials, the `MKV_*_Metallic.png-MKV_*_Roughness.png.standard` merge
+names — so the displacement was introduced between the `.blend` and the bundle.
+
+It is not introduced by today's pipeline. Rebuilt from that source at `rigify_plain` / 2.146 m,
+the resulting `.vrm` is **0.000 mm out of mirror on every leg pair**, so there is no builder bug to
+fix and nothing to sweep for. His `.blend` does carry an action with a pose, and both thighs have
+pose TRANSLATIONS in it that are not mirrors of each other (0.121 against 0.078 units), so a build
+that baked that pose would produce something like this; the installed bundle differs from today's
+build in more than the one bone (his `thigh.L` is at a different offset entirely, with its X sign
+flipped), so it was built with arguments or a pipeline that no longer exist. **He was patched, not
+rebuilt**, for the Peach reason: the rebuild is a different character build and shipping it would
+ship unasked-for changes alongside the fix.
+
+**Four structures hold that one offset**, all parent-relative and all in the same representation:
+
+```
+Transform.m_LocalPosition
+Avatar.m_Avatar.m_AvatarSkeletonPose.data.m_X[67].t
+Avatar.m_Avatar.m_DefaultPose.data.m_X[67].t
+Avatar.m_HumanDescription.m_Skeleton[thigh.R].m_Position
+```
+
+The Avatar's arrays are nested under a `data` key, and a first probe read them one level too
+shallow: `m_AvatarSkeleton.m_ID` and all three pose arrays came back as **empty lists rather than
+an error**, which reads as "the Avatar carries no skeleton, so the Transform is the only place to
+patch". It carries one in triplicate, and Unity retargets humanoid animation through it. An empty
+container and an absent one look identical from a `.get()`.
+
+**The check that was missing, and two versions of it that were wrong.** `mirror_check_installed.py`
+compares each limb bone's LOCAL offset from its parent, X negated, against its partner's. Three
+decisions, each of which a first attempt got backwards:
+
+- **Local, not world.** World folds in every ancestor's rotation, so it measures the rest POSE as
+  much as the skeleton. On him the world comparison flags **29 of 29** pairs — his fingers
+  included, at 190 mm — because his authored stance is twisted. The local comparison flags one.
+- **The humanoid map, not bone names.** Pairing `.L`/`.R` by pattern drags in every finger, hair
+  strand, IK target and spring helper, and a flat 2 mm threshold over all of them "found" **39 of
+  65** characters: Adachi Rei's IK leg target at 2,850 mm, Harley Quinn's little finger at 167 mm,
+  Mario at 458 mm. Those are the test breaking, not the rigs. The eight humanoid limb pairs are
+  the ones the game animates a limb through.
+- **The character is its own control.** A local offset lives in its PARENT's frame, so negating X
+  is the true mirror only where the parent frames are themselves mirrored. Where that fails it
+  fails for nearly every pair at once, so a character is judged only when two thirds of its pairs
+  mirror and a rig that fails wholesale is reported as NOT MEASURABLE by count.
+
+Swept over all 65: **41 clean, 17 not measurable, and 9 displaced limb bones across 7 characters.**
+
+| character | limb | out of mirror |
+|---|---|---|
+| Kronk | UpperLeg | 226.04 mm |
+| Sayuri | UpperLeg | 220.59 mm |
+| Kronk | Shoulder | 144.56 mm |
+| **Spartan Mark V** | **UpperLeg** | **92.12 mm** |
+| Jessica Rabbit | UpperArm | 30.58 mm |
+| Alastor | UpperLeg | 27.93 mm |
+| Jessica Rabbit | Shoulder | 11.36 mm |
+| Elite Terrorist | UpperLeg | 7.26 mm |
+| The Mandalorian | UpperLeg | 6.42 mm |
+
+The check finds CANDIDATES, not faults, and that distinction is load-bearing. Alastor, Elite
+Terrorist and the Mandalorian are pure `dz` offsets — one thigh further forward than the other in
+the parent's frame — which is what an authored stance looks like, and only the seam test can tell
+that from a displacement. Spartan Mark V earned the fix because his source is provably symmetric
+AND his socket had a 25 mm gap in it. None of the other six has been looked at.
+
+**Verified.** `patch_mirror.py` refuses unless the named bone is the sole outlier in a rig that
+otherwise mirrors, so it cannot be pointed at a rig where negating X is not the mirror. On him:
+**2 of 225 objects changed** — one Transform and the Avatar — 0 gone, 0 added.
+`verify_rebuild.py` names the change exactly: `*** 1 bone(s) moved: thigh.R`, with every type
+count, material, texture and other bone identical. `bundle_audit.py` the same 6 clips / 1
+controller / 52 humanoid / 30 fingers / 6 meshes; `texdims.py` the same 23 textures at the same
+dimensions. A second run reports "every limb pair mirrors", so it is idempotent. Backup
+`character-backups/Spartan Mark V.preleg-2026-11-15.yargchar`, md5 `7a652564…`, matched against
+the live file before replacing; installed md5 `cd31325a…`, 20,002,228 bytes against 20,421,828.
+
+**What is still wrong.** His rest pose is still the authored twisted stance — `spine` carries a
+rotation, so his limbs are mirrored in the SKELETON and still not mirrored in world space, his
+arms worst at 198 mm. That is his whole upper body, not his leg, and nobody has reported it. The
+six other candidate characters above are untouched. And none of this has been seen in game.
 
 
 ### FOUND, exactly: the POSE RESET, and her authored pose is her shape
@@ -1617,7 +1737,7 @@ falls out of that is by *characters fixed per change made* rather than by severi
 | 5 | no bound visemes | 52 of 65 | mostly blocked on a source file that does not exist |
 | 6 | Jessica Rabbit is 3.7% too tall | 1 character | cosmetic |
 | — | floating prop setting the height | **0 of 65** | **CLOSED** — item 2 below |
-| — | bent or asymmetric limbs | **0 new** | **CLOSED** — every flag is already explained in `docs/character-models.md` |
+| — | bent or asymmetric limbs | **0 new** | ~~**CLOSED**~~ — **NOT closed, as of 2026-11-15.** Every flag was explained, and the sweep could only ever flag a limb that is BENT. Spartan Mark V's right leg is 92 mm out of place with its knee and ankle angles matching his left to four decimals, so it was never a candidate. `mirror_check_installed.py` measures where a limb IS and finds 9 displaced limb bones across 7 characters; see "Spartan Mark V's right leg, 2026-11-15" |
 | — | missing animation / finger mapping | **0 new** | **CLOSED** — same |
 
 The reasoning behind each is in `docs/character-models.md`; what follows is the older list,
@@ -1924,6 +2044,27 @@ right.
   round trip that produces the `.vrm` changes 60 bone orientations on a character whose rig
   matches his bundle exactly. The state is COPIED from a real cutout (Heels' `Heels_17`),
   not invented, and it reads the file back to prove only the named material changed
+- `mirror_check_installed.py <dir|yargchar...>` — is a LIMB in the wrong place? Compares each of
+  the eight humanoid limb pairs on its LOCAL offset from its parent, X negated. The companion to
+  `limb_check_installed.py`, which measures how a limb is BENT and is blind to one that has moved
+  rigidly: Spartan Mark V's right leg was 92 mm out with its knee and ankle angles matching his
+  left to four decimals. Local rather than world because world folds in the whole rest pose — on
+  him the world test flags 29 of 29 pairs, his fingers at 190 mm, because his stance is twisted.
+  The humanoid map rather than `.L`/`.R` names because names drag in every finger, hair strand and
+  IK target, and a flat threshold over those "found" 39 of 65 characters. And the character is its
+  own control: a local offset lives in its PARENT's frame, so a rig whose parent frames are not
+  mirrored fails for nearly every pair at once and is reported NOT MEASURABLE rather than as eight
+  findings. 41 clean, 17 not measurable, 9 displaced limb bones across 7 characters. It finds
+  CANDIDATES — a pure `dz` offset is what an authored stance looks like, and only the hip-socket
+  gap tells that from a displacement
+- `patch_mirror.py <yargchar> <bone> [--out X] [--dry-run]` — moves a displaced bone onto the
+  mirror of its partner, in all FOUR structures that hold its offset: the `Transform`, the
+  Avatar's `m_AvatarSkeletonPose` and `m_DefaultPose` (both nested under a `data` key — read one
+  level too shallow they come back as empty lists rather than an error, which reads as "the Avatar
+  carries no skeleton"), and `m_HumanDescription.m_Skeleton`. The bone's children keep their own
+  offsets and the mesh keeps its bind pose, so the limb travels rigidly and its geometry is
+  untouched. Refuses unless the named bone is the sole outlier in a rig that otherwise mirrors,
+  calling `mirror_check_installed.verdict()` rather than reimplementing it
 - `patch_springs.py <yargchar> [--cloth] [--limbs] [--unrig-hair] [--out X] [--dry-run]` — fixes
   the spring simulation IN THE INSTALLED BUNDLE, three independent defects, any or all. `--cloth`
   re-parameterises every cloth-named chain to the authored reference 0.50/0.05/0.00 (the old
@@ -2770,6 +2911,7 @@ code -- the other 57 were written and correct.
 | Vigilante | dcseries | 1.88 | same rig as Peacemaker, based at `n8` instead of `n115`. He arrives armed, and the two weapons CANNOT be excluded by mesh name: they share `Vigilante_obj_001_Pewter_002_0` with the sheath on his back and the holster on his hip. `VRM_DROP_ISLAND="Vigilante_obj_001_(Pewter_002\|Silver_003)=n17+n50"` takes the 540 vertices the two hand bones carry and leaves the 204 the spine and hips carry. Height, width and humanoid count are unchanged by it (`x1.0552`, 0.7075 m, 47/47) — the weapons never affected his proportions, which is why they survived the first build |
 | Kronk | **kronkusd** | 1.95 | `Kronk_Doing_the_Hokey_Pokey.usdz`, textures `extract/0`, exclude `^$` and spring `^$` — one mesh, one material, one 512x512 map, and nothing on him that should swing. **Do NOT pass `VRM_NO_TPOSE=1`**: he LOOKS T-posed and is not, and skipping it takes `bind_check.py` from 16 bones over threshold to 52, arms off by 62 deg and up to 962 mm. No shape keys at all, so he can never lipsync or blink. `n7` sits above the humanoid root carrying 171 vertices and its weight moves to the hips; `n8`/`n9`, probably his tunic flap, are re-parented there and are rigid by design |
 | Shaggy Rogers | shaggyusd | 1.83 | USDZ, 52/52 — the whole humanoid including toes and three-bone thumbs, and already in a T-pose. One 1.5 KB palette texture does the entire character |
+| Spartan Mark V | rigify_plain | — | **Source located 2026-11-15** and newly recorded here: `halo-mk-v-model.zip` → `source/MkVSKETCHFAB.blend` with `textures/`, no exclude, no spring pattern, no hairrig. Proven his by the bundle's own names — its six meshes are the `.blend`'s six (`MKVHELMET`, `MKVLEGS`, `MKVLIMBS`, `MKVPOUCHES`, `MKVTORSO`, `MKVUNDERSUIT`) and its 65 bones are the `.blend`'s Rigify set. **No height is given on purpose**: he is installed at 2.146 m and nothing records that as a chosen target, so `height_targets.tsv` still has no row for him. **This recipe does NOT reproduce the installed bundle** — built at 2.146 it comes out with `thigh.L` at a different offset with its X sign flipped, so the installed character was built with arguments or a pipeline that no longer exist. What the rebuild DOES establish is that today's builder produces a perfectly mirrored rig from this source, 0.000 mm on every leg pair, which is why his right leg was patched rather than rebuilt |
 | Scott Hall | mixamo | 2.01 | the `.blend` in `source/`, not the fbx: a plain 65-bone Mixamo rig. exclude `^(Plane\|Scott Hall OGscale\|M_Jacket)$` — a joined duplicate of the whole body, a duplicate jacket and a backdrop. hairrig `Hall_Hair$`. His own file points the RIGHT elbow pad at the kneepad texture, so `VRM_TEX="Hall_Elbow-R=Hall_r_elbowpad_color.png,Hall_Elbow-R=Hall_r_elbowpad_roughness.png:rough"` |
 | Anakin Skywalker | anakin | 1.85 | a posed SCULPT — see the section above; needs `VRM_STANDUP=1 VRM_REBIND_STALE=1`. One leg's mesh still smears |
 | Judy Hopps | **judyusd** | 1.05 | `Judy-hopps-zootopia.usdz`, textures `new/judy2/textures`, hairrig `^n(29\|3[0-8])$`, `VRM_KEEP_SIDES=1`. **Her hands stood UP out of the cuffs until 2026-11-10**: the stub-finger step laid the missing finger chains along her hand bone, which points straight down (2.5 cm, tail at -Z), and the exported hand came out turned 100 degrees against the pose the mesh is bound in. The stubs now go along the FOREARM. Check any rebuild with `bind_check.py`. Her real hands are closed fists, thumb out -- that is how she was modelled -- and her finger bones are not mapped to the humanoid fingers, so they do not animate. **The installed Judy is this USDZ build, NOT the rigify_plain FBX** -- that row used to say `rigify_plain` + the FBX, which is the abandoned attempt that renders white. Rebuilding from it produced a 38,268-triangle stranger where she has 16,521, and it was installed over her before anyone checked. Identify a character by its MESH NAMES, not its recipe row: hers are `Judy_Judy_A_01_Cloth_0` / `_Eyelash_0` / `_Face_0` with hips on `n15`; the FBX build has `Cube.001` / `Low` with hips on `spine` |
