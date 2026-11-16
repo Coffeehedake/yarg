@@ -509,7 +509,8 @@ not rebuilt, so the other installed builds are unaffected.
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and ~~finger bones that are mapped but not weighted~~ **corrected 2026-11-11 by `bundle_audit.py`: he has ZERO finger bones in his humanoid map**, and 21 humanoid bones in total against a typical 52. The symptom was right, the stated cause was wrong |
 | Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor. Applied to her alone and put to Jay as a question, since an appearance change across a third of the roster is his call; he said **"yes, all 26"**, so the other 26 were flattened too — **132 materials across 26 characters**, each hash-backed up and verified five ways. See "Sophia's shine, 2026-11-15" |
 | The Rock | arms are squiggly | **DIAGNOSED 2026-11-15, NOT FIXED, nothing installed.** His upper arm is **61% over** the population norm and his forearm 13% under — upper/forearm ratio **2.37** where his own source `Rock.fbx` has **0.96**. Every existing check passes him because nothing is BENT (elbow 0.0/0.0) and nothing is DISPLACED; the segments are the wrong LENGTHS, which nothing measured. Reproduced exactly: `fit_joints.py` places a joint at the midpoint of two flesh centroids, and his upper-arm group keeps dominant weight 209 mm past his elbow, so it lands at 70% of the arm where it belongs at 49% — the shipped bundle is 70.3%. His legs go the same way, 1.06 before the fit and 4.97 after. Three fixes tried and all three measured wrong; see "The Rock's arms, 2026-11-15" |
-| Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" |
+| Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" — **but see the correction below: the patch is correct and the GAME DISCARDS IT** |
+| Spartan Mark V | ~~asymmetric right leg~~ **leg still sticking out at the right hip** | **RE-REPORTED 2026-11-16, and the earlier fix provably does nothing in game.** Two separate findings. (1) The patch IS in the file and IS right — his hip offsets read L 161.8 mm / R 161.8 mm at instantiate, against 161.8 / 244.5 before. (2) **Unity's humanoid Animator re-poses the skeleton from the AVATAR, and the four rest structures are not what the Avatar retargets from.** After `Animator.Rebind()` the patched bundle reads L 161.8 / R **244.5** — byte-for-byte the unpatched figure. (3) Separately, the whole character is **turned 20.00°**: hips, shoulders, knees and feet all agree to two decimals, because his source is a perfect mirror about a plane 20° off the x axis and nothing straightens him. His left hip faces the camera, which is the hip reported. **No bundle patch can fix either**; he needs a rebuild from a straightened source. See "Spartan Mark V, 2026-11-16: the Animator does not read what we patch" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
 | Miku | twintails only move where they were repaired; the tie could be sprung too | **FIXED 2026-11-15 (evening).** Both right. Her two `HairSpring_*` chains run on eight bones an earlier hair-rigger run INVENTED, which dominate **38** vertices; her own twintail bones `Bone06`..`Bone15` and their `(mirrored)` twins dominate **462** and were on no chain, as were the three tie bones. Nothing found it because every rigger here selects by bone NAME and her rig has no bone whose name contains hair, tail, bang or tie — while `HairSpring_1_0` does. `patch_add_springs.py` put 7 new chains on her own bones: **324 vertices now move against 38**. `Bone06` stays rigid on purpose (it is the bun, 158 vertices, at the crown). The tie chain is given NO collider group — all three of its bones start 44.4/30.5/7.4 mm INSIDE the torso capsule, and attaching it would have thrown the knot forward and undone that morning's re-aim. See "Miku's twintails and necktie, 2026-11-15 (evening)" |
@@ -819,6 +820,132 @@ on her head, which is what 344 of its 731 vertices already were and what the hat
 is ever reported as having stiff hair, the fringe below the hat brim is the part that could
 legitimately swing and it has never been rigged. And none of this has been seen in game.
 
+
+### Spartan Mark V, 2026-11-16: the Animator does not read what we patch
+
+Re-reported the next day — *"master chief's leg is still sticking out at the
+right hip"* — and the reporter is right twice over. The section below this one
+is correct about the fault and correct about the edit, and the edit **never
+reaches the screen**.
+
+#### 1. The patch is in the file, and it is right
+
+Everything the earlier work claimed holds up on re-measurement. In the shared
+parent's frame `thigh.R` is now the exact negate-X mirror of `thigh.L`,
+0.00000 on every pair; the right leg's FLESH mirrors the left at a median of
+0.0 mm in the spine's own frame, against 51.4 mm before; and the source
+confirms negate-X IS the mirror for this rig (0.000 mm on all 29 pairs).
+
+Even the number that was withdrawn turns out to have been right. "92.12 mm
+from the mirror of his `thigh.L`" was struck on 2026-11-15 as coming from a
+tool that compared local offsets under a rotated shared parent. The withdrawal
+was too broad: that comparison is invalid between bones with DIFFERENT parents,
+and both thighs hang off `spine`. The offsets were (−0.10623, +0.12118,
++0.01496) and (+0.19379, +0.14891, +0.00781), and the distance from the
+negate-X mirror is 92.12 mm exactly.
+
+#### 2. And the game throws it away
+
+Unity's humanoid `Animator` re-poses the skeleton from the **Avatar**. The four
+structures this pipeline writes — `Transform.m_LocalRotation`, the Avatar's
+`m_AvatarSkeletonPose` and `m_DefaultPose`, and
+`m_HumanDescription.m_Skeleton` — are **not what retargeting reads**. Measured
+in Unity, instantiating the prefab and then calling `Animator.Rebind()` and
+`Update()`, which is what the game's own preview does:
+
+| | hips L / R at instantiate | after `Rebind()` |
+|---|---|---|
+| the pre-patch backup | 161.8 / 244.5 mm, diff **−82.7** | 161.8 / 244.5, diff −82.7 |
+| the patched, installed bundle | 161.8 / 161.8 mm, diff **0.0** | 161.8 / **244.5**, diff **−82.7** |
+
+The patched file and the unpatched file produce **the same animated character**.
+The bind pose is corrected and discarded one frame later.
+
+**This is not a fact about Spartan Mark V.** It applies to every bundle-level
+rest-pose edit on a bone the humanoid rig maps, which is what
+`patch_mirror.py` exists to make — so that tool cannot do what it says for any
+character with a humanoid Animator, and every character here has one but
+Kasane Teto. It does NOT apply to bones outside the humanoid map: a humanoid
+Animator drives only the bones it maps, so Miku's necktie re-aim (`Bone01`) and
+her spring chains are untouched by this and stand.
+
+#### 3. And he is turned 20 degrees, which is the hip that was reported
+
+A separate fault, found while looking for the first. Every line that is
+left-right by construction agrees:
+
+| | hips | shoulders | knees | feet |
+|---|---|---|---|---|
+| **Spartan Mark V** | +20.00° | +20.00° | +20.00° | +20.00° |
+| Miku | 0.00 | −0.06 | 0.00 | 0.00 |
+| The Rock | −0.32 | −0.03 | −0.32 | −0.32 |
+| Doom Slayer | 0.00 | 0.00 | +0.01 | +0.01 |
+
+He stands turned, so his left hip faces the camera and reads as sticking out —
+on the RIGHT of the picture, which is what was reported. The cause is in the
+source and is not a defect there: `MkVSKETCHFAB.blend` is a perfect mirror
+about a plane **20.00°** off the world x axis, because the model was built at
+an angle, and nothing in this pipeline squares a character up.
+
+Four lines agreeing to two decimals is what makes this the body turned rather
+than a limb displaced, and `patch_body_yaw.py` refuses to turn a character
+whose lines disagree for exactly that reason.
+
+#### He is not the only one — the sweep across all 65
+
+`body_yaw_check_installed.py` over the installed roster, reading the four
+structural lines. The SPREAD is what separates the two faults, and it separates
+them cleanly: three characters have every line agreeing, and seven have one
+line arguing with the others.
+
+| character | mean yaw | spread | reading |
+|---|---|---|---|
+| **Aiko** | **−29.95°** | 0.15 | turned, and worse than Spartan |
+| **Spartan Mark V** | **+20.00°** | 0.00 | turned |
+| **Kronk** | **−6.97°** | 0.00 | turned |
+| Elite Terrorist | −1.51° | 2.47 | turned, but slightly |
+| Steve | +7.47° | 18.27 | NOT a turn — a limb |
+| Jessica Rabbit | −2.30° | 12.79 | NOT a turn — a limb |
+| The Mandalorian | +2.50° | 11.10 | NOT a turn — a limb |
+| Alastor | −7.48° | 10.04 | NOT a turn — a limb |
+| Peacemaker | −2.28° | 9.12 | NOT a turn — a limb |
+| Vigilante | +5.16° | 7.19 | NOT a turn — a limb |
+| Alcina Dimitrescu | −1.73° | 6.91 | NOT a turn — a limb |
+
+The other 54 are square. **Aiko has never been reported**, which is the useful
+part of a sweep: she stands 30 degrees off and nobody has looked at her on a
+podium yet. The seven with disagreeing lines are a separate question and one
+this check is not the tool for — a single line arguing with three others is
+what a displaced limb looks like, and `limb_socket_check_installed.py` clears
+all of them, so they need a look rather than a patch.
+
+#### What was built, and what it is good for
+
+`patch_body_yaw.py` squares the bind pose: it measures the yaw from those four
+lines, turns the humanoid root bone by that angle about world +Y, writes the
+four rest structures, and re-measures the written bytes. On him, +20.00° →
+−0.00° on every line. **It was not installed, because finding 2 applies to it
+too** — the Animator discards it, and the rendered character is pixel-identical
+apart from the podium's own colour cycling. It is kept because the bind pose
+being square is still correct, because the measurement half is what found the
+fault, and because a rebuilt character will need checking against it.
+
+Its own re-measure caught a sign error that would otherwise have shipped: Unity
+is left-handed Y-up, a positive turn about +Y takes +Z toward +X, and the yaw
+measured as `atan2(z, x)` therefore comes out as `yaw − t`. The correction is
+`+yaw`, not `−yaw`. Signed the intuitive way it turned a character 20° off into
+one **40°** off, and the refusal-on-re-measure is the only reason that did not
+reach disk.
+
+#### What would actually fix him
+
+A rebuild from a straightened source, so Unity regenerates the Avatar from a
+square T-pose. The rebuild also fixes the leg for free: today's builder makes a
+perfectly mirrored rig from this source, 0.000 mm on every leg pair. There is
+no patch-level alternative — the data retargeting reads is the Avatar's own
+precomputed human axes, and inserting a node above the skeleton to rotate it is
+not available either, because every bone's path is what the Avatar's `m_TOS`
+looks it up by.
 
 ### Spartan Mark V's right leg, 2026-11-15: a limb in the wrong PLACE, which no angle can see
 
