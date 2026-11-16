@@ -1379,8 +1379,12 @@ carry no authoring meaning. Refining a hard-surface character to keep some shine
 the source material names, which means a rebuild rather than a patch.
 
 **The two most likely to want it back** are the hard surfaces, where a specular highlight is part
-of what the thing is: **Xenomorph**'s carapace and **Skibidi Toilet**'s porcelain. Both are now
-fully matte. `patch_shine.py --smoothness S` softens one without reverting it, and the hash-verified
+of what the thing is: **Xenomorph**'s carapace and **Skibidi Toilet**'s porcelain. Both were
+flattened with the rest. **Seen in game on 2026-11-15, Jay asked for Xenomorph's shine back and it
+was restored** from `character-backups/Xenomorph.preshine-2026-11-15.yargchar` -- `verify_rebuild`
+first confirmed that backup differs from the flattened file in its 2 materials and nothing else,
+so the revert is exactly the shine and touches no geometry. He is back at smoothness 0.50 with
+specular and reflections on, md5 `7fe424b4`. Skibidi Toilet was not mentioned and is left matte. `patch_shine.py --smoothness S` softens one without reverting it, and the hash-verified
 backup makes a full revert a file copy. Nothing here has been seen in game, and the project's own
 note is that the editor understates the difference.
 
