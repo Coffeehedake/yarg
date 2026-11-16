@@ -46,10 +46,51 @@ import sys
 import UnityPy
 
 import cloth_collide_installed as cci
-import mirror_check_installed as mc
+import limb_socket_check_installed as sock
 from patch_springs import fingerprint
 
 EPS = 1e-6
+
+
+def sockets(src):
+    """{slot: (left bone, right bone, left gap m, right gap m)}.
+
+    The same measurement limb_socket_check_installed.py makes, called here so
+    that this tool's guard rests on the JOIN rather than on mirror arithmetic.
+    It used to call mirror_check_installed.verdict(), and that was withdrawn:
+    negating X in a parent's frame is the mirror only when the parent's axes
+    happen to be aligned with the body's left-right line, which is the rig's
+    own convention and cannot be read back out of the file.
+    """
+    human, tf, per, _skipped = sock.flesh(src)
+    by_name = {}
+    for pid, n in tf.items():
+        if n["name"]:
+            by_name.setdefault(n["name"], pid)
+    tor = []
+    for k in sock.TORSO:
+        bn = cci.hname(human, k)
+        if bn and bn in by_name:
+            tor += per.get(by_name[bn]) or []
+    if len(tor) < 64:
+        return {}, tf, by_name, human
+    tor = tor[::max(1, len(tor) // sock.TORSO_SAMPLE)]
+    out = {}
+    for slot, lk, rk in sock.JOINS:
+        ln, rn = cci.hname(human, lk), cci.hname(human, rk)
+        if not ln or not rn or ln not in by_name or rn not in by_name:
+            continue
+        g = []
+        for nm in (ln, rn):
+            ps = [p for b in sock.region(tf, by_name, human, nm)
+                  for p in (per.get(b) or [])]
+            if len(ps) < 16:
+                g.append(None)
+                continue
+            top = sorted(ps, key=lambda p: -p[1])[:max(8, len(ps) // 5)]
+            g.append(sock.nearest(top, tor)[0])
+        out[slot] = (ln, rn, g[0], g[1])
+    return out, tf, by_name, human
 
 
 def main():
@@ -65,43 +106,50 @@ def main():
     src, bone = rest
     out = out or src
 
-    human, tf, go_tf, springs, joints, colliders, groups, world = \
-        cci.read(src)
-    rows = mc.pairs_of(human, tf)
-    applies, bad = mc.verdict(rows)
-    if not applies:
-        print("ABORT: this rig's limb offsets are not mirrored even "
-              "approximately (%d of %d pair(s) over %.0f mm), so negating X "
-              "is not its mirror and there is nothing safe to copy"
-              % (len([r for r in rows if r[0] > mc.TOL]), len(rows),
-                 mc.TOL * 1000))
+    gaps, tf, by_name, human = sockets(src)
+    hit = None
+    for slot, (ln, rn, gl, gr) in sorted(gaps.items()):
+        if bone not in (ln, rn):
+            continue
+        if gl is None or gr is None:
+            print("ABORT: the %s pair carries too little flesh to measure a "
+                  "join, so there is no evidence %r is out of place" % (slot,
+                                                                        bone))
+            return 2
+        mine, theirs = (gl, gr) if bone == ln else (gr, gl)
+        print("%s: the %s join -- %r sits %.1f mm from the torso, its partner "
+              "%r sits %.1f mm" % (os.path.basename(src), slot, bone,
+                                   mine * 1000,
+                                   rn if bone == ln else ln, theirs * 1000))
+        if not ((mine - theirs) * 1000 >= sock.GAP_MM
+                and mine >= sock.GAP_RATIO * max(theirs, 1e-5)):
+            print("ABORT: that is not a limb out of its socket -- it needs to "
+                  "be at least %.0f mm and %.1fx further out than its partner."
+                  " Moving a bone that is already attached would detach it."
+                  % (sock.GAP_MM, sock.GAP_RATIO))
+            return 2
+        hit = (slot, ln, rn, gl, gr)
+        break
+    if hit is None:
+        print("ABORT: %r is not one of the limb bones that join the torso "
+              "(%s), so this tool has no evidence to act on"
+              % (bone, ", ".join(sorted(
+                  n for _s, (a, b, _x, _y) in gaps.items() for n in (a, b)))))
         return 2
-    hit = [r for r in bad if bone in (r[1], r[2])]
-    if not hit:
-        print("ABORT: %r is not a displaced limb bone in this bundle. "
-              "Displaced: %s"
-              % (bone, ", ".join("%s/%s" % (r[1], r[2]) for r in bad)
-                 or "none -- every limb pair mirrors"))
-        return 2
-    if len(bad) > 1:
-        print("NOTE: %d limb pair(s) are displaced here, and only %r is being "
-              "moved: %s" % (len(bad), bone,
-                             ", ".join("%s/%s %.1f mm" % (r[1], r[2],
-                                                          r[0] * 1000)
-                                       for r in bad)))
-    total, left, right, _d, slot = hit[0]
+    slot, left, right, gl, gr = hit
     # The partner is whichever of the pair is NOT the bone being moved, and
     # the bone being moved takes the MIRROR of the partner's offset.
+    #
+    # THAT NAIVE MIRROR IS AN ASSUMPTION, and the file cannot confirm it:
+    # negating X of a local offset is the true mirror only when the shared
+    # parent's own axes put X along the body's left-right line. So it is not
+    # trusted -- the join is MEASURED AGAIN on the patched bytes below, and if
+    # the gap has not closed to its partner's figure nothing is written.
     partner = right if bone == left else left
-    by_name = {}
-    for pid, n in tf.items():
-        if n["name"]:
-            by_name.setdefault(n["name"], pid)
     ref = tf[by_name[partner]]["p"]
     want = (-ref[0], ref[1], ref[2])
     have = tf[by_name[bone]]["p"]
-    print("%s: the %s pair -- %r is %.2f mm off the mirror of %r"
-          % (os.path.basename(src), slot, bone, total * 1000, partner))
+    print("  moving %r onto the mirror of %r" % (bone, partner))
     print("  have (%+.6f %+.6f %+.6f)" % have)
     print("  want (%+.6f %+.6f %+.6f)   = mirror of %s (%+.6f %+.6f %+.6f)"
           % (want + (partner,) + ref))
@@ -196,6 +244,32 @@ def main():
     if len(changed) != expect or gone or added:
         print("  WARNING: the read-back does not match what was asked for -- "
               "nothing was written")
+        return 1
+
+    # DID THE LIMB ACTUALLY LAND IN ITS SOCKET? The naive mirror is an
+    # assumption about the parent's axes, so it is not taken on trust: the join
+    # is measured again on the patched bytes, and the gap has to have come down
+    # to its partner's. On Spartan Mark V it goes 29.7 -> 4.6 against a left
+    # leg at 4.7. Without this the tool would write a confident wrong answer on
+    # any rig whose parent is rolled, which is the defect that withdrew
+    # mirror_check_installed.py.
+    after_gaps, _tf2, _bn2, _h2 = sockets(data)
+    g = after_gaps.get(slot)
+    if not g or g[2] is None or g[3] is None:
+        print("  WARNING: the join cannot be re-measured on the result, so "
+              "there is no proof it closed -- nothing was written")
+        return 1
+    mine = g[2] if bone == g[0] else g[3]
+    theirs = g[3] if bone == g[0] else g[2]
+    print("  the %s join after the move: %r %.1f mm, %r %.1f mm "
+          "(was %.1f / %.1f)"
+          % (slot, bone, mine * 1000, partner, theirs * 1000,
+             (gl if bone == left else gr) * 1000,
+             (gr if bone == left else gl) * 1000))
+    if (mine - theirs) * 1000 >= sock.GAP_MM:
+        print("  WARNING: it is still %.1f mm further out than its partner, so "
+              "the mirror of the local offset is NOT this rig's mirror -- "
+              "nothing was written" % ((mine - theirs) * 1000))
         return 1
     with open(out, "wb") as f:
         f.write(data)
