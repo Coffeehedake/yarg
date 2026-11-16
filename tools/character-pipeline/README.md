@@ -510,7 +510,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor. Applied to her alone and put to Jay as a question, since an appearance change across a third of the roster is his call; he said **"yes, all 26"**, so the other 26 were flattened too — **132 materials across 26 characters**, each hash-backed up and verified five ways. See "Sophia's shine, 2026-11-15" |
 | The Rock | arms are squiggly | **FIXED 2026-11-16 BY A REBUILD.** His upper arm is **61% over** the population norm and his forearm 13% under — upper/forearm ratio **2.37** where his own source `Rock.fbx` has **0.96**. Every existing check passes him because nothing is BENT (elbow 0.0/0.0) and nothing is DISPLACED; the segments are the wrong LENGTHS, which nothing measured. Reproduced exactly: `fit_joints.py` places a joint at the midpoint of two flesh centroids, and his upper-arm group keeps dominant weight 209 mm past his elbow, so it lands at 70% of the arm where it belongs at 49% — the shipped bundle is 70.3%. ~~His legs go the same way~~ and ~~three fixes tried and all three measured wrong~~ — **all of that was an artefact of a broken staging** that applied the armature's transform and its 21 parented meshes' together, counting it twice and reading a 1.9638 m model as 3.2915 m. The real cause is `scale_rig.py` sizing the skeleton from `Object.bound_box`, which is a CACHE and goes stale (and survives `evaluated_get(depsgraph)`): it scaled him by **0.6668** where his recipe records **0.3978**, and the midpoint rule then landed the elbow at 69.5% of a wrongly scaled arm against the shipped 70.3%. `fit_joints.py` was innocent — on a correctly scaled rig it puts the elbow at 50.7% against the rig's own 48.9%. scale_rig now reads vertices. Rebuilt: upper arm 0.344 → **0.176** (human 0.186), reach 1.272 → **0.932** (documented 0.938). See "The Rock's arms, 2026-11-16" |
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" — **but see the correction below: the patch is correct and the GAME DISCARDS IT** |
-| Jessica Rabbit | dress clips through the body, not rigged to it, and the sprung parts of the body and the dress move separately | **FIXED 2026-11-16, both halves.** Her dress is two meshes and **every vertex of both was weighted to ONE bone** — `spine`, her humanoid hips — at one influence: bodice 24,035 verts, skirt 13,275. It followed her hips and nothing else, so the one part of her that moved (`breast.L`/`breast.R`) swung inside cloth that did not. *(Those two chains having no collider group was separately called a fault and "fixed" on five characters; that was wrong -- the builder skips chest chains deliberately -- and all five were reverted.)* Shaken in the spring runtime the installed character's only moving bones were the two breast tips at 90.6 mm. Rebuilt from her documented recipe: skirt now **17 bones, 1-3 influences**, chains 2 → **10**, colliders 2 (referenced by none) → **10 (referenced by 8 of 10)**, skirt peak deflection **1024 mm**; clips, meshes, textures and materials all identical. ~~The bodice is still 24,035 verts on `spine`~~ — **also fixed**, by a new step in `build_vrm.py` that re-weights a mesh once the build has CARRIED it into place: the bodice is now on **9 bones** including `breast.L`/`breast.R`, so the cloth over her chest deforms with the sprung chest instead of being a shell it swings through, and the skirt on **21** including both thighs. Geometry moved 0.0000 mm. The step is gated on a mesh this script auto-weighted itself landing ≥90% on a bone ABOVE the humanoid root, and the control proves it inert: Spartan Mark V rebuilt before and after is **byte-identical**, md5 `b68ce9e4…`. See "Jessica Rabbit's dress, 2026-11-16" |
+| Jessica Rabbit | dress clips through the body, not rigged to it, and the sprung parts of the body and the dress move separately | **DRESS FIXED 2026-11-16; a SEPARATE rig fault found the same day and NOT fixed.** Her whole right leg sits **92.4 mm higher** than her left and her whole right arm 29.0 mm higher and 74.1 mm further back, while her shoulder bones are symmetric to a tenth of a millimetre and each limb's flesh is symmetric about its own bone to 0.1 mm — so whole limbs are displaced, correctly skinned to bones in the wrong place. Her 92.4 mm is the worst limb-height fault on the roster, double the next. It is identical in all four of her snapshots that day, so it predates every patch and our builder reproduces it faithfully from her source. **Whether the raised leg was AUTHORED is not established and must be before anything is changed** — nobody has reported her leg, and a leg 92 mm up is also what a glamour pose looks like. See "Jessica Rabbit's right leg is 92 mm higher than her left, 2026-11-16". Dress note follows: **FIXED 2026-11-16, both halves.** Her dress is two meshes and **every vertex of both was weighted to ONE bone** — `spine`, her humanoid hips — at one influence: bodice 24,035 verts, skirt 13,275. It followed her hips and nothing else, so the one part of her that moved (`breast.L`/`breast.R`) swung inside cloth that did not. *(Those two chains having no collider group was separately called a fault and "fixed" on five characters; that was wrong -- the builder skips chest chains deliberately -- and all five were reverted.)* Shaken in the spring runtime the installed character's only moving bones were the two breast tips at 90.6 mm. Rebuilt from her documented recipe: skirt now **17 bones, 1-3 influences**, chains 2 → **10**, colliders 2 (referenced by none) → **10 (referenced by 8 of 10)**, skirt peak deflection **1024 mm**; clips, meshes, textures and materials all identical. ~~The bodice is still 24,035 verts on `spine`~~ — **also fixed**, by a new step in `build_vrm.py` that re-weights a mesh once the build has CARRIED it into place: the bodice is now on **9 bones** including `breast.L`/`breast.R`, so the cloth over her chest deforms with the sprung chest instead of being a shell it swings through, and the skirt on **21** including both thighs. Geometry moved 0.0000 mm. The step is gated on a mesh this script auto-weighted itself landing ≥90% on a bone ABOVE the humanoid root, and the control proves it inert: Spartan Mark V rebuilt before and after is **byte-identical**, md5 `b68ce9e4…`. See "Jessica Rabbit's dress, 2026-11-16" |
 | Aiko | *(not reported — found by the yaw sweep)* | **MEASURED 2026-11-16, NOT FIXED, nothing installed.** She stands **29.95° off**, the worst on the roster. Today's builder detects and corrects it unprompted (`facing: feet point (-0.5, -0.87, 0.0), 30 deg off forward`) and the rebuild reads **+0.03°, spread 0.15** — but it puts her hair as a flat sheet over her face, with AND without the hair rigger, so `GirlsInAction.blend` with `^Girl2\.[0-9]` is not her whole recipe. The turn has never been reported and the hair would be, so she keeps the 30°. See "Aiko, 2026-11-16" |
 | Spartan Mark V | ~~asymmetric right leg~~ **leg still sticking out at the right hip** | **FIXED 2026-11-16 BY A REBUILD, and the earlier patch provably did nothing in game.** Two separate findings. (1) The patch IS in the file and IS right — his hip offsets read L 161.8 mm / R 161.8 mm at instantiate, against 161.8 / 244.5 before. (2) **Unity's humanoid Animator re-poses the skeleton from the AVATAR, and the four rest structures are not what the Avatar retargets from.** After `Animator.Rebind()` the patched bundle reads L 161.8 / R **244.5** — byte-for-byte the unpatched figure. (3) Separately, the whole character is **turned 20.00°**: hips, shoulders, knees and feet all agree to two decimals, because his source is a perfect mirror about a plane 20° off the x axis and nothing straightens him. His left hip faces the camera, which is the hip reported. **No bundle patch can fix either** — the Avatar has to be regenerated, so he was REBUILT and installed. Today's `build_vrm.py` already carries a facing stage that detects and corrects the 20° itself, so his plain recorded recipe was enough and now reproduces him. Verified through the Animator, which is where the patch failed: hips L/R 143.3 / 143.3 mm after `Rebind()` against 161.8 / 244.5, and post-`Rebind` yaw 4.56° / −7.96° against Doom Slayer's control 4.20° / −7.89°. Both hips were wrong in the old build, not only the right one. See "Spartan Mark V, 2026-11-16: the Animator does not read what we patch" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
@@ -519,6 +519,100 @@ not rebuilt, so the other installed builds are unaffected.
 | The Mandalorian | armour is not centred on his chest | **MEASURED 2026-11-16, cause found, not fixed.** It is not the armour: his skeleton is **two half-skeletons 37.2 mm apart**. Every lower pair (hips, knees, feet) centres at -18.5 mm and every upper pair (shoulders, elbows, hands) at +18.7 mm, to a tenth of a millimetre, with no gradient between them, while his limb segments are near perfect (arms 0.2453/0.2456 vs 0.2453/0.2457). His source glTF has two collapsed skeletons and he was re-rigged through Mixamo, which is where a step like that comes from. Nothing shows at rest — raw and skinned vertices agree to four decimals — so the bones are simply in the wrong place INSIDE the geometry, and his chest pivots about an axis 18.7 mm off the centreline his legs define. The Animator is NOT the mechanism: Spartan Mark V, square in his own bundle, also goes 0.00/0.00 to 4.56/-7.96 after `Rebind()`, so that shift is the controller's, not his. Fixing it means moving bones while compensating their bind poses so the rest pose does not move, and that needs his mesh's true centreline first. See "The Mandalorian is two half-skeletons, 2026-11-16". Original note follows: **reported 2026-11-16, not yet measured.** Two existing measurements probably bear on it and should be read before anything is rebuilt. His body-yaw lines **disagree** (+2.50 deg mean, spread **11.10**), which `body_yaw_check_installed.py` reads as a displaced part rather than a turned body — he is one of seven on that list. And the edge-length ratio sweep puts his worst stretched edge at **234 mm**, the largest on the roster by a wide margin (Peacemaker's is 27 mm). His source is a glTF whose **both skeletons are collapsed**, so he was re-rigged through Mixamo; a chest plate that is a separate island riding one bone, or weighted to a bone the re-rig moved, would produce exactly this. Check first whether the armour is its own mesh/island and which bones dominate it — if it is one rigid island on one bone, this is the Joker's-pistol and Judy's-belt shape, not a weighting fault |
 | Prix | no hair, no pupils, eyelashes have no alpha — "a mess, she needs a lot of work" | **reported 2026-11-16, not yet measured.** Queued behind The Mandalorian. Four separate faults by the sound of it, and three of them are shapes this pipeline has solved before, so check the known remedy before inventing one: missing hair is usually a mesh dropped by an `exclude` or a hair mesh with no vertex groups (Alcina's case — hairrig on the material builds its weights from nothing); no pupils is the eye-STACK alpha fault (Peach) or an eye atlas pinned to the wrong frame (Shadow); lashes with no alpha is the `VRM_CUTOUT_MATERIALS` / `VRM_BLEND_MATERIALS` pair, where Alcina needed the lashes moved from cutout to **blend**. One thing already measured on her and worth carrying over: her `FemaleBody_Head` collider reaches **186.5 mm past her chest spring joints**, which for a head collider is absurd and suggests her collider fit is as confused as her materials |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
+
+### Jessica Rabbit's right leg is 92 mm higher than her left, 2026-11-16
+
+Chased because `half_body_check_installed.py` put her at **-86.5 mm**, the
+largest half-body step on the roster, and because she had been rebuilt that
+same day -- so it was either inherited or made by our own builder.
+
+**It predates everything done to her that day.** All four of her snapshots --
+`predress` (the original conversion), `prebodice`, `prechestcollide` and the
+installed file -- report the identical -86.5 mm step, with identical hip and
+shoulder positions to four decimals. The rebuild from her documented recipe
+reproduced it exactly, so our builder is carrying it faithfully out of her
+source rather than creating it.
+
+#### Three ways of finding her centreline, and why they all failed
+
+Her X positions cannot be compared without knowing where her middle is, and
+her middle is exactly what will not be established:
+
+* the **midpoint of a slice's extremes** is a measurement of her outliers;
+* a **median over a height band** lands on whichever leg carries more
+  geometry -- her band medians spread **169.6 mm**, and the quartiles say why
+  (one band runs q25 -0.0197, median +0.1233, q75 +0.1568: not a symmetric
+  body, a cluster);
+* **flesh centroid against its driving bone** gave +8, +33, -11, -73, -63 and
+  -53 mm on six torso bones, flipping sign with no trend.
+
+`centreline_check_installed.py` is kept for the median approach because it is
+the right instrument on a symmetric character, and because its quartile
+columns are what show when it is not.
+
+#### The measurement that works needs no centreline at all
+
+**Height and depth need no middle.** For a pair the rig itself calls left and
+right, `dy` and `dz` should both be zero, and a difference is measured against
+nothing but the pair. `pair_offset_check_installed.py`:
+
+```
+UpperLeg   dy  +92.4  dz   +3.0     thigh.L / thigh.R
+LowerLeg   dy  +92.4  dz   +3.0     shin.L  / shin.R
+Foot       dy  +92.4  dz   +3.0     foot.L  / foot.R
+Shoulder   dy   +0.1  dz   -2.7     shoulder.L / shoulder.R
+UpperArm   dy  +29.0  dz  -74.1     upper_arm.L / upper_arm.R
+LowerArm   dy  +29.0  dz  -74.1     forearm.L / forearm.R
+Hand       dy  +29.0  dz  -74.1     hand.L / hand.R
+```
+
+Her whole right leg sits **92.4 mm higher** than her left and her whole right
+arm **29.0 mm higher and 74.1 mm further back**, while her **shoulder bones
+are symmetric to a tenth of a millimetre**. Each limb is internally consistent
+-- all three joints displaced by the identical amount -- so whole limbs are
+displaced rather than deformed, the same signature as Mando's half-skeleton
+step. And her arm flesh is symmetric about each arm bone to 0.1 mm
+(`forearm.L` -121.4 against `forearm.R` +121.3, `upper_arm.L` -169.4 against
++169.4), so each limb is correctly skinned to a bone that is in the wrong
+place.
+
+**Spartan Mark V reads 0.0 mm on every pair and every axis**, and 32 of the 65
+bundles are symmetric to within 0.1 mm. That is what makes a reading here mean
+something: the instrument demonstrably can return zero.
+
+#### dy and dz are not the same finding
+
+The first version of this sweep reported one number per character and would
+have claimed 14 new faults. Several are a fault this file already records. A
+pure `dz` difference with `dy` at zero is the body being **turned**: Aiko reads
+`dz` -100.2 mm on her legs with `dy` -0.0, and 190 mm of leg separation rotated
+by the **29.95 deg** `body_yaw_check_installed.py` already measures for her
+gives 94.9 mm. Same fault, second instrument. A `dy` difference cannot come
+from a yaw at all.
+
+| classification | characters |
+|---|---|
+| **a TURN (yaw)** -- already measured elsewhere | Aiko 136, Alastor 28, Vegeta 11, Elite Terrorist 7, Shaggy Rogers 7 |
+| **MIXED** -- height and depth both | **Jessica Rabbit 92 (dy 92.4)**, Vigilante 77, Peacemaker 66, Kronk 66 (dy 44.4), Alcina 56 (dy 42.6), Steve 54 (dy 18.4), The Mandalorian 44 (dy 20.2), B1 Battle Droid 32, Thanos 13 |
+| symmetric to 0.1 mm | **32 of 65** |
+
+**This closes an open roster item.** The seven characters whose yaw lines
+disagreed -- Steve, Jessica Rabbit, The Mandalorian, Alastor, Peacemaker,
+Vigilante, Alcina -- were recorded as "a displaced limb each, not a turn".
+All seven are flagged here, with the limb named and the displacement in
+millimetres, and the split above says which of them are turns after all
+(Alastor) and which are genuinely displaced (the rest).
+
+#### What is NOT established, and must be before anything is changed
+
+**Whether her raised leg was AUTHORED.** A leg 92 mm up is also what a glamour
+pose looks like, and this file has twice recorded reading a deliberate choice
+as a defect. Two things argue against a pose and neither is conclusive: her
+legs are straight vertical columns -- hip, knee and foot share one x, and `dz`
+is 3 mm -- and a posed leg bends; and her shoulder bones are symmetric, which
+a whole-body pose would not leave. **Settle it by looking at her before
+touching anything.** Her reported fault was her dress, and the dress weighting
+is fixed; nobody has reported her leg.
 
 ### The Mandalorian is two half-skeletons, 2026-11-16
 
@@ -3544,6 +3638,26 @@ right.
   the game. Alastor is the control, the one character of 65 built with the switch on: run against
   him it reports "already flat, nothing to do" on all three materials, which is the patcher and
   the exporter agreeing. `--smoothness S` writes S instead of 0 if matte looks dead
+- `pair_offset_check_installed.py <dir|yargchar...>` — left/right asymmetry needing **no
+  centreline and no mirror assumption**. A pair's X cannot be compared without knowing where the
+  middle is, and on Jessica Rabbit the middle is what would not be established; `dy` and `dz` need
+  no middle, so a difference is measured against nothing but the pair. **Spartan Mark V reads 0.0
+  on every pair and every axis and 32 of 65 bundles are symmetric to within 0.1 mm**, which is the
+  control that makes a reading mean anything. Found Jessica's whole right leg **92.4 mm higher**
+  than her left and her right arm 29.0 mm higher and 74.1 mm back, with her shoulder bones
+  symmetric to a tenth of a millimetre. **Read dy and dz separately:** a pure `dz` difference with
+  `dy` at zero is the body being TURNED, which `body_yaw_check_installed.py` already measures
+  (Aiko's `dz` -100.2 mm over 190 mm of leg separation is her known 29.95 deg), while a `dy`
+  difference cannot come from a yaw at all. The tool classifies each character and prints the yaw
+  each `dz` implies, so the two instruments can be cross-checked rather than double-counted.
+  `PAIR_MM` moves the 5 mm threshold
+- `centreline_check_installed.py <yargchar> [mesh]` — where is the geometry's own centreline?
+  **MEDIAN x per height band, not the midpoint of the extremes**, which is the point: slicing
+  Mando and taking (min+max)/2 gave midpoints wandering ±20 mm, a measurement of his outliers.
+  Selects by dominant bone so a torso band is not contaminated by the arms crossing it. Prints the
+  quartiles and the count per band **because that is what shows when the median is not a
+  centreline at all** — on Jessica the band medians spread 169.6 mm with quartiles like
+  q25 -0.0197 / median +0.1233 / q75 +0.1568, which is a cluster on one leg rather than a body
 - `half_body_check_installed.py <dir|yargchar...>` — is the UPPER half of a skeleton laterally
   offset from the LOWER half? Reads WORLD positions of the pairs the Avatar itself calls left and
   right, so it needs no axis convention and no reference to x = 0 — one half of the character
