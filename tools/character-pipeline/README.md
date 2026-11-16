@@ -508,6 +508,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Link | eye textures misplaced; still holding the master sword and shield | **both fixed.** His rig has bones named `Sword` and `Shield`, so `VRM_DROP_ISLAND="LinkEquipment=Sword+Shield"` takes 41 islands and leaves `Fourreau`, his scabbard, on his back. His eye material `Material.003` was taking the body atlas while `Eye.png` sat unused beside it |
 | Shadow | eyes use the blink/closed frame of the atlas; fingers do not move | an eye atlas with the wrong frame pinned, and ~~finger bones that are mapped but not weighted~~ **corrected 2026-11-11 by `bundle_audit.py`: he has ZERO finger bones in his humanoid map**, and 21 humanoid bones in total against a typical 52. The symptom was right, the stated cause was wrong |
 | Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor. Applied to her alone and put to Jay as a question, since an appearance change across a third of the roster is his call; he said **"yes, all 26"**, so the other 26 were flattened too — **132 materials across 26 characters**, each hash-backed up and verified five ways. See "Sophia's shine, 2026-11-15" |
+| The Rock | arms are squiggly | **DIAGNOSED 2026-11-15, NOT FIXED, nothing installed.** His upper arm is **61% over** the population norm and his forearm 13% under — upper/forearm ratio **2.37** where his own source `Rock.fbx` has **0.96**. Every existing check passes him because nothing is BENT (elbow 0.0/0.0) and nothing is DISPLACED; the segments are the wrong LENGTHS, which nothing measured. Reproduced exactly: `fit_joints.py` places a joint at the midpoint of two flesh centroids, and his upper-arm group keeps dominant weight 209 mm past his elbow, so it lands at 70% of the arm where it belongs at 49% — the shipped bundle is 70.3%. His legs go the same way, 1.06 before the fit and 4.97 after. Three fixes tried and all three measured wrong; see "The Rock's arms, 2026-11-15" |
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
@@ -1237,6 +1238,96 @@ the README already records that and the hairrig that tried to fix it sheared the
 And this morning's twintail springs drive very little: none of the bones that actually carry her
 twintails (`Bone06`–`Bone13`) is on a spring chain at all, so that fix is doing less than was
 claimed for it. That is a separate thing to answer for.
+
+
+### The Rock's arms, 2026-11-15: the flesh does not locate the joint
+
+Reported in the first thirteen as "arms are squiggly", twice worked on, and still wrong — seen in
+game on 2026-11-15 with the words "the arms have not changed at all", which is exactly right.
+
+**What is wrong is a LENGTH, which is a third kind of limb fault.**
+
+| | upper arm | forearm | ratio | shoulder→wrist |
+|---|---|---|---|---|
+| his source `Rock.fbx` (of span) | 0.135 | 0.140 | **0.96** | 0.275 |
+| installed (of height) | **0.300** | 0.127 | **2.37** | 0.427 |
+| population norm | 0.186 | 0.146 | 1.27 | 0.332 |
+
+His upper arm is **61% over** the norm and his forearm 13% under. Every existing check passes him:
+`limb_check_installed.py` reads elbow 0.0/0.0 and wrist 1.9/0.9 because nothing is BENT wrong, and
+`limb_socket_check_installed.py` clears him because nothing is DISPLACED — the segments are the
+wrong lengths, and no tool measured that. `proportion_check_installed.py` holds the numbers but
+reports "0 of 1 more than 2.5 sigma", because with one character there is no population to deviate
+from.
+
+**It is not a bone that drifted off its mesh.** Tracing the arm's radius from the shoulder, the
+flesh pinches at 520–560 mm and the elbow bone sits at 533.6, with the skinning handing from
+`LeftArm` to `LeftForeArm` exactly there. The mesh was stretched WITH the bones, which is why no
+patch to the bundle can fix it and why this one needed a rebuild.
+
+**The cause: his arm flesh does not locate his arm joints.** Measured on his own rig after
+`scale_rig.py`:
+
+| | position | % of the arm |
+|---|---|---|
+| his rig's elbow, and his source's | 439.8 mm | **48.9%** |
+| upper-arm flesh spans | 334.5 .. 649.1 mm | |
+| forearm flesh spans | 625.8 .. 880.7 mm | |
+| midpoint-of-centroids rule (what the fitter uses) | 625.1 mm | **70%** |
+| boundary-of-the-two-clusters rule | 630.0 mm | **70%** |
+| **the installed bundle** | 533.6 / 759.1 | **70.3%** |
+
+The last line is the reproduction: the shipped character is exactly what this rule produces. His
+upper-arm group keeps dominant weight **209 mm past the real joint**, so the clusters put the
+elbow at 70% when it belongs at 49%. **A better formula does not help** — the boundary rule, which
+is what the fitter's own header says it wants, lands within 5 mm of the midpoint rule. Both are
+reading clusters that are not where the rule assumes.
+
+**TWO FIXES WERE TRIED AND BOTH ARE WRONG. Nothing was installed.** They are recorded because
+each one fails in a way that says something about the problem.
+
+**1. Exclude the arm chain (`FIT_ARMS=0`).** His arms come back to ratio 0.96 — and the same
+rebuild's LEGS come out at thigh 0.527 / shin 0.106 against a norm of 0.245 / 0.246. The rule
+breaks his legs exactly as it breaks his arms: **1.06 before the fit, 4.97 after**. So excluding
+the arms is treating one symptom of a rule that is wrong on every limb he has.
+
+**2. Exclude both, i.e. scale only.** Worse than either. Measured on his scale-only rig, his
+**hand bone sits 1,537 mm from his hand flesh**, the finger bones at z 2.735 while his knee is at
+z 1.488. That is the "fingers stretch into strips past his knees" this file already records, and
+it is why the fit cannot simply be turned off. The fit is doing something essential: it is the
+only thing that can pull his hand back a metre and a half to where his hand actually is.
+
+**3. Keep the distal joint from the flesh, take the interior from the rig's own proportions.**
+This looked right and is not. At the `.blend` it gives everything at once — arms 0.96, legs 1.06,
+hand bone 46 mm from its flesh instead of 1537. But the built `.vrm` comes out **3.331 m tall
+against a required 1.96**, because placing the hand where the flesh says while spreading the
+interior joints by the rig's fractions keeps the RATIO and inflates the LENGTH: his arm goes from
+914 units to 1774. The chain's ROOT is mis-scaled too, and a rule that only pins the far end
+stretches everything between.
+
+So the real statement is narrower than "the midpoint rule is wrong": **his whole arm is the wrong
+length AND wrongly divided, and the flesh clusters can fix only the end of it.** Fixing both needs
+the root as well, which none of the three attempts addresses. `fit_joints.py` is unchanged on
+disk.
+
+#### Two things the recorded recipe does not say, and cannot run without
+
+Reproducing "scale_rig.py then fit_joints.py" on his source fails twice before it gets anywhere,
+and both are properties of the tools rather than of him.
+
+**The `mixamorig:` prefix has to be stripped first.** `scale_rig.py` aborts with "no hips bone
+found"; `fit_joints.py` does not abort — its chains are bare names like `LeftArm`, nothing
+matches, and it repositions **nothing while reporting success**. Stripping happens in
+`build_vrm.py`, which in the recorded order runs LAST.
+
+**The object transforms have to be applied first.** `fit_joints.py` reads mesh vertices in WORLD
+space (`o.matrix_world @ v.co`) and writes the answer into edit-bone coordinates, which are
+ARMATURE space. The two agree only when the armature's transform is identity. His FBX imports with
+the armature at scale 0.0254, and the fit then produces an **upper arm of 2,863 mm against a
+forearm of 5.7 mm** — a ratio of 505. Whoever built the shipped character had applied transforms,
+since the shipped result matches the fit's correct-space answer; but nothing in the tool or the
+recipe says so, and the failure is silent in the sense that it writes a file and prints "joints
+repositioned: 10".
 
 
 ### Sophia's shine, 2026-11-15: not her defect, the pipeline's default
