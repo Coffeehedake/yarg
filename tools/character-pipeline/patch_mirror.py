@@ -62,7 +62,7 @@ def sockets(src):
     happen to be aligned with the body's left-right line, which is the rig's
     own convention and cannot be read back out of the file.
     """
-    human, tf, per, _skipped = sock.flesh(src)
+    human, tf, per, _skipped, _world = sock.flesh(src)
     by_name = {}
     for pid, n in tf.items():
         if n["name"]:
@@ -80,15 +80,28 @@ def sockets(src):
         ln, rn = cci.hname(human, lk), cci.hname(human, rk)
         if not ln or not rn or ln not in by_name or rn not in by_name:
             continue
-        g = []
+        g, got = [], []
         for nm in (ln, rn):
             ps = [p for b in sock.region(tf, by_name, human, nm)
                   for p in (per.get(b) or [])]
+            got.append(ps)
             if len(ps) < 16:
                 g.append(None)
                 continue
             top = sorted(ps, key=lambda p: -p[1])[:max(8, len(ps) // 5)]
-            g.append(sock.nearest(top, tor)[0])
+            # sock.gap(), the p10, NOT nearest()[0]. The minimum is hostage to
+            # one vertex: on minima Scott Hall's thighs read 1.1 against 14.0
+            # and this tool would have accepted him and moved a sound leg.
+            g.append(sock.gap(sock.nearest(top, tor)))
+        # and the two sides must be the same object before their joins can be
+        # compared at all -- Vegeta's upper arms differ 45.2 mm in frame.
+        if g[0] is not None and g[1] is not None:
+            if abs(len(got[0]) - len(got[1])) >                     sock.COUNT_TOL * max(len(got[0]), len(got[1])):
+                g = [None, None]
+            else:
+                inf = sock.inframe(tf, by_name, _world, ln, rn, got[0], got[1])
+                if inf is not None and inf > sock.INFRAME_MM / 1000.0:
+                    g = [None, None]
         out[slot] = (ln, rn, g[0], g[1])
     return out, tf, by_name, human
 

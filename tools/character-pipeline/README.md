@@ -1012,6 +1012,75 @@ child of his hips whose flesh sits right beside his displaced thigh, and countin
 closed his 29.7 mm gap to 5.4 mm and made the fault disappear.
 
 
+#### Scott Hall, and the fourth version of this measurement
+
+Sent to look at the socket check's worst finding — his right leg at 14.0 mm against his left at
+1.1, a 13× reading. **He is sound, and the check was wrong again.** This is the fourth version of
+this measurement and the third to over-report, which is the most useful thing on this page.
+
+**He is sound, three ways.** His thighs carry **1,326 and 1,325 vertices** and sit **2.69 mm**
+apart in their own bones' frames. His thigh bones mirror to 3.15 mm — and **his SOURCE armature
+carries the same 3.07 mm**, measured in `Scott-Hall_2K20.blend` at 0.3074 units against an armature
+scale of 0.01, so the build introduced nothing; a Mixamo auto-rig is simply a little asymmetric,
+and his worst pair there is a finger at 13 mm. And the two sides' distances to his torso are the
+same distribution:
+
+| | min | p10 | median |
+|---|---|---|---|
+| `LeftUpLeg` | **1.1** | 17.8 | 49.1 |
+| `RightUpLeg` | **14.0** | 20.7 | 46.0 |
+
+Only the single closest vertex differs. **The check read the MINIMUM** — the most noise-sensitive
+statistic available, where one vertex that happens to land near one torso vertex sets the answer.
+It now reads the **p10** of the near region, which says the same thing about a real displacement
+(Spartan Mark V: 11.6 against 39.8) without being hostage to one vertex. On p10 Scott Hall reads
+2.9 mm at 1.2×, and so does Yui Suzukaze, the other finding that evaporated — her minima were
+22.2 against 7.4 and her p10s are 37.1 against 27.4.
+
+**Changing the statistic changed WHICH characters were named, not just how many**, and that is
+worth more than either list. On minima the sweep found Scott Hall, Vegeta and Yui Suzukaze. On the
+p10 it found **Vegeta and Peacemaker** — Scott Hall and Yui dropped out, and Peacemaker appeared,
+whose two minima are *identical* at 8.4 mm while his p10s are 10.5 against 32.1. A finding set that
+reshuffles under a change of summary statistic is a weak signal being read as a strong one, and the
+only entry that survived every version is the one real fault.
+
+**And a vertex count is not enough to say two limbs are the same object.** Vegeta has upper arms of
+**818 and 827 vertices** — within 5%, so the count gate passed them — that differ by **45.2 mm in
+their own frames**. Every limb he has differs in frame, by 4.9 to 45.2 mm, and so does every limb
+Kronk has. Both are hand-modelled characters whose meshes were never mirrored. The check now
+declines a pair that differs by more than 10 mm in frame whatever its counts say, because that is
+the question of whether the two limbs are the same object at all and it has to be answered before
+any comparison between them is worth making.
+
+**The same two corrections went into the patcher**, and they matter more there. Its guard was
+measuring minima, so on `RightUpLeg` it would have read Scott Hall at 1.1 against 14.0, accepted
+him, and moved a leg that was already attached. It now refuses him in those words — *"moving a bone
+that is already attached would detach it"* — and refuses Kronk and Sayuri for want of comparable
+flesh, while still accepting Spartan Mark V's pre-fix backup and reproducing his shipped file byte
+for byte.
+
+**What this cost and what it bought.**
+
+| version | measures | found |
+|---|---|---|
+| 1 | local offsets, `.L`/`.R` names, flat 2 mm | **39 of 65** — mostly fingers and IK targets |
+| 2 | local offsets, humanoid limbs | **9** — every one the case a rolled shared parent corrupts |
+| 3 | the join, on MINIMA | **3** — Scott Hall, Vegeta, Yui Suzukaze |
+| 4 | the join, on a p10 | **2** — Vegeta and Peacemaker; Scott Hall and Yui gone |
+| 5 | the join, p10 + in-frame gate | **1** — Peacemaker |
+
+Every version was plausible, every version printed confident millimetres to one decimal place, and
+the only thing that separated them was going and measuring the characters they named. Spartan Mark
+V's leg is the one fault any of them found, and it was found by version 2 — whose arithmetic was
+wrong, and which named him for a number that meant nothing.
+
+**One candidate is left and is NOT examined: Peacemaker's right leg**, p10 10.5 mm against 32.1 at
+3.1×. His two minima are *identical* at 8.4 mm, so his leg touches the body at a point and is
+generally further from it — which is the shape of a limb ROTATED in its socket rather than
+translated out of it, and a different thing from Spartan Mark V's fault. He also already appears
+in this file for a leg that reads 27.9° off vertical. Nobody has looked.
+
+
 ### Sophia's shine, 2026-11-15: not her defect, the pipeline's default
 
 Reported as shiny, and explicitly not the Thanos fault — there is no glossiness map to invert
@@ -2037,7 +2106,7 @@ falls out of that is by *characters fixed per change made* rather than by severi
 | 5 | no bound visemes | 52 of 65 | mostly blocked on a source file that does not exist |
 | 6 | Jessica Rabbit is 3.7% too tall | 1 character | cosmetic |
 | — | floating prop setting the height | **0 of 65** | **CLOSED** — item 2 below |
-| — | bent or asymmetric limbs | **0 new** | ~~**CLOSED**~~ — **NOT closed, as of 2026-11-15.** Every flag was explained, and the sweep could only ever flag a limb that is BENT. Spartan Mark V's right leg sat 25 mm out of its socket with its knee and ankle angles matching his left to four decimals, so it was never a candidate. `limb_socket_check_installed.py` measures whether a limb JOINS the body and finds **3 limbs out of socket across 65** — Scott Hall's right leg (1.1 mm against 14.0), Vegeta's right arm (5.0 against 27.7) and Yui Suzukaze's left arm (7.4 against 22.2), all unexamined. See "Spartan Mark V's right leg, 2026-11-15" and the correction under it |
+| — | bent or asymmetric limbs | **0 new** | ~~**CLOSED**~~ — **NOT closed, as of 2026-11-15.** Every flag was explained, and the sweep could only ever flag a limb that is BENT. Spartan Mark V's right leg sat 25 mm out of its socket with its knee and ankle angles matching his left to four decimals, so it was never a candidate. `limb_socket_check_installed.py` measures whether a limb JOINS the body. It took two more corrections after that — a minimum is not a robust statistic, and a vertex count does not establish that two limbs are the same object — and now finds **1 across 65**: Peacemaker's right leg, p10 10.5 mm against 32.1, unexamined. See "Spartan Mark V's right leg, 2026-11-15" and the correction under it |
 | — | missing animation / finger mapping | **0 new** | **CLOSED** — same |
 
 The reasoning behind each is in `docs/character-models.md`; what follows is the older list,
@@ -2368,8 +2437,11 @@ right.
   bone's whole subtree down to the next mapped humanoid bone, so a Character Creator `*_Twist`
   bone counts as part of its limb; the torso reference is the mapped spine chain ONLY, because
   expanding that to its subtree pulled in Spartan's `pelvis.R` and closed his 29.7 mm gap to 5.4.
-  **3 limbs out of socket across 65**, all unexamined: Scott Hall's right leg, Vegeta's right arm,
-  Yui Suzukaze's left arm
+  **1 limb out of socket across 65**, unexamined: Peacemaker's right leg. It reads a p10 of
+  the near region and NOT the minimum, which one vertex can set — that reported Scott
+  Hall at 1.1 against 14.0 while his two distributions agree to 3 mm — and it declines a
+  pair that differs by more than 10 mm IN ITS OWN FRAME whatever its counts say, because
+  Vegeta's upper arms are 818 and 827 vertices and 45.2 mm apart in frame
 - `patch_mirror.py <yargchar> <bone> [--out X] [--dry-run]` — moves a displaced bone onto the
   mirror of its partner, in all FOUR structures that hold its offset: the `Transform`, the
   Avatar's `m_AvatarSkeletonPose` and `m_DefaultPose` (both nested under a `data` key — read one
