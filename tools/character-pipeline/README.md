@@ -636,8 +636,9 @@ show in the counts. *(An earlier reading here called her geometry asymmetric,
 from the extents rather than the counts. Wrong -- the extents were moving
 because the geometry was displaced, not because it differed.)*
 
-So the fix direction is known for her legs: **her LEFT leg chain is the one in
-the wrong place, and it goes up by 92.4 mm.** Her right is correct.
+~~So the fix direction is known for her legs: her LEFT leg chain is the one in
+the wrong place, and it goes up by 92.4 mm.~~ **WRONG, and corrected below.
+Her legs are innocent; the fix is one bone's ORIENTATION.**
 
 **Her arms stay open.** Right arm 29.0 mm higher and 74.1 mm further back than
 left, with symmetric shoulder bones -- so the displacement is below the
@@ -646,9 +647,74 @@ right. Her hands' geometry differs by 33.6 mm, and for comparison Jinx's
 differs by 14.8 mm on a rig whose bones are symmetric to 0.1 mm, so some
 hand-geometry asymmetry is normal and authored.
 
-**Still not fixed.** Moving a leg chain means moving bones and letting the
-geometry follow, which is a different operation from `patch_bone_aim`'s
-rotation and wants its own tool and its own control.
+#### Her legs are innocent. Her HIPS bone is rolled 25.7 degrees
+
+Going to move the left leg, the first thing to check was its local offset
+against its mirror. They are the same bone, mirrored:
+
+```
+thigh.L local (-0.10646030 -0.02430527 +0.03878002)
+thigh.R local (+0.10646027 -0.02430554 +0.03877869)
+```
+
+Mirrored to **seven decimal places** in x, and identical in y and z to within
+1.3 micrometres. Both hang off the same parent, `spine`, which is her humanoid
+**Hips**, at the same scale. Mirrored offsets under a shared parent cannot
+produce different world heights -- unless the parent's orientation maps them
+there. It does:
+
+```
+thigh.L local -> through the parent's rotation -> world (-0.0461 +0.9200 -0.1996)
+                                        actual world (-0.0461 +0.9200 -0.1996)
+thigh.R local -> through the parent's rotation -> world (+0.1457 +1.0123 -0.1966)
+                                        actual world (+0.1457 +1.0123 -0.1966)
+agreement 0.0000 mm on both
+```
+
+The two local offsets differ by `(+0.21292057, -0.00000027, -0.00000133)`.
+After her Hips' rotation they differ by `(+0.1918, +0.0924, +0.0030)`. **The
+92.4 mm is produced entirely by the parent's orientation**, and the arithmetic
+closes to zero.
+
+The number that says it plainly: **her Hips' local X axis points
+`(+0.9009, +0.4339, +0.0142)` in world.** Its sideways axis is tilted
+**25.7 degrees out of horizontal**, so a mirrored +-106 mm offset along it
+becomes +-46 mm of height -- one leg up, one leg down.
+
+One rolled bone accounts for all of it: the 92.4 mm leg difference, the
+-86.5 mm half-body step, her arms' 29.0 mm and 74.1 mm, and
+`patch_body_yaw.py` refusing her because her hip and shoulder lines disagree.
+**Nothing is wrong with any limb.** The earlier plan in this section -- lift
+the left leg 92.4 mm -- would have broken a pair mirrored to seven decimals in
+order to compensate for its parent, and left the arms and the half-body step
+untouched.
+
+#### And a bundle patch will not fix it
+
+`YargFootProbe` reports each leg bone's world height at instantiate and after
+`Rebind()` + `Update()`:
+
+| bone | Jessica before | after | Jinx before | after |
+|---|---|---|---|---|
+| LeftUpperLeg | 0.9200 | 0.9071 | 0.9787 | 0.9601 |
+| RightUpperLeg | 1.0123 | 0.9920 | 0.9787 | 0.9562 |
+| **foot height difference** | **92.4 mm** | **94.05 mm** | 0.0 mm | **1.75 mm** |
+
+Two things, and the control supplies both. **The Animator does NOT preserve
+positions** -- it re-poses every bone by 2 to 45 mm from the Avatar, on both
+characters. And **the fault survives it**: 92.4 mm becomes 94.05 mm. Jinx,
+symmetric in her bundle, comes out at 1.75 mm, which is the Animator's own
+asymmetry and the noise floor for this measurement.
+
+So the rest pose in the bundle is not what the game draws, and the four-
+structure rest-pose patch is the one Master Chief already proved gets discarded
+for a MAPPED humanoid bone -- and Hips is as mapped as a bone gets. **This
+needs a build-time correction to her Hips orientation and a rebuild**, not a
+patch. Her source carries the same roll, so a rebuild from her recipe as it
+stands reproduces it; that is why all four of her snapshots agree.
+
+**Not attempted.** The builder already corrects FACING (yaw); this is ROLL, and
+whether the same machinery can be pointed at it is unexamined.
 
 ### The Mandalorian is two half-skeletons, 2026-11-16
 
