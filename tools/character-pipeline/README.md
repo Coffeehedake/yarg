@@ -3740,6 +3740,13 @@ right.
   the game. Alastor is the control, the one character of 65 built with the switch on: run against
   him it reports "already flat, nothing to do" on all three materials, which is the patcher and
   the exporter agreeing. `--smoothness S` writes S instead of 0 if matte looks dead
+- `YargFootProbe.cs` (scratch Unity project) — does the Animator PRESERVE a humanoid bone's
+  position? It does not: every leg bone is re-posed by 2 to 45 mm on `Rebind()` + `Update()`, on
+  a correct character as much as a broken one, so **the rest pose in the bundle is not what the
+  game draws**. What matters is whether a FAULT survives it. Jessica's 92.4 mm foot-height
+  difference becomes 94.05 mm; Jinx, symmetric in her bundle, lands at **1.75 mm**, which is the
+  Animator's own asymmetry and the noise floor. Run a symmetric character alongside or the
+  re-posing reads as the finding
 - `pair_offset_check_installed.py <dir|yargchar...>` — left/right asymmetry needing **no
   centreline and no mirror assumption**. A pair's X cannot be compared without knowing where the
   middle is, and on Jessica Rabbit the middle is what would not be established; `dy` and `dz` need
