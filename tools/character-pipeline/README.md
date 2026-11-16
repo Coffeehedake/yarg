@@ -510,6 +510,7 @@ not rebuilt, so the other installed builds are unaffected.
 | Sophia | shiny | **FIXED 2026-11-15, and it was never her defect.** One material, URP/Lit, one base map and nothing else — no normal map, no metallic/gloss map, because her RenderPeople source ships diffuse only. `_Smoothness` 0.50 with specular highlights and sky reflections on is **URP/Lit's own default**, and **63 of the 65 installed characters sit there; 27 of those have no normal or gloss map either**, so the specular is completely uniform. Ruled out by measurement: her albedo is not blown (12.7% above 0.80 luminance against Gwen Stacy's 79.1%), her base map is sRGB like all 57, and she has no emission. She is simply the character on whom a plastic specular over photoscanned skin shows. `YARG_NO_SHINE_MATERIALS` was already the project's answer to this for Alastor. Applied to her alone and put to Jay as a question, since an appearance change across a third of the roster is his call; he said **"yes, all 26"**, so the other 26 were flattened too — **132 materials across 26 characters**, each hash-backed up and verified five ways. See "Sophia's shine, 2026-11-15" |
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
+| Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
 
 ### Two colliders was never enough, and nothing counted
@@ -1160,6 +1161,82 @@ things say this is not a threshold tuned until the complaints stopped.
 
 64 of the 65 report "every limb joins the body"; the one that does not has too little torso flesh
 to measure a join against and says so.
+
+
+### Miku's necktie, 2026-11-15: modelled for physics that never came across
+
+Seen in game and reported as sticking straight out. It is not ours, and it predates everything
+done to her today — the first two things measured were both checks on that claim rather than on
+the tie.
+
+**It is not today's work.** `Miku.nosprings.yargchar`, the backup taken before this morning's
+twintail change, has the tie region identical to the shipped file: same bones, same vertex counts,
+same world boxes to the millimetre, and the character's whole z profile at chest height matching
+decile for decile.
+
+**It is not ours at all.** Her source `Miku.fbx` has the same chain at **69.1° and 72.4° off
+vertical**, against the 71° measured in the bundle. That is the same story the per-model table
+already records for her hair — *"splayed outward in the ORIGINAL download, not by us"*. She is an
+MMD-style rig (`Bip01` biped plus generic `BoneNN`) whose tie was meant to be settled by rigid-body
+physics, and a VRM export carries none.
+
+**What it is.** `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03`:
+
+| bone | world position |
+|---|---|
+| `Bone01` | (0, 1.2498, **+0.1178**) |
+| `Bone02` | (0, 1.2034, **+0.2391**) |
+| `Bone03` | (0, 1.1612, **+0.3724**) |
+
+89 mm of drop for 255 mm of reach, and the geometry runs out to **z +0.545** — half a metre of
+necktie standing out in front of a chest whose surface is at about z +0.08.
+
+**The fix is a rotation, not a rebuild.** Rotating `Bone01` carries `Bone02`, `Bone03` and all 20
+of their vertices as a rigid unit, so the tie swings to where it should hang and its geometry is
+untouched. `patch_bone_aim.py` computes the MINIMAL rotation taking the bone's current direction
+to the target, which leaves its roll alone, and writes it to the four structures that hold a
+bone's rest transform.
+
+**Straight down is wrong, and measuring said so.** Aimed at (0, −1, 0) the tie reads z 0.115..0.140
+over y 0.800..1.210 while her body front over that band reaches z +0.167: **14 of its 20 vertices
+end up behind the body surface**. Her chest is in the way, which is exactly what a necktie rests
+on. Swept over forward leans:
+
+| lean from vertical | tie z range | vertices behind the body |
+|---|---|---|
+| 0° | +0.115..+0.140 | **14 of 20** |
+| 10° | +0.123..+0.217 | 4 |
+| 15° | +0.126..+0.255 | 4 |
+| 20° | +0.130..+0.292 | 4 |
+| 30° | +0.136..+0.361 | 4 |
+
+The 4 that never clear are the **knot**, the top four vertices at y 1.209–1.211 sitting 22 mm
+inside the collar — where a knot belongs, and where they already were, since the root is the pivot
+and does not move. Everything below hangs clear from 10° on: y 1.15 at z 0.143 against a body
+front of 0.128, y 0.96 at z 0.207 against 0.150, and the tip free at y 0.82.
+
+**15° was chosen** over the 10° minimum for margin in motion: she is animated, and a tie that
+clears by 15 mm standing still is a tie that clips when she leans. Beyond 20° it stops reading as
+hanging and starts reading as blowing.
+
+**`verify_rebuild.py` cannot see this change, and that is worth knowing.** It reports CULL-ONLY —
+no bone moved — because it compares each bone's rotation MAGNITUDE, `2·acos(|w|)`, and both the old
+quaternion (0.000000, −0.506897, +0.862007, 0.000001) and the new one (0.000000, +0.071175,
++0.997464, 0.000001) have w = 0 and therefore both read as 180°. **It is blind to a rotation about
+a different axis through the same angle.** The assurance for this patch comes from the fingerprint
+instead: every object's full typetree compared before and after, **2 of 249 changed** — the
+`Transform` and the `Avatar` — with 0 gone and 0 added, and `bundle_audit` identical at 6 clips /
+1 controller / 42 humanoid / 22 fingers / 1 mesh.
+
+**And the tool checks its own work**, as `patch_mirror.py` learned to: after writing, it re-reads
+the patched bytes, re-measures the direction, and refuses to write unless it has landed within a
+degree of the target. It reports **0.00° off**.
+
+**What is still wrong with her.** Her twintails are splayed in the source too and are left alone —
+the README already records that and the hairrig that tried to fix it sheared the ribbons apart.
+And this morning's twintail springs drive very little: none of the bones that actually carry her
+twintails (`Bone06`–`Bone13`) is on a spring chain at all, so that fix is doing less than was
+claimed for it. That is a separate thing to answer for.
 
 
 ### Sophia's shine, 2026-11-15: not her defect, the pipeline's default
@@ -2530,6 +2607,17 @@ right.
   -1. It also declines a pair differing by more than 10 mm IN ITS OWN FRAME whatever its
   vertex counts say, because Vegeta's upper arms are 818 and 827 vertices and 45.2 mm apart
   in frame. The decision lives in ONE function, `decide()`, shared with `patch_mirror.py`
+- `patch_bone_aim.py <yargchar> <bone> [--aim x,y,z] [--out X] [--dry-run]` — re-aims a
+  bone chain so a dangling part HANGS, for geometry modelled sticking out because the author
+  expected physics to settle it. Rotating the bone carries its children and all their flesh
+  as a rigid unit, so the part swings and its geometry is untouched. The rotation applied is
+  the MINIMAL one taking the bone's current direction to the target, so its roll is left
+  alone, and it goes to the same four structures as a bone's position. Default aim is
+  straight down, which is often wrong: Miku's tie aimed at (0,-1,0) puts 14 of its 20
+  vertices inside her chest, so it took 15° of forward lean. After writing it re-reads
+  the bytes, re-measures the direction and refuses unless it landed within a degree —
+  which matters here because `verify_rebuild.py` is BLIND to this edit: it compares rotation
+  MAGNITUDE, and both of Miku's quaternions have w = 0, so both read as 180°
 - `patch_mirror.py <yargchar> <bone> [--out X] [--dry-run]` — moves a displaced bone onto the
   mirror of its partner, in all FOUR structures that hold its offset: the `Transform`, the
   Avatar's `m_AvatarSkeletonPose` and `m_DefaultPose` (both nested under a `data` key — read one
