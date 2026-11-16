@@ -603,16 +603,52 @@ All seven are flagged here, with the limb named and the displacement in
 millimetres, and the split above says which of them are turns after all
 (Alastor) and which are genuinely displaced (the rest).
 
-#### What is NOT established, and must be before anything is changed
+#### SETTLED: it is not a pose. Her left foot is 92 mm under the floor
 
-**Whether her raised leg was AUTHORED.** A leg 92 mm up is also what a glamour
-pose looks like, and this file has twice recorded reading a deliberate choice
-as a defect. Two things argue against a pose and neither is conclusive: her
-legs are straight vertical columns -- hip, knee and foot share one x, and `dz`
-is 3 mm -- and a posed leg bends; and her shoulder bones are symmetric, which
-a whole-body pose would not leave. **Settle it by looking at her before
-touching anything.** Her reported fault was her dress, and the dress weighting
-is fixed; nobody has reported her leg.
+The pose question was the one thing that mattered, since this file has twice
+recorded reading a deliberate choice as a defect. It is answered by asking the
+floor. The lowest skinned vertex on each side:
+
+```
+LeftToes    1037 verts   lowest y  -0.0917
+RightToes   1040 verts   lowest y  +0.0007
+```
+
+And the control, on three characters whose bones are symmetric to 0.1 mm:
+
+| character | left foot lowest | right foot lowest | difference |
+|---|---|---|---|
+| Spartan Mark V | -0.0240 | -0.0240 | **0.0 mm** |
+| Power Girl | -0.0115 | -0.0115 | **0.0 mm** |
+| Jinx | -0.0003 | -0.0003 | **0.0 mm** |
+| **Jessica Rabbit** | **-0.0917** | **+0.0007** | **92.4 mm** |
+
+A correct character puts both feet at the identical height with the lowest
+vertex at y ~ 0, so **y = 0 is the floor**. Jessica's right foot is at +0.0007,
+exactly where Jinx's is. Her **left foot is 92 mm below the floor** -- she is
+buried to the ankle on one side. No authored pose does that.
+
+Her mesh is also symmetric in topology, which is the other half of the answer:
+LeftFoot 1733 against RightFoot 1738, LeftToes 1037 against 1040, LowerLeg 676
+against 677, LowerArm 1113 against 1114, Hand 445 against 449. A symmetric mesh
+whose right half is translated is a displacement; an authored asymmetry would
+show in the counts. *(An earlier reading here called her geometry asymmetric,
+from the extents rather than the counts. Wrong -- the extents were moving
+because the geometry was displaced, not because it differed.)*
+
+So the fix direction is known for her legs: **her LEFT leg chain is the one in
+the wrong place, and it goes up by 92.4 mm.** Her right is correct.
+
+**Her arms stay open.** Right arm 29.0 mm higher and 74.1 mm further back than
+left, with symmetric shoulder bones -- so the displacement is below the
+shoulder, but there is no floor for an arm and nothing yet says which side is
+right. Her hands' geometry differs by 33.6 mm, and for comparison Jinx's
+differs by 14.8 mm on a rig whose bones are symmetric to 0.1 mm, so some
+hand-geometry asymmetry is normal and authored.
+
+**Still not fixed.** Moving a leg chain means moving bones and letting the
+geometry follow, which is a different operation from `patch_bone_aim`'s
+rotation and wants its own tool and its own control.
 
 ### The Mandalorian is two half-skeletons, 2026-11-16
 
