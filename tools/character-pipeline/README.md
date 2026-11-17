@@ -20,13 +20,24 @@ first; this file is only how to *run* it.
 The runlist further down is the full history. This is only what is OPEN, so a
 session picking this up does not have to reconstruct it.
 
-**Blocking everything visual: the podium render is broken for every
-character.** Run against Jinx and Prix together it logs `VRMCharacter init
-skipped: NullReferenceException` for both and writes two **identical
-12,477-byte blank frames**. A known-good character renders exactly as blank as
-a broken one, so this is the shot path, not any subject. Until it is fixed
-there is no way to look at anything, which is the project's own stated
-standard for accepting a change.
+**The podium render is FIXED, 2026-11-16: drop `-nographics`.** It had been
+writing **identical 12,477-byte blank frames** for every character, good and
+broken alike. The cause was not the shot code and not the subject: with
+`-nographics` Unity has no graphics device, so `cam.Render()` draws nothing
+and `ReadPixels` hands back the clear colour — a uniform grey frame that
+looks like a render of an empty scene. Run as `-batchmode` WITHOUT
+`-nographics` the same command writes a real 171,663-byte shot.
+
+The `VRMCharacter init skipped: NullReferenceException` logged alongside it is
+a RED HERRING: it is caught, the code continues, and it appears on characters
+that render perfectly.
+
+This is the project's own standard for accepting a change, and it had been
+unavailable. **Every Unity call in these notes that RENDERS must omit
+`-nographics`**; the ones that only load, measure or export should keep it,
+since it is faster and opens no window. Hide the window with
+`Win32_ProcessStartup.ShowWindow = 0` either way — the WMI launch is still
+needed for the job-object breakaway.
 
 | open | state |
 |---|---|
