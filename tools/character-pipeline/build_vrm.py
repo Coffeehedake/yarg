@@ -4848,6 +4848,63 @@ if _votes:
         print("  sides: all %d limb pairs are on the side their names claim"
               % len(_votes))
 
+# ------------------------------------------------------------------ centring
+# A character should straddle its own root, and some do not. Prix rebuilt from
+# her GLB stood 63.5 mm to one side: every humanoid left/right pair centred
+# near -0.06 rather than 0, so she stood that far off the middle of the
+# podium. The bundle she replaced was centred to 0.0 mm, so this was a
+# regression introduced by the rebuild and not something she always had.
+#
+# It is a consequence of VRM_GLTF_BIND_POSE=node, which is the flag that puts
+# her hair on her head: it uses the AUTHORED rest pose rather than the
+# symmetric one the inverse bind matrices describe, and an authored pose is
+# under no obligation to be centred.
+#
+# The measurement needs no centreline and no mirror assumption -- it is the
+# midpoint of the pairs the AVATAR itself calls left and right, the same
+# quantity `half_body_check_installed.py` reports. And the correction is a
+# RIGID TRANSLATION of bones and meshes together, so it cannot deform
+# anything: it moves where she stands, not what she is.
+#
+# Only X. Y is her height off the floor and Z is how far forward she faces,
+# and both are set deliberately elsewhere.
+_CENTRE_MM = float(os.environ.get("VRM_CENTRE_MM", "5"))
+if not os.environ.get("VRM_NO_CENTRE"):
+    _cpairs = [("left_upper_leg", "right_upper_leg"),
+               ("left_lower_leg", "right_lower_leg"),
+               ("left_foot", "right_foot"),
+               ("left_upper_arm", "right_upper_arm"),
+               ("left_hand", "right_hand")]
+    _mids = []
+    for _la, _ra in _cpairs:
+        _lb, _rb = MAP.get(_la), MAP.get(_ra)
+        if _lb in bone_names and _rb in bone_names:
+            _lp = arm.matrix_world @ arm.data.bones[_lb].head_local
+            _rp = arm.matrix_world @ arm.data.bones[_rb].head_local
+            _mids.append((_lp.x + _rp.x) / 2.0)
+    if _mids:
+        _off = sum(_mids) / len(_mids)
+        _spread = (max(_mids) - min(_mids)) * 1000.0
+        if abs(_off) * 1000.0 >= _CENTRE_MM:
+            print("  centring: the humanoid pairs centre %+.1f mm off X=0 "
+                  "(spread %.1f mm across %d pair(s)) -- translating the rig "
+                  "and its meshes to put her on her own root"
+                  % (_off * 1000.0, _spread, len(_mids)))
+            _rotate_rig(Matrix.Translation(Vector((-_off, 0.0, 0.0))))
+            _after = []
+            for _la, _ra in _cpairs:
+                _lb, _rb = MAP.get(_la), MAP.get(_ra)
+                if _lb in bone_names and _rb in bone_names:
+                    _lp = arm.matrix_world @ arm.data.bones[_lb].head_local
+                    _rp = arm.matrix_world @ arm.data.bones[_rb].head_local
+                    _after.append((_lp.x + _rp.x) / 2.0)
+            print("  centring: now %+.2f mm off X=0"
+                  % (sum(_after) / len(_after) * 1000.0))
+        else:
+            print("  centring: the humanoid pairs already centre %+.1f mm "
+                  "off X=0, within the %.0f mm threshold"
+                  % (_off * 1000.0, _CENTRE_MM))
+
 # Weight on a bone the EXPORTER will not write is weight on nothing, and it
 # fails in exactly the same way as the orphan bones below -- except that the
 # bone is a perfectly good parent in Blender right up to the moment it is
