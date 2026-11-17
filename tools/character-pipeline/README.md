@@ -41,10 +41,10 @@ needed for the job-object breakaway.
 
 | open | state |
 |---|---|
-| **Prix** | **REBUILT AND INSTALLED 2026-11-16.** She had no source until Jay supplied `prix.glb`; she now has one and a recipe. Hair **372.6 x 465.6 x 423.3 mm** from a 14 x 22 x 13 mm pellet at her ankles, with three working physics chains; eyebrows back as their own MASK mesh; hair BLEND, textured and near-black; centred to **6.6 mm** from 63.5. **Left open:** her two `BreastSpring` chains (5 chains -> 3; her source has no chest bones, so `patch_add_springs.py` must put them back), a **31.9 mm arm depth asymmetry** that is her authored pose and would need deforming to square, and whether `eyes1` alone gives her the blue irises of her source render — which needs a render |
-| **The Mandalorian** | Two half-skeletons 37.2 mm apart; every lower pair at −18.5 mm and every upper at +18.7 mm. Diagnosed, not fixed. A fix means moving bones while compensating bind poses, which wants its own tool |
+| ~~**Prix**~~ | **DONE 2026-11-16.** All four reported faults closed, three confirmed by eye on the podium; chest chains restored (5c/15j). What remains is a **31.9 mm arm depth asymmetry** that is her authored pose and hair that reads auburn under the podium light — neither reported, neither a fault |
+| **The Mandalorian** | **RE-DIAGNOSED 2026-11-16 and the old diagnosis was WRONG.** Not two half-skeletons: a smooth **3.3° spine lean**, 37.2 mm from feet to head, INHERITED from his source. His armour is coherent with itself — helmet and chest plate agree on one plane to 0.6 mm. Squaring him means straightening his spine, which is a deformation, and his Mixamo rig is not on this machine. **Jay's call** |
 | **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. **DECIDED: leave her** — do not re-open |
-| **Kronk** | +30.9 mm half-body step, vertical legs: the same class as The Mandalorian. Never investigated |
+| **Kronk** | **NOT a half-body step** — `plumb_check_installed.py` reads a **57.0 mm LEAN** spread over his spine, the same non-finding as The Mandalorian and for the same reason. Never reported by anyone |
 | **Aiko** | 29.95° off; a rebuild squares her but puts her hair over her face. Nothing installed |
 | **Limb capsules** | Every character built before 2026-11-15 still carries MEDIAN limb capsules. `patch_springs.py --limbs` re-radiuses them to p90 and now also clears the joint SPHERE; not swept |
 | **Arbiter** | 13 handoffs open and never pulled |
@@ -583,7 +583,7 @@ a wall in any Markdown viewer. The rows themselves were always fine.
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
 | Miku | twintails only move where they were repaired; the tie could be sprung too | ~~FIXED 2026-11-15 (evening)~~ — **RE-REPORTED UNCHANGED, FIXED AGAIN 2026-11-16.** Two faults. (1) `patch_add_springs.py` set each new joint's `m_GameObject` and never added it to that GameObject's `m_Component`, so **21 of 29 joints were orphans** — and both the tool's own read-back and the Unity load test missed it because they follow the Springs array's pointers, the one direction the patch had written. (2) `Bone06` and its mirror, **158 vertices** and a third of the twintails, were left rigid on an unmeasured assumption; the project's own `_trim_anchor` rule clears them (0.133 m against 0.774 m for the rest of the chain), so they are now sprung. **462 of 462 twintail vertices are on a chain**, against 304 and 38. **VERIFIED IN THE SPRING RUNTIME** with `YargSpringProbe.cs`: every twintail bone now peaks between 143 and 422 mm under a linear shake, the two sides within 10%, where `Bone07` and `Bone11` read **0.001 mm** yesterday. The necktie swings 161 and 359 mm. **The orphans were NOT the cause** — yesterday's build peaks at 706 mm with all 21 orphaned, because Unity attaches them at instantiate; what was rigid was the TOP (the crown plus the two chain-root pivots, ~187 vertices), which is exactly what "only the middle" described. See "Miku's twintails, 2026-11-16". Original note follows: Both right. Her two `HairSpring_*` chains run on eight bones an earlier hair-rigger run INVENTED, which dominate **38** vertices; her own twintail bones `Bone06`..`Bone15` and their `(mirrored)` twins dominate **462** and were on no chain, as were the three tie bones. Nothing found it because every rigger here selects by bone NAME and her rig has no bone whose name contains hair, tail, bang or tie — while `HairSpring_1_0` does. `patch_add_springs.py` put 7 new chains on her own bones: **324 vertices now move against 38**. `Bone06` stays rigid on purpose (it is the bun, 158 vertices, at the crown). The tie chain is given NO collider group — all three of its bones start 44.4/30.5/7.4 mm INSIDE the torso capsule, and attaching it would have thrown the knot forward and undone that morning's re-aim. See "Miku's twintails and necktie, 2026-11-15 (evening)" |
-| The Mandalorian | armour is not centred on his chest | **MEASURED 2026-11-16, cause found, not fixed.** It is not the armour: his skeleton is **two half-skeletons 37.2 mm apart**. Every lower pair (hips, knees, feet) centres at -18.5 mm and every upper pair (shoulders, elbows, hands) at +18.7 mm, to a tenth of a millimetre, with no gradient between them, while his limb segments are near perfect (arms 0.2453/0.2456 vs 0.2453/0.2457). His source glTF has two collapsed skeletons and he was re-rigged through Mixamo, which is where a step like that comes from. Nothing shows at rest — raw and skinned vertices agree to four decimals — so the bones are simply in the wrong place INSIDE the geometry, and his chest pivots about an axis 18.7 mm off the centreline his legs define. The Animator is NOT the mechanism: Spartan Mark V, square in his own bundle, also goes 0.00/0.00 to 4.56/-7.96 after `Rebind()`, so that shift is the controller's, not his. Fixing it means moving bones while compensating their bind poses so the rest pose does not move, and that needs his mesh's true centreline first. See "The Mandalorian is two half-skeletons, 2026-11-16". Original note follows: **reported 2026-11-16, not yet measured.** Two existing measurements probably bear on it and should be read before anything is rebuilt. His body-yaw lines **disagree** (+2.50 deg mean, spread **11.10**), which `body_yaw_check_installed.py` reads as a displaced part rather than a turned body — he is one of seven on that list. And the edge-length ratio sweep puts his worst stretched edge at **234 mm**, the largest on the roster by a wide margin (Peacemaker's is 27 mm). His source is a glTF whose **both skeletons are collapsed**, so he was re-rigged through Mixamo; a chest plate that is a separate island riding one bone, or weighted to a bone the re-rig moved, would produce exactly this. Check first whether the armour is its own mesh/island and which bones dominate it — if it is one rigid island on one bone, this is the Joker's-pistol and Judy's-belt shape, not a weighting fault |
+| The Mandalorian | armour is not centred on his chest | **RE-MEASURED 2026-11-16 and the first answer was WRONG — see "The Mandalorian is NOT two half-skeletons".** He has no step: his spine LEANS 37.2 mm from feet to head, about 3.3°, every gap 4.5–11.2 mm, and `plumb_check_installed.py` reads 0.0 at all eleven heights for the Spartan control. The lean is INHERITED — 25 islands matched between `Mando_for_mixamo.fbx` and the bundle fit a line to 2.06 mm median residual and the chest plate's residual is +4.6 mm, so our pipeline moved nothing. His armour is coherent with itself: helmet plane −8.6 mm, chest plate plane −8.0 mm, two independent fits agreeing to 0.6 mm. A fix means straightening his spine (a deformation, and `VRM_STANDUP`'s 25° gate exists so it does NOT fire for 3.3°) and it cannot be patched into the bundle because every spine bone is a mapped humanoid bone — and his Mixamo rig is not on this machine. Put to Jay. ~~Original diagnosis follows and is superseded:~~ It is not the armour: his skeleton is **two half-skeletons 37.2 mm apart**. Every lower pair (hips, knees, feet) centres at -18.5 mm and every upper pair (shoulders, elbows, hands) at +18.7 mm, to a tenth of a millimetre, with no gradient between them, while his limb segments are near perfect (arms 0.2453/0.2456 vs 0.2453/0.2457). His source glTF has two collapsed skeletons and he was re-rigged through Mixamo, which is where a step like that comes from. Nothing shows at rest — raw and skinned vertices agree to four decimals — so the bones are simply in the wrong place INSIDE the geometry, and his chest pivots about an axis 18.7 mm off the centreline his legs define. The Animator is NOT the mechanism: Spartan Mark V, square in his own bundle, also goes 0.00/0.00 to 4.56/-7.96 after `Rebind()`, so that shift is the controller's, not his. Fixing it means moving bones while compensating their bind poses so the rest pose does not move, and that needs his mesh's true centreline first. See "The Mandalorian is two half-skeletons, 2026-11-16". Original note follows: **reported 2026-11-16, not yet measured.** Two existing measurements probably bear on it and should be read before anything is rebuilt. His body-yaw lines **disagree** (+2.50 deg mean, spread **11.10**), which `body_yaw_check_installed.py` reads as a displaced part rather than a turned body — he is one of seven on that list. And the edge-length ratio sweep puts his worst stretched edge at **234 mm**, the largest on the roster by a wide margin (Peacemaker's is 27 mm). His source is a glTF whose **both skeletons are collapsed**, so he was re-rigged through Mixamo; a chest plate that is a separate island riding one bone, or weighted to a bone the re-rig moved, would produce exactly this. Check first whether the armour is its own mesh/island and which bones dominate it — if it is one rigid island on one bone, this is the Joker's-pistol and Judy's-belt shape, not a weighting fault |
 | Prix | no hair, no pupils, eyelashes have no alpha — "a mess, she needs a lot of work" | **REBUILT AND INSTALLED 2026-11-16**, md5 `8ee48d5`, backup `Prix.prerebuild-2026-11-16.yargchar` (sha256 `0124c722d881`). She had **no source** until Jay supplied `prix.glb`; she now has one and a recipe. **HAIR FIXED:** 10,741 verts go from a 14 x 22 x 13 mm pellet at her ankles to **372.6 x 465.6 x 423.3 mm** spanning her crown to her chest, with three driven physics chains, BLEND, textured, and near-black (0.0782, 0.0182, 0.0182) instead of white. **EYEBROWS FIXED:** back as their own 834-vert MASK mesh instead of merged into the body. **LENS:** excluded — its map is 100% clear in the source, so it was never meant to draw, which retires the 2026-11-12 alpha-0.08 hand-fix. **Centred** to 6.6 mm from 63.5. One import defect explained all of it: every node scale was dropped (`hairAll` 22.085905 -> 1.0). **STILL OPEN:** her two `BreastSpring` chains (5 -> 3; her source has no chest bones, so `patch_add_springs.py` must restore them), a 31.9 mm arm depth asymmetry that is her authored pose, and whether `eyes1` alone gives her the blue irises of her source render — **not established, needs a render**. See "Prix: her hair is at her ankles" |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
 
@@ -1423,7 +1423,113 @@ recorded so the next reader does not have to redo them, not as a work item.
 If her leg is ever reported, the thing to reach for is a corrected bind pose
 in the SOURCE, not any of the three operations ruled out above.
 
-### The Mandalorian is two half-skeletons, 2026-11-16
+### The Mandalorian is NOT two half-skeletons -- CORRECTED 2026-11-16
+
+**Everything in the section below this one is wrong, and so is the check that
+produced it.** He has no step. His spine LEANS, 37.2 mm from feet to head,
+about 3.3 degrees, and it is inherited from his source. The measurements are
+kept because the correction is only legible beside them.
+
+#### What the old check could not see
+
+`half_body_check_installed.py` reported "-18.5 mm for hips, knees and feet,
++18.7 mm for shoulders, elbows and hands, to a tenth of a millimetre, with no
+gradient between them". The agreement is real and it is worthless: **its six
+pairs are the legs and the arms, and nothing in it lies between them.** On a
+standing figure the three leg pairs inherit the hip bone's X rigidly; on a
+T-posed figure the three arm pairs inherit the shoulder's. Six numbers which
+are two numbers, measured three times each. "No gradient between them" was
+written off a check with no sample between them.
+
+`plumb_check_installed.py` walks the SPINE and prints X at every height:
+
+```
+    height   what                       x (mm) vs the one below
+    0.0871   pair   Foot                 -18.5
+    0.9766   pair   UpperLeg             -18.5         -0.0
+    1.0330   spine  Hips                 -14.0         +4.5
+    1.1332   spine  Spine                 -5.3         +8.8
+    1.2518   spine  Chest                  1.3         +6.5
+    1.3877   spine  UpperChest             7.5         +6.2
+    1.4543   pair   Hand                  18.7        +11.2
+    1.4543   pair   UpperArm              18.7         -0.1
+    1.5193   pair   Shoulder              12.7         -6.0
+    1.5408   spine  Neck                  13.7         +1.0
+    1.5686   spine  Head                  16.7         +3.0
+    range 37.2 mm over 11 bones; largest single gap 11.2 mm -- A LEAN
+```
+
+Every gap is 4.5 to 11.2 mm and the largest is 30% of the range. **Spartan
+Mark V reads 0.0 at all eleven heights**, so the instrument returns a true
+zero. **Kronk is the same and worse: 57.0 mm, also spread** -- so two of the
+three characters this file called "two halves" are not that, and the third
+(Jessica Rabbit) should be re-read before anyone acts on her.
+
+#### The reported fault is real, and it is this lean
+
+Reported as his armour not being centred on his chest. It is not the armour:
+on the podium render his pauldron midpoint and his knee-plate midpoint are
+about 35 mm apart, which is the lean, measured in the picture. **His armour is
+coherent with itself.** Fitted independently, the helmet shell's own plane of
+symmetry is **-8.6 mm** and the chest plate's is **-8.0 mm** -- two separate
+pieces, two separate fits, agreeing to 0.6 mm. Nothing is skewed inside him;
+his whole upper body stands to his right of his hips.
+
+The plate's BOX centre is +22.9 mm against that plane, which looks like a
+contradiction and is not: his chest plate genuinely extends further on one
+side than the other, and a box centre measures the extent while the fit
+measures the symmetry. Reading the box alone would have produced a confident
+"the plate is 23 mm off" and sent the fix to the wrong place.
+
+#### It is inherited, and that was measured rather than assumed
+
+The source mesh (`Mando_for_mixamo.fbx`) and the shipped bundle contain the
+same connected islands -- the vertex counts match one for one. Matching the 25
+whose count is unique in both and fitting a robust line through source centre
+against bundle centre gives **median |residual| 2.06 mm**, and the chest
+plate's residual is **+4.6 mm**: ordinary. Our pipeline moved nothing. (The
+two large residuals, +375 and -337 mm, are the forearm armour, which the
+T-pose step moves on purpose.)
+
+#### Why a whole-body mirror fit cannot help here
+
+`mesh_mirror_installed.py` fits a plane to the SURFACE, sampled by area rather
+than at the vertices. On Spartan Mark V every one of his six meshes reads
+**x = +0.00 mm with a 0.75 mm residual**, and lets the plane turn as well as
+slide he reads **-0.00 degrees**. On The Mandalorian no mesh gets below 5.5 mm
+and the curves barely climb: he wears a cape over one shoulder, a bandolier
+across his chest and a holster on one thigh, and **no plane mirrors him**.
+That is a fact about the character, not a failure of the tool, and it is why
+the answer had to come from individual armour pieces instead.
+
+The first version of that tool ran on VERTICES and was useless for the same
+question in a different way -- Spartan read 0.00 mm because his mesh is
+mirrored vertex for vertex, and Mando read 23 mm on a curve flat to within
+1 mm over +-5 mm, which is a low-poly mesh being measured with a ruler made of
+its own edge length. Sampling the surface puts the floor where the tool
+chooses it rather than where the tessellation does.
+
+#### What a fix would cost, and why it was not made
+
+Straightening him means rotating each bone of the spine chain so the chain
+runs vertical. That is a deformation of the torso -- the class of operation
+this file ruled out for Jessica Rabbit on the same day -- and it reaches a
+3.3 degree lean that the artist put there. `VRM_STANDUP` already does exactly
+this operation and **its gate is 25 degrees of spine tilt**, so it does not
+fire for him and should not: it exists for characters that are falling over.
+
+It also cannot be patched into the bundle. Every bone in that chain is a
+MAPPED humanoid bone, and a rest-pose patch of one of those is discarded by
+the Animator (Master Chief, four structures written, byte-identical result).
+So it needs a rebuild -- and **his Mixamo-rigged FBX is not on this machine**.
+Downloads holds `Mando_for_mixamo.fbx`, the input, and four `T-Pose*.fbx` that
+all predate it. Rebuilding him means re-uploading to Mixamo and re-rolling the
+whole rig, which changes everything else about him to correct 3.3 degrees that
+his source already had.
+
+**Put to Jay 2026-11-16 with those numbers.**
+
+### SUPERSEDED: the old "two half-skeletons" write-up, 2026-11-16
 
 Reported as his armour not being centred on his chest. It is not the armour.
 
@@ -1474,6 +1580,13 @@ Read without Spartan, his 9.25 / -14.24 would have been written up as the
 Animator wrecking him.
 
 #### Three characters, and two that only look like them
+
+**Two of the three are now known not to be.** The Mandalorian and Kronk both
+read as LEANS once anything is sampled between the legs and the arms; see the
+corrected section above. Jessica Rabbit has not been re-read with
+`plumb_check_installed.py` and her -86.5 mm should not be acted on until she
+has been.
+
 
 | character | step | legs | reading |
 |---|---|---|---|
@@ -4480,12 +4593,39 @@ right.
   against the other is the only anchor here that cannot itself be wrong. **This is not
   `mirror_check_installed.py`**, which was deleted for negating X on local offsets. It reports each
   pair's separation, each pair's centre, and the segment lengths down each limb, because a limb
-  SCALING fault shows in the lengths and a step does not. Found The Mandalorian's **37.2 mm step**
-  between two half-skeletons, with every lower pair at -18.5 mm and every upper at +18.7 mm to a
-  tenth of a millimetre. **Read both spreads, not the step alone:** legs whose pairs separate
+  SCALING fault shows in the lengths and a step does not. **It CANNOT tell a step from a lean, and
+  its three-decimal agreement is not evidence that it can.** Its six pairs are the legs and the
+  arms: on a standing figure the leg pairs inherit the hip bone's X rigidly and on a T-posed one
+  the arm pairs inherit the shoulder's, so the six numbers are two numbers measured three times
+  each, with nothing sampled in between. It called The Mandalorian a 37.2 mm step between two
+  half-skeletons and he has no step at all — run `plumb_check_installed.py` on anything this
+  flags, BEFORE acting on it. **Read both spreads, not the step alone:** legs whose pairs separate
   identically at hip, knee and foot are vertical and unposed, and only then has an offset upper
   half nowhere to come from but the rig — Alcina's legs splay 188 mm, so she is posed and her
   26 mm means something else. `HALF_STEP` moves the 8 mm threshold
+- `islands_installed.py <yargchar> [min-verts]` — splits each skinned mesh into CONNECTED
+  islands and gives each one its world box, its box centre in X, the bone that drives most of it
+  and that bone's own X. This is what finds a part a report names when the part has no mesh of its
+  own: The Mandalorian's chest plate is a 280-vertex island inside `Object_0`, and his helmet's two
+  ears are 190 and 190. **The box centre is not a centreline** — that plate's box reads +22.9 mm
+  and its own plane of symmetry is −8.0 mm, because it extends further on one side than the other.
+  Find the island here, then ask `mesh_mirror_installed.py` where it is centred
+- `plumb_check_installed.py <dir|yargchar...>` — every humanoid bone's X against its HEIGHT,
+  walking the spine, with the limb roots beside it. A lean comes out as a gradient and a step as a
+  step, and it prints the largest single gap beside the total range so the two can be told apart
+  rather than asserted. Written because `half_body_check_installed.py` cannot see the difference
+  and this file published a 37.2 mm "step" that is a 3.3 degree lean. **Spartan Mark V reads 0.0
+  at all eleven heights** — run him alongside anything new. `PLUMB_MM` moves the 5 mm threshold
+- `mesh_mirror_installed.py <yargchar...> [--control] [--yaw]` — where the GEOMETRY's own
+  centreline is, fitted with no bone, no axis convention and no left/right labelling: the plane
+  the SURFACE is most nearly symmetric about, scored by the median nearest-neighbour distance of
+  the reflected cloud. It samples each triangle by area rather than using the vertices, because a
+  vertex-to-vertex distance has a floor set by the tessellation and that floor is what the first
+  version actually measured. `--yaw` lets the plane turn as well as slide, so a character standing
+  a few degrees off axis is measured instead of being mistaken for an asymmetric one. **Read the
+  residual and the climb, never the optimum alone** — Spartan Mark V reads +0.00 mm on all six of
+  his meshes with a 0.75 mm residual, while The Mandalorian gets no mesh below 5.5 mm on curves
+  that barely climb, because a cape, a bandolier and a holster mean no plane mirrors him
 - `part_bones_installed.py <yargchar> [name-regex]` — what drives each mesh, and where that mesh
   ends up. Per skinned mesh: the bones that dominate it and by how much, the world box and
   centroid of the SKINNED result, and for each top bone the centroid of the flesh it dominates
