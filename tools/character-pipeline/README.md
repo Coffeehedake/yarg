@@ -1007,10 +1007,11 @@ From the top of her head down to her chest, 372 x 466 x 423 mm, against the
 PHYSICS chains now exist and are driven — `backHair_00`, `LefthairA_00`,
 `RefthairA_00`, 11 joints — so it moves.
 
-**THE REGRESSION, and it is not small.** The rebuild is **63.5 mm off-centre**
-and carries **31.9 mm** of left/right depth asymmetry in the arms, where the
-bundle it replaced was **perfectly centred and symmetric** — `pair_offset`
-worst 0.0 mm, no half-body step at a 1 mm threshold:
+**THE REGRESSION — CENTRING FIXED 2026-11-16, asymmetry still open.** The
+first rebuild was **63.5 mm off-centre** and carried **31.9 mm** of
+left/right depth asymmetry in the arms, where the bundle it replaced was
+**perfectly centred and symmetric** — `pair_offset` worst 0.0 mm, no
+half-body step at a 1 mm threshold:
 
 | | old bundle | rebuilt |
 |---|---|---|
@@ -1022,6 +1023,30 @@ The cause is `VRM_GLTF_BIND_POSE=node` itself. It is what puts the hair on her
 head, and it does that by using her AUTHORED rest pose instead of the
 symmetric one her inverse bind matrices describe — and her authored pose is
 neither centred nor symmetric. The two cannot both be had from that one flag.
+
+**The centring half is fixed by a new builder step** that translates the rig
+and its meshes onto the character's own root, measured as the midpoint of the
+pairs the Avatar itself calls left and right. Rebuilt, re-exported
+(7,566,950 bytes, `failures=0`), load-tested — identical to the bundle it
+replaces on every count, 11 renderers / 8 materials / 130 bones / 11 skinned
+meshes / 3 chains / 11 joints, 0 failed — and installed, md5 `8ee48d5...`,
+over the same backup.
+
+| | first rebuild | **installed now** |
+|---|---|---|
+| hip-pair centre | -63.5 mm | **-6.6 mm** |
+| shoulder-pair centre | -49.9 mm | **+7.0 mm** |
+| arm depth asymmetry | 31.9 mm | 31.9 mm — **unchanged** |
+| height | 1.700 m | 1.700 m |
+| hair | 372.6 x 465.6 x 423.3 mm | unchanged |
+
+The residual +-7 mm is her LEAN: the step centres the mean of the pairs and
+her halves still disagree by 11.4 mm, so neither half can sit at exactly
+zero. **And the 31.9 mm arm asymmetry is untouched on purpose** — a pure X
+translation cannot change a depth difference, and a step that appeared to fix
+one would be doing something other than translating. It is her authored pose,
+and squaring it is a deformation, which is a different decision from moving
+where she stands.
 
 **She also loses her two `BreastSpring` chains**, 5 chains to 3. The rigger
 refuses them honestly: *"breast spring chains added: 0 (no weighted chest
