@@ -1,0 +1,204 @@
+# Straighten a character's spine in the build INTERMEDIATE, and bake it.
+#
+#   blender --background --python straighten_spine.py -- <in.vrm> <out.vrm>
+#       --hips n29 --chain n30,n31,n32,n36 --head n37 [--keep n39,n66,n90,n95]
+#       [--control] [--no-bake]
+#
+# The Mandalorian's spine leans 3.3 degrees: hips -14.0 mm, head +16.7 mm in
+# the shipped bundle (signs negated in Blender). It cannot be corrected in the
+# bundle -- a rest-pose edit on a MAPPED humanoid bone is discarded by the
+# Animator, measured on Spartan Mark V and settled -- so it has to happen
+# upstream of the Unity export, which is here.
+#
+# WHAT IT DOES, joint by joint rather than in one rotation. Each spine joint is
+# posed so the segment to its chain-child points straight up, iterated, because
+# rotating a parent moves every child below the one being aimed. The HIPS are
+# deliberately not rotated: their other children are the legs, and turning the
+# hips takes the legs with them and leaves the step where it was, only
+# redistributed. That is also why VRM_STANDUP cannot reach this fault -- it
+# rotates the WHOLE rig.
+#
+# Anything hanging off a rotated bone RIDES the correction. The arms hang off
+# the top of the chain, so a T-posed character comes out with both arms tilted
+# by the same angle -- tens of millimetres at the hand, a bigger error than the
+# one being fixed. The legs hang off the hips, so including the hips joint in
+# the chain tilts them too. `--keep` names the bones whose original ORIENTATION
+# is restored afterwards while they keep the new POSITION their parent gives
+# them: the limb is carried along but not turned.
+#
+# Including the hips is what makes this worth doing. Straightening from the
+# spine up leaves the hips->spine segment, which is the steepest joint in the
+# chain -- 8.76 mm over 100 mm, 5 degrees -- and takes the total from 37.2 mm
+# only to 24.4. With the hips in, and the two leg roots in `--keep`, the whole
+# figure comes plumb.
+#
+# THE MESH IS BAKED, which is the whole difficulty. Posing an armature does not
+# change a mesh's rest shape, and applying the pose as the rest pose without
+# baking throws the deformation away -- the character springs back and the run
+# still reports success. So each mesh has its Armature modifier APPLIED, which
+# writes the deformed shape into the mesh; the modifier is re-added; and only
+# then is the pose applied as the new rest pose. These meshes carry no shape
+# keys, which is what makes that legal, and the script refuses if any appear.
+#
+# `--no-bake` is the OTHER meaning of "straighten", and which one is wanted is
+# a question about the character rather than about the words. Baking rotates
+# the BODY with the bones, so it is right when the body leans. Not baking
+# applies the pose as the new rest pose with the mesh left exactly where it
+# was, so the BONES move inside a body that does not -- right when the body is
+# already plumb and the skeleton is leaning inside it. On The Mandalorian the
+# evidence is split: his limb geometry is centred on its bones to a millimetre
+# or two, while his chest plate sits 9 mm and his helmet 25 mm to one side of
+# the bones that carry them. So both are built and both are rendered, because
+# the measurement does not settle it and a picture can.
+#
+# `--control` does the whole round trip with a ZERO correction. Its output must
+# measure the same as the shipped bundle; if it does not, nothing measured on
+# the corrected build can be attributed to the correction rather than to the
+# trip through Blender. On The Mandalorian it measured IDENTICALLY -- every
+# bone to 0.1 mm, the mesh extents to four decimals -- which is what made the
+# rest of the comparison readable.
+#
+# MEASURED 2026-11-17, and the two senses gave opposite answers:
+#
+#   build      skeleton spread   chest plate plane   helmet plane
+#   shipped        37.2 mm            -8.0 mm           -8.6 mm
+#   --control      37.2 mm            -8.0 mm           -9.6 mm
+#   baked           5.9 mm           -24.3 mm          -58.6 mm
+#   --no-bake       5.9 mm            -7.7 mm           -8.8 mm
+#
+# Baking took the skeleton plumb and threw his HELMET 50 mm to one side,
+# visibly, because his body was already plumb and only the bones leaned inside
+# it. `--no-bake` took the same skeleton plumb and left both armour planes
+# where they were, to within 0.3 mm. For HIM, `--no-bake` is the answer; for a
+# character whose body genuinely leans it would be exactly the wrong one, so
+# this tool does not choose.
+import math
+import sys
+
+import bpy
+from mathutils import Vector
+
+argv = sys.argv[sys.argv.index("--") + 1:]
+SRC, DST = argv[0], argv[1]
+
+
+def opt(name, default=None):
+    return argv[argv.index(name) + 1] if name in argv else default
+
+
+HIPS = opt("--hips")
+CHAIN = [b for b in (opt("--chain") or "").split(",") if b]
+HEAD = opt("--head")
+KEEP = [b for b in (opt("--keep") or "").split(",") if b]
+CONTROL = "--control" in argv
+NOBAKE = "--no-bake" in argv
+
+bpy.ops.wm.read_homefile(use_empty=True)
+bpy.ops.import_scene.vrm(filepath=SRC)
+arm = next(o for o in bpy.data.objects if o.type == "ARMATURE")
+meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+for o in meshes:
+    if o.data.shape_keys:
+        raise SystemExit("ABORT: %s carries shape keys; applying the armature "
+                         "modifier would discard them" % o.name)
+for n in [HIPS, HEAD] + CHAIN + KEEP:
+    if n not in arm.data.bones:
+        raise SystemExit("ABORT: no bone %r in this armature" % n)
+
+# Everything below works in ARMATURE space, so the object's own transform
+# never has to be reasoned about; "up" is carried into that space once.
+UP = (arm.matrix_world.to_3x3().inverted() @ Vector((0.0, 0.0, 1.0)))
+UP.normalize()
+
+
+def head_of(name):
+    return arm.pose.bones[name].matrix.translation.copy()
+
+
+def report(tag):
+    hips, head = head_of(HIPS), head_of(HEAD)
+    d = head - hips
+    off = (math.degrees(math.acos(max(-1.0, min(1.0, d.normalized().dot(UP)))))
+           if d.length > 1e-9 else 0.0)
+    print("%s: head is %+.2f mm sideways of the hips, %.2f deg off vertical"
+          % (tag, (d - d.dot(UP) * UP).length * 1000
+             * (1.0 if (d - d.dot(UP) * UP).x >= 0 else -1.0), off))
+    for n in [HIPS] + CHAIN + [HEAD]:
+        p = head_of(n)
+        print("    %-6s x %+8.2f mm   height %8.4f" % (n, p.x * 1000, p.z))
+
+
+report("BEFORE")
+
+if CONTROL:
+    print("CONTROL RUN: the round trip only, no correction applied")
+else:
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="POSE")
+    pre = {n: arm.pose.bones[n].matrix.to_3x3().copy() for n in KEEP}
+    order = CHAIN + [HEAD]
+    for sweep in range(10):
+        worst = 0.0
+        for i, n in enumerate(CHAIN):
+            v = head_of(order[i + 1]) - head_of(n)
+            if v.length < 1e-9:
+                continue
+            worst = max(worst, math.degrees(math.acos(
+                max(-1.0, min(1.0, v.normalized().dot(UP))))))
+            q = v.normalized().rotation_difference(UP)
+            pb = arm.pose.bones[n]
+            # Rotate this bone about its OWN head: the translation is what
+            # pins it to the parent and must survive the rotation untouched.
+            h = pb.matrix.translation.copy()
+            m = q.to_matrix().to_4x4() @ pb.matrix
+            m.translation = h
+            pb.matrix = m
+            bpy.context.view_layer.update()
+        print("  sweep %d: worst joint was %.3f deg off vertical"
+              % (sweep, worst))
+        if worst < 0.02:
+            break
+    for n in KEEP:
+        pb = arm.pose.bones[n]
+        h = pb.matrix.translation.copy()
+        m = pre[n].to_4x4()
+        m.translation = h
+        pb.matrix = m
+        bpy.context.view_layer.update()
+        print("  %s kept its original orientation at its new position"
+              % n)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.update()
+    report("POSED, not yet baked")
+
+    if NOBAKE:
+        print("  NOT baking: the pose becomes the new rest pose and the meshes "
+              "stay exactly where they are, so the BONES move inside the body")
+    else:
+        for o in meshes:
+            bpy.context.view_layer.objects.active = o
+            n_before = len(o.data.vertices)
+            for m in list(o.modifiers):
+                if m.type == "ARMATURE":
+                    bpy.ops.object.modifier_apply(modifier=m.name)
+            if len(o.data.vertices) != n_before:
+                raise SystemExit("ABORT: %s changed vertex count in the bake"
+                                 % o.name)
+            mod = o.modifiers.new(name="Armature", type="ARMATURE")
+            mod.object = arm
+            print("  baked %s (%d verts)" % (o.name, n_before))
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="POSE")
+    bpy.ops.pose.armature_apply()
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.update()
+
+report("AFTER")
+
+bpy.ops.object.select_all(action="DESELECT")
+arm.select_set(True)
+for m in meshes:
+    m.select_set(True)
+bpy.context.view_layer.objects.active = arm
+res = bpy.ops.export_scene.vrm(filepath=DST)
+print("export_scene.vrm returned: %s" % (res,))

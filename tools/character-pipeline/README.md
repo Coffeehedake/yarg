@@ -42,7 +42,7 @@ needed for the job-object breakaway.
 | open | state |
 |---|---|
 | ~~**Prix**~~ | **DONE 2026-11-16.** All four reported faults closed, three confirmed by eye on the podium; chest chains restored (5c/15j). What remains is a **31.9 mm arm depth asymmetry** that is her authored pose and hair that reads auburn under the podium light — neither reported, neither a fault |
-| **The Mandalorian** | **RE-DIAGNOSED 2026-11-16 and the old diagnosis was WRONG.** Not two half-skeletons: a smooth **3.3° spine lean**, 37.2 mm from feet to head, INHERITED from his source. His armour is coherent with itself — helmet and chest plate agree on one plane to 0.6 mm. Squaring him means straightening his spine, which is a deformation, and his Mixamo rig is not on this machine. **Jay's call** |
+| **The Mandalorian** | **STRAIGHTENED 2026-11-17, built but NOT INSTALLED — it does not show.** Skeleton 37.2 → **5.9 mm** with the geometry untouched (`straighten_spine.py --no-bake`), control round trip identical, but the animated podium render is indistinguishable from the current build. The other sense of straighten — baking the body with the bones — throws his helmet **50 mm** off, because his body was already plumb. Builds kept in `character-backups/mando-straighten-2026-11-17/`. **Jay's call whether to install.** Earlier: **RE-DIAGNOSED 2026-11-16 and the old diagnosis was WRONG.** Not two half-skeletons: a smooth **3.3° spine lean**, 37.2 mm from feet to head, INHERITED from his source. His armour is coherent with itself — helmet and chest plate agree on one plane to 0.6 mm. Squaring him means straightening his spine, which is a deformation, and his Mixamo rig is not on this machine. **Jay's call** |
 | **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. **DECIDED: leave her** — do not re-open |
 | **Kronk** | **NOT a half-body step** — `plumb_check_installed.py` reads a **57.0 mm LEAN** spread over his spine, the same non-finding as The Mandalorian and for the same reason. Never reported by anyone |
 | **Aiko** | 29.95° off; a rebuild squares her but puts her hair over her face. Nothing installed |
@@ -1527,7 +1527,66 @@ all predate it. Rebuilding him means re-uploading to Mixamo and re-rolling the
 whole rig, which changes everything else about him to correct 3.3 degrees that
 his source already had.
 
-**Put to Jay 2026-11-16 with those numbers.**
+**Put to Jay 2026-11-16 with those numbers, and he said try it.**
+
+#### Tried, 2026-11-17: it works on the skeleton and does not show
+
+Straightening was attempted and it is BUILT, not fixed, because the result
+does not justify replacing a working character without Jay saying so.
+
+**A rebuild turned out to be available after all.** `Mandalorian.vrm` is in
+`%USERPROFILE%\Documents\YARG-Characters` -- the build intermediate, same 150
+bones with the same names (`n29`..`n185`) at the same heights, X negated as
+Blender/VRM always is against Unity. So no Mixamo round trip was needed; the
+correction goes into the VRM and back out through `YargCharExporter`. The
+earlier note that his rig was not on this machine was looking for the Mixamo
+FBX and should have looked for the intermediate.
+
+`straighten_spine.py` (new) poses the spine joint by joint onto vertical,
+iterated, and `--keep` restores the arms' and legs' original ORIENTATION at
+their new positions so the limbs ride the correction without tilting. The
+hips joint has to be IN the chain -- it is the steepest, 8.76 mm over 100 mm --
+and leaving it out gets 37.2 mm only to 24.4.
+
+**Three builds, because `--control` is what makes the other two readable:**
+
+| build | skeleton spread | chest plate plane | helmet plane |
+|---|---|---|---|
+| the shipped bundle | 37.2 mm | -8.0 mm | -8.6 mm |
+| `--control` (round trip, no correction) | **37.2 mm** | **-8.0 mm** | -9.6 mm |
+| baked (body straightened with the bones) | **5.9 mm** | -24.3 mm | **-58.6 mm** |
+| `--no-bake` (bones moved inside the body) | **5.9 mm** | **-7.7 mm** | **-8.8 mm** |
+
+The control measures the shipped bundle **identically** -- every bone to
+0.1 mm, mesh extents equal to four decimals (-0.0590..+1.8294) -- so the trip
+through Blender costs nothing and the differences below are the correction.
+
+**Baking is the WRONG operation for him and the numbers say why.** It takes
+the skeleton plumb and throws his HELMET 50 mm to one side, visibly, in the
+rest render. That is because his body is ALREADY plumb and only the bones lean
+inside it: his limb geometry is centred on its bones to a millimetre or two,
+while his chest plate sits 9 mm and his helmet 25 mm to one side of the bones
+that carry them. Rotating the body with the bones therefore tips a body that
+was straight.
+
+**`--no-bake` is correct and invisible.** Same plumb skeleton, geometry
+untouched by construction and measured so, rest render indistinguishable from
+the current one, and his two foot bones come level as a bonus (0.0972/0.0770
+to 0.0875/0.0867). It also costs nothing: no spring chains exist on him to
+lose (the shipped bundle has none, despite the cape note in his recipe).
+
+**But it does not show.** Rendered on the podium in the ANIMATED pose -- what
+the game draws -- the current build, the `--no-bake` build and even the baked
+build are indistinguishable. And `YargYawProbe` moves barely at all: hips
+5.28 to 4.88 degrees, shoulders -5.82 to -5.87, against Spartan's 0.00
+control. That probe reads a TWIST and the fault is a sideways lean, so it was
+the wrong instrument and says only that nothing got worse.
+
+**NOT INSTALLED.** The builds are kept in
+`character-backups/mando-straighten-2026-11-17/` with both comparison sheets.
+`MandoSKEL.yargchar` is the one to install if Jay wants it; it needs
+re-exporting under the name `The Mandalorian` first, since the bundle carries
+the name it was exported with.
 
 ### SUPERSEDED: the old "two half-skeletons" write-up, 2026-11-16
 
@@ -4603,6 +4662,17 @@ right.
   identically at hip, knee and foot are vertical and unposed, and only then has an offset upper
   half nowhere to come from but the rig — Alcina's legs splay 188 mm, so she is posed and her
   26 mm means something else. `HALF_STEP` moves the 8 mm threshold
+- `straighten_spine.py` (Blender) — takes a lean out of a character's spine in the build
+  INTERMEDIATE, where it can still be done: a rest-pose edit on a MAPPED humanoid bone is
+  discarded by the Animator, so a bundle patch cannot. It poses each spine joint onto vertical,
+  iterated, and `--keep` restores named limb roots to their original ORIENTATION at their new
+  positions so arms and legs ride the correction without tilting. **`--control` runs the whole
+  round trip with a ZERO correction** and its output must measure the same as the shipped bundle,
+  or nothing measured on a corrected build means anything. **`--no-bake` is the other sense of
+  the word and the choice is the whole decision:** baking rotates the BODY with the bones (right
+  when the body leans), not baking moves the BONES inside a body that stays put (right when the
+  body is plumb and the skeleton leans inside it). On The Mandalorian baking threw his helmet
+  50 mm off and `--no-bake` left both armour planes within 0.3 mm
 - `islands_installed.py <yargchar> [min-verts]` — splits each skinned mesh into CONNECTED
   islands and gives each one its world box, its box centre in X, the bone that drives most of it
   and that bone's own X. This is what finds a part a report names when the part has no mesh of its
