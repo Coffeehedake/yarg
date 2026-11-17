@@ -15,7 +15,7 @@ first; this file is only how to *run* it.
 > measurements taken while she was installed, and those say **66** on purpose. A count of 66 is a
 > statement about when it was measured, not a stale 65; anything measured after that date says 65.
 
-## Where it stands, 2026-11-16
+## Where it stands, 2026-11-17
 
 The runlist further down is the full history. This is only what is OPEN, so a
 session picking this up does not have to reconstruct it.
@@ -42,12 +42,36 @@ needed for the job-object breakaway.
 | open | state |
 |---|---|
 | ~~**Prix**~~ | **DONE 2026-11-16.** All four reported faults closed, three confirmed by eye on the podium; chest chains restored (5c/15j). What remains is a **31.9 mm arm depth asymmetry** that is her authored pose and hair that reads auburn under the podium light — neither reported, neither a fault |
-| ~~**The Mandalorian**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Skeleton 37.2 → **6.0 mm** read back off the installed file with Spartan at 0.0 as the control, armour planes unmoved (−8.00→−7.70, −8.60→−8.80), load test identical, renders indistinguishable. It does not SHOW — the fault was the rig, not the look — and the baked variant that would have shown throws his helmet 50 mm off. Earlier: **built but not installed.** Skeleton 37.2 → **5.9 mm** with the geometry untouched (`straighten_spine.py --no-bake`), control round trip identical, but the animated podium render is indistinguishable from the current build. The other sense of straighten — baking the body with the bones — throws his helmet **50 mm** off, because his body was already plumb. Builds kept in `character-backups/mando-straighten-2026-11-17/`. **Jay's call whether to install.** Earlier: **RE-DIAGNOSED 2026-11-16 and the old diagnosis was WRONG.** Not two half-skeletons: a smooth **3.3° spine lean**, 37.2 mm from feet to head, INHERITED from his source. His armour is coherent with itself — helmet and chest plate agree on one plane to 0.6 mm. Squaring him means straightening his spine, which is a deformation, and his Mixamo rig is not on this machine. **Jay's call** |
+| ~~**The Mandalorian**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Reported as armour off-centre; it was a **3.3° spine lean**, not the "two half-skeletons" this file first recorded, and the lean was inherited. Skeleton **37.2 → 6.0 mm** read back off the installed file with Spartan at 0.0 as the control, geometry untouched (armour planes −8.00→−7.70, −8.60→−8.80), load test identical, renders indistinguishable. It does not SHOW — the fault was the rig, not the look. Baking the body with the bones, the other sense of "straighten", throws his helmet 50 mm off; that build is kept beside the installed one in `character-backups/mando-straighten-2026-11-17/` |
 | **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. **DECIDED: leave her** — do not re-open |
 | ~~**Kronk**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Not a half-body step: a **57.0 mm lean**, and unlike The Mandalorian his GEOMETRY leans with it (37.2 mm of it), because his source is `Kronk_Doing_the_Hokey_Pokey.usdz` and the T-pose step squares the limbs but never touches the spine. Rebuilt from source, straightened BAKED and re-centred: skeleton **57.0 → 13.4 mm**, geometry **37.2 → 9.6 mm**, and the podium render is visibly straighter. Never reported by anyone |
 | **Aiko** | 29.95° off; a rebuild squares her but puts her hair over her face. Nothing installed |
 | ~~**Limb capsules**~~ | **DONE — SWEPT AND INSTALLED 2026-11-17**, and the scope was far smaller than this line implied: of 65 bundles **35 have no spring chains at all**, so their capsules are inert, and 9 more were already right. **194 resizes across 21 characters**, median +11.7 mm; **20 installed, Alcina held** because p90 on her legs is her gown. Still run: 0 worse, 1 better (Inforder Trogen 33.15 → 8.34 mm), 20 unchanged. Load test identical on every pair. (That run measures instantiate-pose to settled-pose, NOT ejection — see "Miku's 1748 mm") |
+| **Alcina Dimitrescu** | **HELD out of the limb sweep on purpose**, not a regression: p90 on her legs is her GOWN (thigh 0.111 → 0.207, shin 0.091 → 0.199), and for her the median is the closer approximation of a leg. Her still run is 0.10 mm either way, so nothing is lost. Re-open only with a flesh-only percentile |
+| **Hatsune Miku (Retry Now ver.)** | **283 mm** between her instantiate pose and her settled pose, on a hair joint — the one still-run outlier not yet rendered. Miku's own 1748 mm turned out to be her springs working, so this is a QUESTION, not a finding: render her with `-rebind 0` and normally and compare. Not reported by anyone |
 | **Arbiter** | 13 handoffs open and never pulled |
+
+**Settled on 2026-11-17**, each with its own section below. Two characters
+STRAIGHTENED and installed, and they are the two halves of one lesson: The
+Mandalorian's bones leaned inside a plumb body, so his correction must NOT bake
+the mesh; Kronk's body leans with his bones, so his must. The wrong choice on
+Mando throws his helmet 50 mm off, and `straighten_spine.py` therefore refuses
+to choose. The **limb-capsule sweep** closed at 194 resizes across 20
+characters, with 35 of the 65 turning out to have no spring chains at all and
+Alcina held on purpose.
+
+**Four instruments were wrong and all four are fixed**, which is most of what
+the day actually cost:
+
+* `half_body_check_installed.py` cannot tell a step from a lean, and had
+  reported one on two characters who have neither — `plumb_check_installed.py`
+  is the replacement;
+* `patch_springs.py` reported a MISSING FILE as "has no spring chains";
+* `YargSpringProbe -still` blew a 14 m/s wind while printing that any
+  displacement was a collider ejecting a joint;
+* and that same still run does not measure ejection at all — it measures
+  instantiate-pose to settled-pose, which is why Miku's 1748 mm is her springs
+  working rather than a fault.
 
 **Settled on 2026-11-16**, each with its own section below: the clearance
 guard cleared a joint's CENTRE rather than its sphere, in two separate copies
