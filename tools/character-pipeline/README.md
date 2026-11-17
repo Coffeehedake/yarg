@@ -42,7 +42,7 @@ needed for the job-object breakaway.
 | open | state |
 |---|---|
 | ~~**Prix**~~ | **DONE 2026-11-16.** All four reported faults closed, three confirmed by eye on the podium; chest chains restored (5c/15j). What remains is a **31.9 mm arm depth asymmetry** that is her authored pose and hair that reads auburn under the podium light — neither reported, neither a fault |
-| **The Mandalorian** | **STRAIGHTENED 2026-11-17, built but NOT INSTALLED — it does not show.** Skeleton 37.2 → **5.9 mm** with the geometry untouched (`straighten_spine.py --no-bake`), control round trip identical, but the animated podium render is indistinguishable from the current build. The other sense of straighten — baking the body with the bones — throws his helmet **50 mm** off, because his body was already plumb. Builds kept in `character-backups/mando-straighten-2026-11-17/`. **Jay's call whether to install.** Earlier: **RE-DIAGNOSED 2026-11-16 and the old diagnosis was WRONG.** Not two half-skeletons: a smooth **3.3° spine lean**, 37.2 mm from feet to head, INHERITED from his source. His armour is coherent with itself — helmet and chest plate agree on one plane to 0.6 mm. Squaring him means straightening his spine, which is a deformation, and his Mixamo rig is not on this machine. **Jay's call** |
+| ~~**The Mandalorian**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Skeleton 37.2 → **6.0 mm** read back off the installed file with Spartan at 0.0 as the control, armour planes unmoved (−8.00→−7.70, −8.60→−8.80), load test identical, renders indistinguishable. It does not SHOW — the fault was the rig, not the look — and the baked variant that would have shown throws his helmet 50 mm off. Earlier: **built but not installed.** Skeleton 37.2 → **5.9 mm** with the geometry untouched (`straighten_spine.py --no-bake`), control round trip identical, but the animated podium render is indistinguishable from the current build. The other sense of straighten — baking the body with the bones — throws his helmet **50 mm** off, because his body was already plumb. Builds kept in `character-backups/mando-straighten-2026-11-17/`. **Jay's call whether to install.** Earlier: **RE-DIAGNOSED 2026-11-16 and the old diagnosis was WRONG.** Not two half-skeletons: a smooth **3.3° spine lean**, 37.2 mm from feet to head, INHERITED from his source. His armour is coherent with itself — helmet and chest plate agree on one plane to 0.6 mm. Squaring him means straightening his spine, which is a deformation, and his Mixamo rig is not on this machine. **Jay's call** |
 | **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. **DECIDED: leave her** — do not re-open |
 | **Kronk** | **NOT a half-body step** — `plumb_check_installed.py` reads a **57.0 mm LEAN** spread over his spine, the same non-finding as The Mandalorian and for the same reason. Never reported by anyone |
 | **Aiko** | 29.95° off; a rebuild squares her but puts her hair over her face. Nothing installed |
@@ -1590,11 +1590,51 @@ build are indistinguishable. And `YargYawProbe` moves barely at all: hips
 control. That probe reads a TWIST and the fault is a sideways lean, so it was
 the wrong instrument and says only that nothing got worse.
 
-**NOT INSTALLED.** The builds are kept in
-`character-backups/mando-straighten-2026-11-17/` with both comparison sheets.
-`MandoSKEL.yargchar` is the one to install if Jay wants it; it needs
-re-exporting under the name `The Mandalorian` first, since the bundle carries
-the name it was exported with.
+#### INSTALLED 2026-11-17, on Jay's call
+
+Re-exported from `MandoSKEL.vrm` under the name `The Mandalorian`, load-tested
+and installed as **10,056,662 bytes, sha256 `b04cdeb907a3`**, backup
+`The Mandalorian.prestraighten-2026-11-17.yargchar` (sha256 `93e23bcb18e6`,
+10,046,538 bytes). The `--no-bake` build is the one that went in; the baked one
+is kept beside it in `character-backups/mando-straighten-2026-11-17/` as the
+record of what the other reading of "straighten" does.
+
+Read back off the installed file, with Spartan Mark V in the same run:
+
+```
+The Mandalorian                          Spartan Mark V (control)
+  Foot        -13.6                        Foot        -0.0
+  UpperLeg    -13.6                        UpperLeg    -0.0
+  Hips        -14.0                        Hips        -0.0
+  Spine       -14.0                        Spine       -0.0
+  Chest       -14.0                        Chest       -0.0
+  UpperChest  -14.0                        UpperChest  -0.0
+  Hand         -8.1                        Hand        -0.0
+  UpperArm     -8.2                        UpperArm    -0.0
+  Shoulder    -14.2                        Shoulder    -0.0
+  Neck        -14.0                        Neck        -0.0
+  Head        -14.0                        Head        -0.0
+  range 6.0 mm                             range 0.0 mm
+```
+
+**37.2 mm to 6.0 mm, and the armour did not move**: chest plate plane -8.00 to
+-7.70, helmet -8.60 to -8.80. `YargCharLoadTest` reads the old and the new
+bundle identically -- 52 humanoid bones, 4 skinned meshes, 150 bones,
+`humanoid=True`, 0 failed -- the bundle still calls itself
+`the mandalorian.yargchar` with 155 GameObjects, and the podium renders at
+yaw 0 and yaw 35 are indistinguishable before and after.
+
+**A trap in the verification, worth knowing.** `height_check_installed.py`
+reads him as **1.828 m before and 1.888 m after**, and `--strict` re-derives
+the same figures from the vertices, so it is not a stale `m_LocalAABB`. He did
+not change size: his SKINNED WORLD extents are identical to four decimals
+(-0.0590..+1.8294) before and after, and his on-screen silhouette occupies the
+same rows in both renders. What changed is the mesh's own LOCAL space -- the
+VRM round trip rescales the vertices and compensates in the bind poses, which
+leaves world positions untouched. The `--control` build shows the same 1.888
+while being world-identical to the shipped bundle, which is how this was
+separated from the correction. **Do not read a height change out of that tool
+across a VRM round trip without checking the world extents.**
 
 ### SUPERSEDED: the old "two half-skeletons" write-up, 2026-11-16
 
@@ -4670,6 +4710,14 @@ right.
   identically at hip, knee and foot are vertical and unposed, and only then has an offset upper
   half nowhere to come from but the rig — Alcina's legs splay 188 mm, so she is posed and her
   26 mm means something else. `HALF_STEP` moves the 8 mm threshold
+- `YargCharLoadTest.cs` — the acceptance check before an install: makes UNITY open a `.yargchar`,
+  build the humanoid rig, walk the hierarchy and `Rebind()` it, then prints clips, humanoid bone
+  mappings, skinned meshes, bones and VRM spring chains/joints. Every other measurement here reads
+  the bytes with UnityPy, and a file can read perfectly and still fail in the engine. Run the OLD
+  and NEW bundles in ONE invocation and compare the counts; a count that drops is the question to
+  answer before anything is replaced. Copy it beside the exporter in `Assets/__TempExport/Editor/`
+  and delete the folder afterwards. **Rewritten 2026-11-17** after the only copy was deleted with
+  a scratch Unity project — it had never been committed, which is why it is here now
 - `straighten_spine.py` (Blender) — takes a lean out of a character's spine in the build
   INTERMEDIATE, where it can still be done: a rest-pose edit on a MAPPED humanoid bone is
   discarded by the Animator, so a bundle patch cannot. It poses each spine joint onto vertical,
