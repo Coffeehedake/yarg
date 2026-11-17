@@ -480,6 +480,16 @@ def main():
     src = files[0]
     out = out or src
 
+    # A path that does not exist used to reach cci.read, come back with
+    # nothing, and be reported as "has no spring chains" -- a FALSE ZERO about
+    # the character rather than a true statement about the path. A sweep whose
+    # filenames had picked up a trailing \r reported that for all 21, Prix and
+    # her five chains among them, and it reads exactly like a finding.
+    if not os.path.isfile(src):
+        print("ABORT: no file at %r (a trailing newline or carriage return in "
+              "a generated list is the usual cause)" % src)
+        return 2
+
     human, tf, go_tf, springs, joints, colliders, groups, world = cci.read(src)
     if not springs:
         print("ABORT: %s has no spring chains" % os.path.basename(src))
