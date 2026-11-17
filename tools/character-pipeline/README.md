@@ -988,9 +988,50 @@ VRM_GLTF_BIND_POSE=node VRM_BLEND_MATERIALS="Hair" VRM_CUTOUT_MATERIALS="cejas1"
 build_vrm.py prix_baked.glb <emptytexdir> 1.70 mixamo "Prix" prix.vrm 1024     '^(Icosphere|[LR]_iris_.*)$' '' ''
 ```
 
-**Not yet installed, and one thing is still unverified**: whether `eyes1`
-alone gives her the blue irises of her source render. That wants a look at
-her, and the podium render is still broken for every character.
+#### INSTALLED 2026-11-16, with one regression that must be named
+
+Exported at **7,563,587 bytes** (`ALL DONE, failures=0`), load-tested against
+the bundle it replaces — both load, 0 failed — and installed over a verified
+backup, `Prix.prerebuild-2026-11-16.yargchar`, sha256 `0124c722d881`,
+13,770,126 bytes. The installed file is byte-identical to the built one,
+md5 `0e4bdd0...`.
+
+Read back off the INSTALLED bundle, her hair is where it belongs:
+
+```
+CN_F_HAIR_111_Hair_0   10741 verts   x -0.202..+0.170  y +1.220..+1.686  z -0.190..+0.233
+```
+
+From the top of her head down to her chest, 372 x 466 x 423 mm, against the
+14 x 22 x 13 mm pellet at her ankles. Height 1.700 m. And her three HAIR
+PHYSICS chains now exist and are driven — `backHair_00`, `LefthairA_00`,
+`RefthairA_00`, 11 joints — so it moves.
+
+**THE REGRESSION, and it is not small.** The rebuild is **63.5 mm off-centre**
+and carries **31.9 mm** of left/right depth asymmetry in the arms, where the
+bundle it replaced was **perfectly centred and symmetric** — `pair_offset`
+worst 0.0 mm, no half-body step at a 1 mm threshold:
+
+| | old bundle | rebuilt |
+|---|---|---|
+| pair-offset worst | **0.0 mm** | 31.9 mm (arms, dz) |
+| hip-pair centre | 0.0 mm | **-63.5 mm** |
+| shoulder-pair centre | 0.0 mm | -49.9 mm |
+
+The cause is `VRM_GLTF_BIND_POSE=node` itself. It is what puts the hair on her
+head, and it does that by using her AUTHORED rest pose instead of the
+symmetric one her inverse bind matrices describe — and her authored pose is
+neither centred nor symmetric. The two cannot both be had from that one flag.
+
+**She also loses her two `BreastSpring` chains**, 5 chains to 3. The rigger
+refuses them honestly: *"breast spring chains added: 0 (no weighted chest
+bones in this rig)"*. Her source has no chest bones, so the old bundle's pair
+were added to it after the fact, and `patch_add_springs.py` can put them back
+on the rebuilt file the same way.
+
+**Still unverified**: whether `eyes1` alone gives her the blue irises of her
+source render. That wants a look at her, and the podium render is still broken
+for every character.
 
 Nothing has been installed. Her bundle is untouched and the rebuilt file is a
 scratch artefact.
