@@ -44,7 +44,7 @@ needed for the job-object breakaway.
 | ~~**Prix**~~ | **DONE 2026-11-16.** All four reported faults closed, three confirmed by eye on the podium; chest chains restored (5c/15j). What remains is a **31.9 mm arm depth asymmetry** that is her authored pose and hair that reads auburn under the podium light — neither reported, neither a fault |
 | ~~**The Mandalorian**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Skeleton 37.2 → **6.0 mm** read back off the installed file with Spartan at 0.0 as the control, armour planes unmoved (−8.00→−7.70, −8.60→−8.80), load test identical, renders indistinguishable. It does not SHOW — the fault was the rig, not the look — and the baked variant that would have shown throws his helmet 50 mm off. Earlier: **built but not installed.** Skeleton 37.2 → **5.9 mm** with the geometry untouched (`straighten_spine.py --no-bake`), control round trip identical, but the animated podium render is indistinguishable from the current build. The other sense of straighten — baking the body with the bones — throws his helmet **50 mm** off, because his body was already plumb. Builds kept in `character-backups/mando-straighten-2026-11-17/`. **Jay's call whether to install.** Earlier: **RE-DIAGNOSED 2026-11-16 and the old diagnosis was WRONG.** Not two half-skeletons: a smooth **3.3° spine lean**, 37.2 mm from feet to head, INHERITED from his source. His armour is coherent with itself — helmet and chest plate agree on one plane to 0.6 mm. Squaring him means straightening his spine, which is a deformation, and his Mixamo rig is not on this machine. **Jay's call** |
 | **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. **DECIDED: leave her** — do not re-open |
-| **Kronk** | **NOT a half-body step** — `plumb_check_installed.py` reads a **57.0 mm LEAN** spread over his spine, the same non-finding as The Mandalorian and for the same reason. Never reported by anyone |
+| ~~**Kronk**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Not a half-body step: a **57.0 mm lean**, and unlike The Mandalorian his GEOMETRY leans with it (37.2 mm of it), because his source is `Kronk_Doing_the_Hokey_Pokey.usdz` and the T-pose step squares the limbs but never touches the spine. Rebuilt from source, straightened BAKED and re-centred: skeleton **57.0 → 13.4 mm**, geometry **37.2 → 9.6 mm**, and the podium render is visibly straighter. Never reported by anyone |
 | **Aiko** | 29.95° off; a rebuild squares her but puts her hair over her face. Nothing installed |
 | **Limb capsules** | Every character built before 2026-11-15 still carries MEDIAN limb capsules. `patch_springs.py --limbs` re-radiuses them to p90 and now also clears the joint SPHERE; not swept |
 | **Arbiter** | 13 handoffs open and never pulled |
@@ -1111,7 +1111,18 @@ over the same backup.
 
 The residual +-7 mm is her LEAN: the step centres the mean of the pairs and
 her halves still disagree by 11.4 mm, so neither half can sit at exactly
-zero. **And the 31.9 mm arm asymmetry is untouched on purpose** — a pure X
+zero.
+
+**On a character who leans HARD that limitation bites, and it can move him
+further from the axis than it found him.** Rebuilding Kronk 2026-11-17 the
+step reported *"the humanoid pairs centre +16.9 mm off X=0 (spread 116.7 mm
+across 5 pair(s)) ... now +0.00 mm"* -- truthfully -- and his LEGS went from
+-3.0 mm in the shipped bundle to **+13.9 mm** in the rebuild, his arms from
++27.9 to +44.8. Centring a mean whose members span 116.7 mm is an average of
+things that disagree, and no individual pair lands near zero. It is not a bug
+and the printed spread says so; it is a reason to **straighten a leaning
+character before centring him**, which is the order `straighten_spine.py
+--recentre` now uses. **And the 31.9 mm arm asymmetry is untouched on purpose** — a pure X
 translation cannot change a depth difference, and a step that appeared to fix
 one would be doing something other than translating. It is her authored pose,
 and squaring it is a deformation, which is a different decision from moving
@@ -1422,6 +1433,67 @@ she is. **Do not re-open this and deform her**; the measurements above are
 recorded so the next reader does not have to redo them, not as a work item.
 If her leg is ever reported, the thing to reach for is a corrected bind pose
 in the SOURCE, not any of the three operations ruled out above.
+
+### Kronk leans because his source was mid-dance, 2026-11-17
+
+Straightened and installed. He is the OTHER case from The Mandalorian, and
+having both is what makes either legible.
+
+**His lean is in the geometry as well as the bones.** The mirror fit reads his
+lower body at -6.10 mm and his upper at +31.10 (bones -3.00 and +27.92, so
+geometry and bones agree to ~3 mm), and his silhouette in the podium render
+puts his head 45-80 mm to his right of his torso where Spartan Mark V reads
+0.0. So the BAKED straightening is right for him -- the one that threw Mando's
+helmet 50 mm off, because Mando's body was plumb and only his bones leaned.
+
+**Where it came from.** His source is `Kronk_Doing_the_Hokey_Pokey.usdz` -- a
+model mid-dance. The builder bakes that static pose as the rest pose
+(*"keeping a static pose on 86 bones ... this is the model's shape, not a stray
+frame"*), and the T-pose step then squares his LIMBS and never touches the
+spine. His arms come out 0.0 degrees off X and his limb segments mirror to four
+decimals, while the spine keeps the dance. So the lean is the uncorrected
+remainder of a correction this pipeline already half-made, which is why
+finishing it is restoring intent rather than deforming an artist's work.
+
+**Rebuilt from source**, because he has no `.vrm` intermediate. The rebuild
+reproduces the shipped bundle's lean exactly -- range 57.0 mm, every bone
+matching to 0.1 mm -- shifted by a uniform 16.9 mm, which is the centring step
+that did not exist when he was first built. That uniform offset IS the control:
+it says the rebuild is the same character.
+
+| | installed | rebuilt (control) | straightened |
+|---|---|---|---|
+| skeleton spread | 57.0 mm | 57.0 mm | **13.4 mm** |
+| geometry lean (lower → upper plane) | 37.2 mm | — | **9.6 mm** |
+| spine plumb? | no | no | **yes, 4.9 mm at every joint** |
+| height | 1.950 m | — | 1.947 m |
+
+Installed as 1,490,455 bytes, sha256 `af6ff1a36b38`; backup
+`Kronk.prestraighten-2026-11-17.yargchar` (sha256 `3b07ad858bd9`). Load test
+reads old and new identically: 38 humanoid bones, 1 skinned mesh, 105 bones,
+`humanoid=True`, 0 failed.
+
+The residual 13.4 mm is his arms at -6.7 mm against his legs at +6.7 -- they
+genuinely do not share a centreline, and `--recentre` splits the difference so
+neither is favoured. Before straightening they were 30.9 mm apart.
+
+#### Two defects in `--recentre`, both caught by its own re-measure
+
+Worth recording because the first one would have shipped a broken rig.
+
+* **It translated the OBJECTS** while measuring in ARMATURE space, so the
+  measurement could not see its own operation. It printed `-15.78 mm` before
+  and `-15.78 mm` after -- honest, and only because the re-measure existed.
+* **Moving every edit bone one at a time is not a rigid translation.** A
+  CONNECTED bone's head is pinned to its parent's tail, so moving the parent
+  moves the child, and moving the child again gives it TWICE the offset. The
+  exported bundle had his **Chest 15.8 mm adrift of his Spine and Head, and his
+  feet 15.8 mm adrift of his knees** -- while the four bones the re-centre
+  aimed at read a clean `-0.00 mm`. **A check that re-measures only what the
+  operation targeted will pass while the operation has broken everything else.**
+  The replacement asserts that EVERY bone moved by exactly the offset, and it
+  was watched failing first: with the disconnect removed it names `n78` moved
+  -31.556 mm against -15.778, which is 2x to three decimals.
 
 ### The Mandalorian is NOT two half-skeletons -- CORRECTED 2026-11-16
 

@@ -2,7 +2,7 @@
 #
 #   blender --background --python straighten_spine.py -- <in.vrm> <out.vrm>
 #       --hips n29 --chain n30,n31,n32,n36 --head n37 [--keep n39,n66,n90,n95]
-#       [--control] [--no-bake]
+#       [--control] [--no-bake] [--recentre n12,n17,n68,n81]
 #
 # The Mandalorian's spine leans 3.3 degrees: hips -14.0 mm, head +16.7 mm in
 # the shipped bundle (signs negated in Blender). It cannot be corrected in the
@@ -51,6 +51,16 @@
 # the bones that carry them. So both are built and both are rendered, because
 # the measurement does not settle it and a picture can.
 #
+# `--recentre` names bones whose mean X should end up at zero, and translates
+# the whole rig and its meshes to put it there. It exists because the builder's
+# own centring step averages FIVE humanoid pairs, and on a leaning character
+# those pairs spread -- 116.7 mm on Kronk -- so centring their mean leaves
+# every individual pair a long way off. His legs went from -3.0 mm to +13.9 mm
+# that way, further from the axis rather than nearer. Once the spine is plumb
+# the pairs agree and the same operation is well defined, so it is worth
+# redoing here rather than leaving the character standing 20 mm off his own
+# root. Pass the LEG and UPPER-ARM bones; their mean is the body's axis.
+#
 # `--control` does the whole round trip with a ZERO correction. Its output must
 # measure the same as the shipped bundle; if it does not, nothing measured on
 # the corrected build can be attributed to the correction rather than to the
@@ -76,7 +86,7 @@ import math
 import sys
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 SRC, DST = argv[0], argv[1]
@@ -90,6 +100,7 @@ HIPS = opt("--hips")
 CHAIN = [b for b in (opt("--chain") or "").split(",") if b]
 HEAD = opt("--head")
 KEEP = [b for b in (opt("--keep") or "").split(",") if b]
+RECENTRE = [b for b in (opt("--recentre") or "").split(",") if b]
 CONTROL = "--control" in argv
 NOBAKE = "--no-bake" in argv
 
@@ -101,7 +112,7 @@ for o in meshes:
     if o.data.shape_keys:
         raise SystemExit("ABORT: %s carries shape keys; applying the armature "
                          "modifier would discard them" % o.name)
-for n in [HIPS, HEAD] + CHAIN + KEEP:
+for n in [HIPS, HEAD] + CHAIN + KEEP + RECENTRE:
     if n not in arm.data.bones:
         raise SystemExit("ABORT: no bone %r in this armature" % n)
 
@@ -192,6 +203,57 @@ else:
     bpy.ops.pose.armature_apply()
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.context.view_layer.update()
+
+if RECENTRE and not CONTROL:
+    xs = [head_of(n).x for n in RECENTRE]
+    off = sum(xs) / len(xs)
+    print("  recentre: %d bone(s) mean X is %+.2f mm; moving every edit bone "
+          "and every vertex by that amount" % (len(xs), off * 1000))
+    # Translating the OBJECTS is what the first version did, and the re-measure
+    # below caught it doing nothing: these positions are read in ARMATURE
+    # space, which an object transform does not touch, and whether the exporter
+    # would have baked it was never in evidence either way. Moving the edit
+    # bones and the vertices is unambiguous and survives any exporter.
+    before = {b.name: head_of(b.name).x for b in arm.data.bones}
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="EDIT")
+    # A CONNECTED bone's head is pinned to its parent's tail, so moving the
+    # parent's tail moves it too -- and then moving it again here gives that
+    # bone, and everything under it, TWICE the offset. The first version did
+    # exactly that: Kronk's Chest and his feet came out 15.8 mm adrift of his
+    # hips and head, one whole offset, while the four bones the re-centre
+    # aimed at read a clean zero. Disconnect, translate, reconnect; the
+    # reconnect is a no-op because every head and tail moved together.
+    conn = {}
+    for eb in arm.data.edit_bones:
+        conn[eb.name] = eb.use_connect
+        eb.use_connect = False
+    for eb in arm.data.edit_bones:
+        eb.head.x -= off
+        eb.tail.x -= off
+    for eb in arm.data.edit_bones:
+        eb.use_connect = conn[eb.name]
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for o in meshes:
+        for v in o.data.vertices:
+            v.co.x -= off
+        o.data.update()
+    bpy.context.view_layer.update()
+    xs = [head_of(n).x for n in RECENTRE]
+    print("  recentre: now %+.2f mm" % (1000.0 * sum(xs) / len(xs)))
+    # Check EVERY bone moved by exactly the offset, not just the ones aimed
+    # at. The four target bones read a clean zero while the rig was broken.
+    worst, who = off, "(none)"
+    for b in arm.data.bones:
+        moved = before[b.name] - head_of(b.name).x
+        if abs(moved - off) > abs(worst - off):
+            worst, who = moved, b.name
+    if abs(worst - off) > 1e-5:
+        raise SystemExit("ABORT: recentre moved %r by %.3f mm, not %.3f mm -- "
+                         "the rig is no longer rigid"
+                         % (who, worst * 1000, off * 1000))
+    print("  recentre: all %d bones moved by %.3f mm (worst %r, %.4f mm)"
+          % (len(arm.data.bones), off * 1000, who, worst * 1000))
 
 report("AFTER")
 
