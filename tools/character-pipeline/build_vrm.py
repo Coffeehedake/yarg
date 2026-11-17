@@ -7230,6 +7230,26 @@ for mat in bpy.data.materials:
             mt.pbr_metallic_roughness.base_color_factor = (
                 _bc[0], _bc[1], _bc[2], blend_alpha)
         else:
+            # KNOWN WRONG, and left wrong deliberately rather than fixed
+            # with something that does not fire. glTF multiplies
+            # baseColorTexture by baseColorFactor, and forcing white here
+            # discards the factor. That is invisible for a full-colour map
+            # with a white factor, and ruinous for a GREYSCALE map whose
+            # colour lives entirely in the factor.
+            #
+            # Prix's hair: `CN_F_HAIR_110_hair` is a 512x512 GREY+ALPHA image
+            # and her factor is (0.0782, 0.0182, 0.0182), near-black. Shipped
+            # at white she gets GREY hair, which is exactly the washed-out
+            # skullcap in her installed bundle next to the near-black hair of
+            # her source render.
+            #
+            # Blender's glTF importer carries the factor in as a Mix node
+            # between the texture and Base Color -- colour input B holds it,
+            # A takes the image, confirmed by reading the graph. A fix that
+            # read it there was written and REMOVED: it never printed and
+            # never changed the output, and the cause was not found. Shipping
+            # a step that silently does nothing is worse than shipping a known
+            # gap, because the next reader believes it.
             mt.pbr_metallic_roughness.base_color_factor = (
                 1.0, 1.0, 1.0, blend_alpha)
     except Exception as _e:

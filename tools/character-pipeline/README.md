@@ -898,11 +898,53 @@ did not, with `VRM_BLEND_MATERIALS` used on exactly one other character.
 | height | 1700.0 mm |
 | humanoid map | correct; all 4 limb pairs on the side their names claim |
 
-**Still open: `aiStandardSurface4`**, the lens over her irises, stays OPAQUE
-despite being named in `VRM_CUTOUT_MATERIALS`, where the source GLB declares
-MASK. The cutout gate requires the base map to carry a real alpha channel, so
-the next thing to measure is whether `Image_2` has one. **Her pupils are not
-established as fixed.**
+#### The lens: it is meant to be INVISIBLE, and is now dropped
+
+`aiStandardSurface4` is the layer over her irises, and the gate was right to
+refuse it. Its base map is a 4096x4096 **grey+alpha** PNG whose alpha is
+**100.0% clear** — every pixel fully transparent. With `alphaMode=MASK` the
+source discards the entire mesh, so the lens contributes nothing to her
+appearance by design.
+
+The builder's own guard says it declines an alpha that is *"almost entirely
+transparent, which would erase the mesh"* — and here erasing the mesh is the
+author's intent. Rather than loosen a guard that is right in general, the two
+meshes are simply excluded: `^(Icosphere|[LR]_iris_.*)$`. Same result, 804
+fewer vertices, and no alpha subtlety to get wrong later.
+
+That also retires the 2026-11-12 hand-fix. The installed bundle carries the
+lens at alpha 0.08 with her SKIN atlas on it; the source says it should not be
+drawn at all.
+
+**So her eyes are now whatever `eyes1` gives**, which is a 4096x4096 RGB map
+with emissive (0.2286, 0.2286, 0.2286) — the glow in her character-select
+screenshot. Whether that alone produces the blue irises of her source render
+is **not yet established**; it needs a look at her.
+
+#### Still wrong: her hair ships GREY
+
+The last known defect, and the numbers are exact. glTF multiplies
+`baseColorTexture` by `baseColorFactor`, and her hair map
+`CN_F_HAIR_110_hair` is a 512x512 **grey+alpha** image — 13.3% clear, 59.5%
+solid — carrying no colour of its own. The colour is entirely in the factor:
+
+| | baseColorFactor |
+|---|---|
+| source GLB | **(0.0782, 0.0182, 0.0182)** — near-black |
+| our build | (1.0, 1.0, 1.0) — white |
+
+So the hair comes out **grey**, which is exactly the washed-out skullcap in
+her installed bundle next to the near-black hair of her source render. The
+builder forces white whenever a base texture exists, on the assumption that
+the map carries the colour.
+
+Blender's importer brings the factor in as a **Mix node** between the texture
+and Base Color — colour input B holds it, A takes the image, read off the
+graph directly. **A fix that read it there was written and then REMOVED**: it
+never printed and never changed the output, and the cause was not found.
+Shipping a step that silently does nothing is worse than shipping a known
+gap, because the next reader believes it. The gap is recorded at the line
+instead.
 
 Nothing has been installed. Her bundle is untouched and the rebuilt file is a
 scratch artefact.
