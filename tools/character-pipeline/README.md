@@ -1027,6 +1027,36 @@ exactly the two just built.
 Then flatten the shine on the exported bundle — `patch_shine.py <bundle> '*'`
 — which is confirmed by render rather than assumed.
 
+#### FINAL, installed 2026-11-16
+
+Rebuilt with the rigger, exported (7,575,706 bytes, `failures=0`), shine
+flattened (7 of 8 materials changed, 0 gone, 0 added), load-tested against the
+bundle it replaces — **134 bones against 130 and 5c/15j against 3c/11j, the
++4 bones being the two chains and their tips, 0 failed** — and installed as
+md5 `dff90f9`, 7,500,450 bytes, backup `Prix.prechestchains-2026-11-16.yargchar`
+(sha256 `406381dd5d63`).
+
+Read back off the installed file:
+
+```
+5 chains:
+   backHair_00_physics_8_13_15_0107   4 joints  collider group
+   LefthairA_00_physics_8_13_15_0114  4 joints  collider group
+   RefthairA_00_physics_8_13_15_0118  3 joints  collider group
+   BreastSpring_L                     2 joints  NO group (chest, by design)
+   BreastSpring_R                     2 joints  NO group (chest, by design)
+```
+
+5c/15j, matching the bundle she had before the rebuild exactly; centred to
+-6.6/+7.0 mm; height 1.700 m.
+
+**All four reported faults are closed**, three of them confirmed by eye on the
+podium. What remains on her is a **31.9 mm arm depth asymmetry**, which is her
+authored pose and would need deforming to square, and **hair that reads auburn
+rather than near-black**, which is not specular — the tint in the bundle is
+exactly right — and is most likely blended hair cards accumulating under the
+podium light. Neither was reported and neither is a fault.
+
 #### INSTALLED 2026-11-16, with one regression that must be named
 
 Exported at **7,563,587 bytes** (`ALL DONE, failures=0`), load-tested against
