@@ -562,7 +562,7 @@ a wall in any Markdown viewer. The rows themselves were always fine.
 | Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
 | Miku | twintails only move where they were repaired; the tie could be sprung too | ~~FIXED 2026-11-15 (evening)~~ — **RE-REPORTED UNCHANGED, FIXED AGAIN 2026-11-16.** Two faults. (1) `patch_add_springs.py` set each new joint's `m_GameObject` and never added it to that GameObject's `m_Component`, so **21 of 29 joints were orphans** — and both the tool's own read-back and the Unity load test missed it because they follow the Springs array's pointers, the one direction the patch had written. (2) `Bone06` and its mirror, **158 vertices** and a third of the twintails, were left rigid on an unmeasured assumption; the project's own `_trim_anchor` rule clears them (0.133 m against 0.774 m for the rest of the chain), so they are now sprung. **462 of 462 twintail vertices are on a chain**, against 304 and 38. **VERIFIED IN THE SPRING RUNTIME** with `YargSpringProbe.cs`: every twintail bone now peaks between 143 and 422 mm under a linear shake, the two sides within 10%, where `Bone07` and `Bone11` read **0.001 mm** yesterday. The necktie swings 161 and 359 mm. **The orphans were NOT the cause** — yesterday's build peaks at 706 mm with all 21 orphaned, because Unity attaches them at instantiate; what was rigid was the TOP (the crown plus the two chain-root pivots, ~187 vertices), which is exactly what "only the middle" described. See "Miku's twintails, 2026-11-16". Original note follows: Both right. Her two `HairSpring_*` chains run on eight bones an earlier hair-rigger run INVENTED, which dominate **38** vertices; her own twintail bones `Bone06`..`Bone15` and their `(mirrored)` twins dominate **462** and were on no chain, as were the three tie bones. Nothing found it because every rigger here selects by bone NAME and her rig has no bone whose name contains hair, tail, bang or tie — while `HairSpring_1_0` does. `patch_add_springs.py` put 7 new chains on her own bones: **324 vertices now move against 38**. `Bone06` stays rigid on purpose (it is the bun, 158 vertices, at the crown). The tie chain is given NO collider group — all three of its bones start 44.4/30.5/7.4 mm INSIDE the torso capsule, and attaching it would have thrown the knot forward and undone that morning's re-aim. See "Miku's twintails and necktie, 2026-11-15 (evening)" |
 | The Mandalorian | armour is not centred on his chest | **MEASURED 2026-11-16, cause found, not fixed.** It is not the armour: his skeleton is **two half-skeletons 37.2 mm apart**. Every lower pair (hips, knees, feet) centres at -18.5 mm and every upper pair (shoulders, elbows, hands) at +18.7 mm, to a tenth of a millimetre, with no gradient between them, while his limb segments are near perfect (arms 0.2453/0.2456 vs 0.2453/0.2457). His source glTF has two collapsed skeletons and he was re-rigged through Mixamo, which is where a step like that comes from. Nothing shows at rest — raw and skinned vertices agree to four decimals — so the bones are simply in the wrong place INSIDE the geometry, and his chest pivots about an axis 18.7 mm off the centreline his legs define. The Animator is NOT the mechanism: Spartan Mark V, square in his own bundle, also goes 0.00/0.00 to 4.56/-7.96 after `Rebind()`, so that shift is the controller's, not his. Fixing it means moving bones while compensating their bind poses so the rest pose does not move, and that needs his mesh's true centreline first. See "The Mandalorian is two half-skeletons, 2026-11-16". Original note follows: **reported 2026-11-16, not yet measured.** Two existing measurements probably bear on it and should be read before anything is rebuilt. His body-yaw lines **disagree** (+2.50 deg mean, spread **11.10**), which `body_yaw_check_installed.py` reads as a displaced part rather than a turned body — he is one of seven on that list. And the edge-length ratio sweep puts his worst stretched edge at **234 mm**, the largest on the roster by a wide margin (Peacemaker's is 27 mm). His source is a glTF whose **both skeletons are collapsed**, so he was re-rigged through Mixamo; a chest plate that is a separate island riding one bone, or weighted to a bone the re-rig moved, would produce exactly this. Check first whether the armour is its own mesh/island and which bones dominate it — if it is one rigid island on one bone, this is the Joker's-pistol and Judy's-belt shape, not a weighting fault |
-| Prix | no hair, no pupils, eyelashes have no alpha — "a mess, she needs a lot of work" | **MEASURED 2026-11-16, first pass; the hair is solved, nothing fixed yet.** Her hair is `Mesh.009`, **10,741 verts**, crushed into a 14×22×13 mm box at **y 0.135 — ankle height** — because `FemaleBody_Head` is rotated **180° about Z** and `hairAll`'s local **+1.411 m** therefore lands at 1.5496 − 1.4111 = 0.1385. It is tiny as well as displaced, with every local scale exactly 1.000: hair segments measure **3.38 mm** against a 101 mm neck→head, and her own correctly-placed second hair piece (`Mesh.006`, 148 mm wide) puts the scale error near **10×**. `hairAll` is NOT humanoid-mapped, so unlike Jessica's hips this is fixable in the bundle. Both hair materials are also **opaque over a 58.7%-clear texture**, so moving the mesh alone would trade no hair for a block of hair. **The pupils are NOT the lens** — the 2026-11-12 fix is intact (`Prix_7`, queue 3000, a=0.080) — and her lashes have no mesh of their own; both are unresolved and want a render, which currently returns a blank frame. See "Prix: her hair is at her ankles". Original note follows: **reported 2026-11-16, not yet measured.** Queued behind The Mandalorian. Four separate faults by the sound of it, and three of them are shapes this pipeline has solved before, so check the known remedy before inventing one: missing hair is usually a mesh dropped by an `exclude` or a hair mesh with no vertex groups (Alcina's case — hairrig on the material builds its weights from nothing); no pupils is the eye-STACK alpha fault (Peach) or an eye atlas pinned to the wrong frame (Shadow); lashes with no alpha is the `VRM_CUTOUT_MATERIALS` / `VRM_BLEND_MATERIALS` pair, where Alcina needed the lashes moved from cutout to **blend**. One thing already measured on her and worth carrying over: her `FemaleBody_Head` collider reaches **186.5 mm past her chest spring joints**, which for a head collider is absurd and suggests her collider fit is as confused as her materials |
+| Prix | no hair, no pupils, eyelashes have no alpha — "a mess, she needs a lot of work" | **CAUSE FOUND 2026-11-16 from the source Jay supplied; nothing fixed yet. ONE import defect: every node scale was dropped.** `hairAll` carries **22.085905** in `prix.glb` and **1.000000** in the bundle, so her hair strands are 22× too small; `HairCalp` lost only 1.1%, which is why the cap alone looks right and she reads as having a painted-on skullcap; both eye and both iris nodes lost **0.849676**, so her eyeballs are 17.7% too big inside sockets modelled for the smaller ones, which is what a blank white almond with no iris looks like. Material modes were flattened too — `Hair` is **BLEND** in the source and OPAQUE in the bundle (the washed-out grey cap), and the iris lens is **MASK**, not the alpha-0.08 hand-fix. Her **eyebrows were merged into the body mesh**: the GLB has them as 834 verts on `cejas1`, and 21,859 + 834 = 22,693 = `Mesh.007` exactly, so they wear opaque skin. `Mesh`/`Mesh.001` are her **TEETH**, not lashes — `Dteeths_phong2` + `Dteeths_phong1` = 5,904 + 5,316 = 11,220 exactly, untextured in the source too — and she has no separate lash geometry at all. The fix is a REBUILD from the GLB, with `scales.py` run against the result because our own builder is what dropped them. See "Prix: her hair is at her ankles". Earlier note follows: **MEASURED 2026-11-16, first pass; the hair is solved, nothing fixed yet.** Her hair is `Mesh.009`, **10,741 verts**, crushed into a 14×22×13 mm box at **y 0.135 — ankle height** — because `FemaleBody_Head` is rotated **180° about Z** and `hairAll`'s local **+1.411 m** therefore lands at 1.5496 − 1.4111 = 0.1385. It is tiny as well as displaced, with every local scale exactly 1.000: hair segments measure **3.38 mm** against a 101 mm neck→head, and her own correctly-placed second hair piece (`Mesh.006`, 148 mm wide) puts the scale error near **10×**. `hairAll` is NOT humanoid-mapped, so unlike Jessica's hips this is fixable in the bundle. Both hair materials are also **opaque over a 58.7%-clear texture**, so moving the mesh alone would trade no hair for a block of hair. **The pupils are NOT the lens** — the 2026-11-12 fix is intact (`Prix_7`, queue 3000, a=0.080) — and her lashes have no mesh of their own; both are unresolved and want a render, which currently returns a blank frame. See "Prix: her hair is at her ankles". Original note follows: **reported 2026-11-16, not yet measured.** Queued behind The Mandalorian. Four separate faults by the sound of it, and three of them are shapes this pipeline has solved before, so check the known remedy before inventing one: missing hair is usually a mesh dropped by an `exclude` or a hair mesh with no vertex groups (Alcina's case — hairrig on the material builds its weights from nothing); no pupils is the eye-STACK alpha fault (Peach) or an eye atlas pinned to the wrong frame (Shadow); lashes with no alpha is the `VRM_CUTOUT_MATERIALS` / `VRM_BLEND_MATERIALS` pair, where Alcina needed the lashes moved from cutout to **blend**. One thing already measured on her and worth carrying over: her `FemaleBody_Head` collider reaches **186.5 mm past her chest spring joints**, which for a head collider is absurd and suggests her collider fit is as confused as her materials |
 | Skibidi Toilet | is a man, with no toilet | the exclude that drops the toilet shell (it swamped the model) drops the character's defining feature and leaves the body that was inside it |
 
 ### Prix: her hair is at her ankles, 2026-11-16 (first pass)
@@ -694,10 +694,58 @@ this is the shot path, not the subject -- and it means no visual verification
 of anything is available on this project right now. The 2026-11-12 renders
 came from a different route (flat grey, T-pose, not the podium).
 
-**What this pass settles:** the hair, completely, including why it is where it
-is -- and that moving it needs a scale factor the file cannot supply. **What it
-does not:** the pupils, the lashes, and the scale, all three of which need a
-working render first.
+#### SOLVED by the source: the importer DROPPED EVERY NODE SCALE
+
+Jay supplied `prix.glb` (53,038,136 bytes, sha256 `7b3d7836af17a1e4`,
+Sketchfab-16.56.0, 159 nodes / 13 meshes / 9 materials / 1 skin of 130 joints)
+and a `.usdz`. The GLB answers everything, and the scale was never a thing to
+fit -- **it is written in the file**:
+
+| node | scale in the GLB | scale in the bundle | |
+|---|---|---|---|
+| `hairAll` | **22.085905** | 1.000000 | DROPPED |
+| `R_eye`, `L_eye` | 0.849676 | 1.000000 | DROPPED |
+| `R_iris`, `L_iris` | 0.849676 | 1.000000 | DROPPED |
+| `HairCalp` | 1.011477 | 1.000000 | DROPPED |
+
+**All six.** One import defect accounts for the lot, and it predicts each
+symptom rather than being fitted to them:
+
+* The hair strands are **22.0859x** too small — not 7, not 10.6, not the 28.6
+  the ellipsoid fit produced. Four attempts to derive this from geometry were
+  four attempts to re-measure a number the source states.
+* `HairCalp` lost only **1.1%**, which is why the cap alone looks correctly
+  placed and she reads as having a painted-on skullcap rather than nothing.
+* Both eye meshes and both iris meshes grew **17.7%** inside a socket modelled
+  for the smaller ones — which is what a blank white almond with no iris looks
+  like from the front.
+
+**The material modes were flattened too**, and the GLB names the right ones:
+
+| material | GLB | installed |
+|---|---|---|
+| `Hair` | **BLEND** | OPAQUE — the washed-out grey cap |
+| `aiStandardSurface4` (the iris lens) | **MASK** | queue 3000, alpha 0.08, a hand-fix approximating a cutout |
+| `cejas1` (eyebrows) | **MASK** | gone — see below |
+
+**And the eyebrows were MERGED INTO THE BODY.** The GLB has them as their own
+834-vertex mesh on `cejas1`; the bundle's body mesh `Mesh.007` is **22,693**
+verts, and 21,859 + 834 = 22,693 exactly. They now wear the body's opaque skin
+material instead of their own cut-out one, which is why her brows are missing.
+
+**`Mesh` and `Mesh.001` are her TEETH, not her eyelashes.** Correcting an
+earlier reading in this section: the GLB has `Dteeths_phong2_0` + `Dteeths_phong1_0`
+= 5,904 + 5,316 = **11,220**, which is `Mesh` exactly, on her jaw bone; `Uteeths`
+is the pair behind `Mesh.001`. `phong1` and `phong2` have **no base texture in
+the source either**, so the flat grey 0.735 is correct for teeth and is not a
+fault. She appears to have **no separate eyelash geometry at all** — there is no
+lash material among the nine.
+
+**So the fix is a rebuild from this GLB**, which also gives her the recipe she
+has never had. The one thing to verify rather than assume: our own builder must
+PRESERVE those node scales. The bundle it produced dropped them, so a rebuild
+that drops them again reproduces the fault exactly — `scales.py` against the
+rebuilt file is the check, and it is already written.
 
 ### Jessica Rabbit's right leg is 92 mm higher than her left, 2026-11-16
 
