@@ -145,17 +145,31 @@ public static class YargSpringProbe
                 foreach (var kv in before) peak[kv.Key] = 0f;
                 var rootStart = ch.transform.position;
                 // -still 1 holds the character PERFECTLY still and lets the
-                // solver settle. That measures a different thing from the
-                // shake, and a thing nothing else can see: a joint that
-                // starts inside a collider is EJECTED to its surface on the
-                // first frames, so with no motion at all its displacement is
-                // the overlap. A still run should read ~0 mm for every bone;
-                // anything it reports is the collider pushing geometry away
-                // from where the model was authored, permanently.
+                // solver settle. It measures the distance from the pose the
+                // character is INSTANTIATED in to the pose the solver settles
+                // into -- and that is NOT the same as ejection, which is what
+                // this comment used to claim.
+                //
+                // A joint starting inside a collider is ejected and shows up
+                // here. So does a chain whose AUTHORED REST POSE is not where
+                // the solver would put it, and that second case is much more
+                // common and much larger. Hatsune Miku reads 1748 mm, which is
+                // nearly twice her longest chain, and nothing is wrong with
+                // her: her twintails are authored splayed out past her elbows
+                // and the springs tidy them in. Rendered with the springs off
+                // she looks worse, not better.
+                //
+                // So a big number here is a QUESTION, not a finding. Answer it
+                // by rendering the character twice -- once with -rebind 0, so
+                // the springs never run and you see the authored pose, and
+                // once normally -- and comparing. Only if the sprung pose is
+                // the worse one is a collider doing something you do not want.
                 var still = stillRun;
-                if (still) Say(string.Format("{0}: STILL run -- no root motion and "
-                    + "wind {1}, so any displacement is a collider ejecting a joint",
-                    name, wind));
+                if (still) Say(string.Format("{0}: STILL run -- no root motion, "
+                    + "wind {1}. This measures instantiate-pose to settled-pose, "
+                    + "which is EITHER a collider ejecting a joint OR an authored "
+                    + "rest pose the solver disagrees with. Render it to tell them "
+                    + "apart.", name, wind));
                 for (int i = 0; i < 240; i++)
                 {
                     if (!still)
