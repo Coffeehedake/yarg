@@ -7196,6 +7196,26 @@ for mat in bpy.data.materials:
         # swap is the larger change.
         if cut or blend or os.environ.get("VRM_MTOON_ALL"):
             mt.enabled = True
+            # AND HAND MToon THE TEXTURE, or enabling it throws the texture
+            # away. Once mtoon1 is on, the exporter reads ITS OWN base colour
+            # slot -- `pbr_metallic_roughness.base_color_texture.index.source`
+            # -- and that slot starts EMPTY. The Principled node still holds
+            # the image, Blender still shows it, and the build log still
+            # prints `TEX -> base=packed:Image_12`, so everything looks
+            # right up to the moment of export.
+            #
+            # Prix's hair is the case. Asked for BLEND by name, it exported
+            # `alphaMode=BLEND` with `baseColorTexture` NULL, while the same
+            # build WITHOUT the request exported OPAQUE and kept the texture.
+            # The symptom therefore looks like "asking for blend drops the
+            # map", which points at the alpha code; the cause is one slot
+            # nobody filled in the block that turns MToon on.
+            if base_tex is not None and base_tex.image is not None:
+                try:
+                    mt.pbr_metallic_roughness.base_color_texture.index.source                         = base_tex.image
+                except Exception as _te:                         # noqa: BLE001
+                    print("    (could not hand MToon the base texture: %s)"
+                          % _te)
         mt.alpha_mode = "BLEND" if blend else ("MASK" if cut else "OPAQUE")
         mt.alpha_cutoff = 0.5
         # Once mtoon1 is in play the exporter writes ITS base colour factor,
