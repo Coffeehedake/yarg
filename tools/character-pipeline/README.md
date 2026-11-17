@@ -1076,9 +1076,37 @@ bones in this rig)"*. Her source has no chest bones, so the old bundle's pair
 were added to it after the fact, and `patch_add_springs.py` can put them back
 on the rebuilt file the same way.
 
-**Still unverified**: whether `eyes1` alone gives her the blue irises of her
-source render. That wants a look at her, and the podium render is still broken
-for every character.
+#### Looked at her, 2026-11-16: her eyes are FIXED
+
+With the podium render working, the comparison is direct. **Before** — bald
+but for a grey skullcap, **glowing white eyes with no iris at all**, standing
+visibly off the centre of the podium, with the hair pellet a speck by her
+ankle. **After** — long hair past her shoulders, **blue irises with pupils**,
+eyebrows, and centred on the disc.
+
+So removing the lens was the answer to "no pupils": it was the only thing in
+front of her irises, and `eyes1` alone gives her exactly the eyes her source
+render shows. **That is three of the four reported faults closed by looking**
+— hair, pupils and the brows — and the fourth, the eyelashes, turns out to
+have no separate geometry at all: what reads as lashes is the dark liner in
+`eyes1` itself, visible in the close-up.
+
+#### And she was shiny, which was never reported
+
+Her skin came out bronze and glossy, the Sophia class exactly. Flattened with
+`patch_shine.py '*'` and **confirmed by a before/after render** rather than
+assumed: matte skin, and her eyes and liner read properly where the specular
+had been washing them out. Installed, md5 `5e86fa7`, 7,482,953 bytes, backup
+`Prix.preshine-2026-11-16.yargchar` (sha256 `3b6309563dd2`). Add
+`YARG_NO_SHINE_MATERIALS` to her recipe so a rebuild keeps it.
+
+**Her hair is still auburn where the source is near-black**, and the shine
+pass did NOT change that, so it is not specular. The tint is correct in the
+bundle — `_Color (0.310, 0.144, 0.144)` is exactly the sRGB encoding of the
+linear `(0.0782, 0.0182, 0.0182)` the GLB declares — so the likely cause is
+many alpha-blended hair cards accumulating under a bright podium light. Not
+chased; it is a refinement rather than a fault, and she reads as a brunette
+either way.
 
 Nothing has been installed. Her bundle is untouched and the rebuilt file is a
 scratch artefact.
