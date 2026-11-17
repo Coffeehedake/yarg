@@ -110,7 +110,16 @@ public static class YargSpringProbe
                 //    and silently does nothing before then, which is the second
                 //    reason the earlier runs were quiet.
                 var setModel = spring.GetType().GetMethod("SetModelLevel");
-                var wa = (Arg("-wind") ?? "14,0,6").Split(',');
+                // A STILL run claims that any displacement is a collider
+                // ejecting a joint. That was FALSE while the wind blew in a
+                // still run too: a 14 m/s external force swings every chain,
+                // and Hatsune Miku read a 1748 mm "ejection" that was her
+                // twintails in the wind. So a still run gets NO wind unless
+                // -wind is passed explicitly, and the figure is printed either
+                // way so the reader can see which run this was.
+                var stillRun = Arg("-still") != null;
+                var windArg = Arg("-wind");
+                var wa = (windArg ?? (stillRun ? "0,0,0" : "14,0,6")).Split(',');
                 var wind = new Vector3(float.Parse(wa[0]), float.Parse(wa[1]), float.Parse(wa[2]));
                 var level = new BlittableModelLevel(externalForce: wind,
                     stopSpringBoneWriteback: false, supportsScalingAtRuntime: false);
@@ -143,9 +152,10 @@ public static class YargSpringProbe
                 // the overlap. A still run should read ~0 mm for every bone;
                 // anything it reports is the collider pushing geometry away
                 // from where the model was authored, permanently.
-                var still = Arg("-still") != null;
-                if (still) Say(string.Format("{0}: STILL run -- no root motion, "
-                    + "so any displacement is a collider ejecting a joint", name));
+                var still = stillRun;
+                if (still) Say(string.Format("{0}: STILL run -- no root motion and "
+                    + "wind {1}, so any displacement is a collider ejecting a joint",
+                    name, wind));
                 for (int i = 0; i < 240; i++)
                 {
                     if (!still)
