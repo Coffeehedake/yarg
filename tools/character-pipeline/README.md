@@ -741,11 +741,64 @@ the source either**, so the flat grey 0.735 is correct for teeth and is not a
 fault. She appears to have **no separate eyelash geometry at all** — there is no
 lash material among the nine.
 
-**So the fix is a rebuild from this GLB**, which also gives her the recipe she
-has never had. The one thing to verify rather than assume: our own builder must
-PRESERVE those node scales. The bundle it produced dropped them, so a rebuild
-that drops them again reproduces the fault exactly — `scales.py` against the
-rebuilt file is the check, and it is already written.
+#### The rebuild, 2026-11-16: a builder bug found, the hair not yet fixed
+
+**It is Blender's glTF importer that drops the scale, and it is worse than a
+scale.** Importing `prix.glb` and measuring before any build step runs, the
+hair mesh comes in at **3.9 x 3.8 x 6.3 mm sitting at the origin**, while the
+head bone is at z 0.3977. A Blender REST bone has head, tail and roll and no
+scale at all, so a glTF joint carrying 22.0859 cannot be represented directly
+— and this import loses the placement with it. **A straight rebuild therefore
+reproduces the fault exactly**, which it did: the rebuilt `.vrm`'s hair mesh
+measures **14.0 x 22.4 x 13.4 mm**, the same three numbers as the installed
+bundle.
+
+**But the rebuild found a real builder bug, and this one is fixed.** The
+`mixamo` preset strips a `mixamorig:` prefix and a trailing `_NNN`, then maps
+by name. Prix's joints are named `FemaleBody_<MixamoName>_<NNN>`, so stripping
+`_093` gives `FemaleBody_Head` — not a name Mixamo is expected to have, so
+nothing was renamed and the matcher downstream took whatever looked closest:
+
+```
+head:         FemaleBody_Neck_092        <- her NECK
+rightHand:    FemaleBody_RightForeArm_073 <- her FOREARM
+leftUpperLeg: FemaleBody_L_but_01_02     <- her BUTTOCK helper bone
+leftFoot:     FemaleBody_L_but_02_03_0   <- also a buttock bone
+```
+
+The preset now drops leading `<token>_` segments until an expected name
+appears, under the guard that was already there — a rename happens only when
+the result is a name Mixamo is expected to have AND that name is still free,
+so it cannot invent a mapping that was not already there. `FemaleBody_L_but_01`
+tries `01`, `but_01` and `L_but_01`, matches none, and is left alone, which is
+exactly what stops the buttock bones competing. **52 bones now rename**, the
+map comes out correct, and the build reports *"all 4 limb pairs are on the
+side their names claim"* and *"feet point (0.0, -1.0, 0.0) — already
+forward"*.
+
+**What the rebuild fixes, measured off the written `.vrm`:**
+
+| | |
+|---|---|
+| height | **1700.0 mm** — not the 0.42 m her recipe warns of, because shape keys drop by default |
+| the eyebrows | **separate again**: 834 verts on their own `cejas1` material, no longer merged into the body |
+| `cejas1` alphaMode | **MASK**, as the source declares |
+| all 13 meshes | preserved, none merged |
+
+**What it does NOT fix, and both are measured rather than assumed:**
+
+* **The hair is still 14.0 x 22.4 x 13.4 mm.** The importer drops the scale
+  before any of our code sees the file, so re-applying it needs a builder step
+  that reads the source GLB's node scales and restores them to the bone
+  subtree and its mesh. The number is not in question — 22.085905 — only the
+  mechanism.
+* **`Hair` exports BLEND but LOSES ITS BASE TEXTURE** (`baseTex` 13 → None),
+  and `aiStandardSurface4` stays OPAQUE despite being named in
+  `VRM_CUTOUT_MATERIALS`. The exporter logs `Unexpected alpha clip input node
+  type: NoneType` throughout. So the alpha path takes one of the three
+  materials the source declares and mishandles the other two.
+
+Nothing has been installed. The rebuilt file is a scratch artefact.
 
 ### Jessica Rabbit's right leg is 92 mm higher than her left, 2026-11-16
 

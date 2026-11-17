@@ -2186,14 +2186,37 @@ if RIG == "mixamo":
         _taken = {b.name for b in arm.data.bones}
         _renamed = 0
         for b in arm.data.bones:
+            # A PREFIX as well as the suffix. Prix's GLB names every joint
+            # `FemaleBody_<MixamoName>_<NNN>`: stripping `_093` gives
+            # `FemaleBody_Head`, which is not an expected name, so nothing was
+            # renamed and the fuzzy matcher downstream took whatever looked
+            # closest. It mapped her head to her NECK, her hand to her
+            # FOREARM, and both leftUpperLeg and leftFoot to `L_but_*` --
+            # her buttock helper bones. Dropping leading `<token>_` segments
+            # until an expected name appears fixes all of it.
+            #
+            # The existing guard does the work and is why this is safe: a
+            # rename happens ONLY when the result is a name Mixamo is expected
+            # to have AND that name is still free, so this cannot invent a
+            # mapping that was not already there. `FemaleBody_L_but_01` tries
+            # `01`, `but_01` and `L_but_01`, matches none of them, and is left
+            # alone -- which is exactly what stops the buttock bones competing.
             _base = re.sub(r"_\d+$", "", b.name)
+            if _base not in _EXPECT:
+                _parts = _base.split("_")
+                for _i in range(1, len(_parts)):
+                    _cand = "_".join(_parts[_i:])
+                    if _cand in _EXPECT:
+                        _base = _cand
+                        break
             if _base != b.name and _base in _EXPECT and _base not in _taken:
                 _taken.discard(b.name)
                 b.name = _base
                 _taken.add(_base)
                 _renamed += 1
         if _renamed:
-            print("stripped a numeric suffix from %d Mixamo bone(s)" % _renamed)
+            print("stripped a numeric suffix and/or a name prefix from %d "
+                  "Mixamo bone(s)" % _renamed)
 
 bone_names = {b.name for b in arm.data.bones}
 
