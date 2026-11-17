@@ -858,11 +858,54 @@ are not:
 * **`aiStandardSurface4` stays OPAQUE** despite being named in
   `VRM_CUTOUT_MATERIALS`.
 
-The exporter logs `Unexpected alpha clip input node type: NoneType`
-throughout. **She is not installable until that is fixed** — full-size opaque
-hair would render as a grey mass, which is worse than the skullcap she has
-now. Nothing has been installed; her bundle is untouched and the rebuilt file
-is a scratch artefact.
+#### FIXED: enabling MToon was throwing the base texture away
+
+The cause was one unfilled slot, and it is not in the alpha code at all.
+`mt.enabled = True` switches a material to MToon, and from then on the
+exporter reads **MToon's own** base-colour slot —
+`mtoon1.pbr_metallic_roughness.base_color_texture.index.source` — which
+starts EMPTY. The block that turns MToon on sets the base colour FACTOR and
+never the TEXTURE.
+
+Everything upstream looks right, which is what made it hard to see. The
+Principled node still holds the image, Blender still shows it, and the build
+log still prints `material Hair ... TEX -> base=packed:Image_12`. Only the
+written file is missing it. So the symptom reads as *"asking for BLEND drops
+the map"*, which points squarely at the alpha code — and the alpha code is
+innocent.
+
+```
+before   Hair   alphaMode=BLEND  baseTex=None
+after    Hair   alphaMode=BLEND  baseTex=12
+```
+
+**The blast radius is nil**, which was worth measuring rather than assuming,
+since this silently removes a texture and six characters were rebuilt through
+the cutout path on 2026-11-12. Swept all 65 installed bundles for a non-opaque
+material with no base map: **2 carry one**, and neither is this. Adachi Rei's
+`Glass` is a downloaded bundle, and Alice Ivy's three were already recorded
+here as a separate sub-case in the 2026-11-11 rebuild note. A CUTOUT survives
+the empty slot — `cejas1` kept its map throughout — and it was a BLEND that
+did not, with `VRM_BLEND_MATERIALS` used on exactly one other character.
+
+#### Where she stands
+
+| | |
+|---|---|
+| hair geometry | **372.6 x 465.6 x 423.3 mm**, from 14.0 x 22.4 x 13.4 |
+| hair material | **BLEND with its texture** |
+| eyebrows | separate mesh, **MASK**, 834 verts |
+| height | 1700.0 mm |
+| humanoid map | correct; all 4 limb pairs on the side their names claim |
+
+**Still open: `aiStandardSurface4`**, the lens over her irises, stays OPAQUE
+despite being named in `VRM_CUTOUT_MATERIALS`, where the source GLB declares
+MASK. The cutout gate requires the base map to carry a real alpha channel, so
+the next thing to measure is whether `Image_2` has one. **Her pupils are not
+established as fixed.**
+
+Nothing has been installed. Her bundle is untouched and the rebuilt file is a
+scratch artefact.
 
 ### Jessica Rabbit's right leg is 92 mm higher than her left, 2026-11-16
 
