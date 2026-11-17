@@ -1006,9 +1006,26 @@ Hair: carrying the source's base colour factor (0.0782, 0.0182, 0.0182)
 
 ```
 glb_bake_joint_scale.py prix.glb prix_baked.glb
-VRM_GLTF_BIND_POSE=node VRM_BLEND_MATERIALS="Hair" VRM_CUTOUT_MATERIALS="cejas1"
-build_vrm.py prix_baked.glb <emptytexdir> 1.70 mixamo "Prix" prix.vrm 1024     '^(Icosphere|[LR]_iris_.*)$' '' ''
+VRM_BREASTRIG=1 VRM_GLTF_BIND_POSE=node VRM_BLEND_MATERIALS="Hair" VRM_CUTOUT_MATERIALS="cejas1" build_vrm.py prix_baked.glb <emptytexdir> 1.70 mixamo "Prix" prix.vrm 1024     '^(Icosphere|[LR]_iris_.*)$' '' ''
 ```
+
+`VRM_BREASTRIG=1` is not optional for her. Without it she builds with **3**
+spring chains where the bundle she replaced had **5**: her source carries no
+chest bones at all, so the rigger has to BUILD them. With it:
+
+```
+chest rig: built BreastSpring_L, BreastSpring_R and weighted 341 vertices onto them
+breast spring chain 'BreastSpring_L': 2 joints, stiffness 1.00, drag 0.90
+breast spring chains added: 2
+colliders: 10 in one group, attached to 3 of 5 spring chain(s)
+```
+
+That last line is the day's other lesson holding: **3 of 5**, because a chest
+chain is deliberately given no collider group, and the two it skips are
+exactly the two just built.
+
+Then flatten the shine on the exported bundle — `patch_shine.py <bundle> '*'`
+— which is confirmed by render rather than assumed.
 
 #### INSTALLED 2026-11-16, with one regression that must be named
 
