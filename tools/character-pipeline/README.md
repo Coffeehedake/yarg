@@ -1538,9 +1538,17 @@ does not justify replacing a working character without Jay saying so.
 `%USERPROFILE%\Documents\YARG-Characters` -- the build intermediate, same 150
 bones with the same names (`n29`..`n185`) at the same heights, X negated as
 Blender/VRM always is against Unity. So no Mixamo round trip was needed; the
-correction goes into the VRM and back out through `YargCharExporter`. The
-earlier note that his rig was not on this machine was looking for the Mixamo
-FBX and should have looked for the intermediate.
+correction goes into the VRM and back out through `YargCharExporter`.
+
+**The claim the day before that his rig was not on this machine was WRONG, and
+this file already said so.** "Reach is bounded by what still exists — but by
+MORE than the scratchpad" names that store and counts its 25 VRMs, a thousand
+lines above, as a correction to an earlier claim that 35 characters had
+"neither source nor VRM". Searching Downloads for a Mixamo FBX, not finding
+one and concluding no rebuild was possible walked straight back into the
+mistake this file had already corrected once. **Check
+`%USERPROFILE%\Documents\YARG-Characters` before calling a character
+unrebuildable**; names differ between the two stores, so match case by case.
 
 `straighten_spine.py` (new) poses the spine joint by joint onto vertical,
 iterated, and `--keep` restores the arms' and legs' original ORIENTATION at
