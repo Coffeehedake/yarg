@@ -30,7 +30,26 @@ elif FBX.lower().endswith((".usd", ".usdc", ".usda", ".usdz")):
     bpy.ops.wm.usd_import(filepath=FBX)
 elif FBX.lower().endswith((".glb", ".gltf")):
     bpy.ops.wm.read_homefile(use_empty=True)
-    bpy.ops.import_scene.gltf(filepath=FBX)
+    # VRM_GLTF_BIND_POSE=node places bones from the NODE HIERARCHY instead of
+    # deriving them from the inverse bind matrices. The two disagree in some
+    # exports, and when they do the importer follows the IBMs: Prix's
+    # `hairAll` lands at the world origin rather than on her head, 1.4 m away
+    # from where her own node tree puts it. The renderer is unaffected either
+    # way -- a skinned vertex is world(joint) * IBM * v and both halves move
+    # together -- which is why the file looks right everywhere except in
+    # Blender's bone positions.
+    #
+    # OPT-IN, because it changes the rest pose of EVERY glTF character: with
+    # it on, Prix imports arms-down at 167.7 mm wide where the IBM pose is
+    # arms-out at 414.4 mm. The T-pose step copes with both, but that is not
+    # a change to make silently to 30-odd built characters.
+    if os.environ.get("VRM_GLTF_BIND_POSE") == "node":
+        print("gltf: placing bones from the NODE HIERARCHY "
+              "(guess_original_bind_pose=False)")
+        bpy.ops.import_scene.gltf(filepath=FBX,
+                                  guess_original_bind_pose=False)
+    else:
+        bpy.ops.import_scene.gltf(filepath=FBX)
 else:
     bpy.ops.wm.read_homefile(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=FBX)
@@ -156,6 +175,7 @@ if not os.environ.get("VRM_KEEP_SUFFIX"):
                   % (len(_vals), len(set(_vals))))
 
 meshes = [o for o in bpy.data.objects if o.type == "MESH"]
+
 
 # Sketchfab scenes often ship set dressing (floors, backdrops, particle planes)
 # alongside the character. Left in, they inflate the bundle and sit around the

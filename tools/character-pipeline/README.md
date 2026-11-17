@@ -798,7 +798,71 @@ forward"*.
   type: NoneType` throughout. So the alpha path takes one of the three
   materials the source declares and mishandles the other two.
 
-Nothing has been installed. The rebuilt file is a scratch artefact.
+#### FIXED: the hair, by baking the scale into the GLB
+
+**Two independent losses, not one**, and each needed its own fix. Both are
+verified by measurement.
+
+**1. The scale.** `glb_bake_joint_scale.py` rewrites the file so no joint
+carries a scale at all: it drops the scale from the joint, multiplies every
+descendant's local translation by it, and corrects the inverse bind matrices
+by `IBM' = inverse(world') * world * IBM` so that `world' * IBM'` equals
+`world * IBM` and **no vertex moves**. It checks its own arithmetic before
+writing — *"rewrote 130 inverse bind matrix/matrices; worst joint-matrix
+disagreement **1.388e-16 m**"* — and refuses above a micrometre.
+
+**2. The placement, which was a separate fault entirely.** Even baked, the
+hair still imported at the world origin. Blender's importer derives bone
+positions from the INVERSE BIND MATRICES, and this file's IBMs and its node
+tree disagree: the node tree puts `hairAll` on her head, the IBMs put it at
+the origin, 1.4 m away. The renderer is unaffected either way — a skinned
+vertex is `world(joint) * IBM * v` and both halves move together — which is
+exactly why the file looks right everywhere except in Blender's bones.
+`VRM_GLTF_BIND_POSE=node` passes `guess_original_bind_pose=False`.
+
+Measured on import, which separates them cleanly:
+
+| | hair mesh on import |
+|---|---|
+| as supplied | 3.9 x 3.8 x 6.3 mm, at the origin |
+| baked only | 87.1 x 83.4 x 138.9 mm, **still at the origin** |
+| `bind_pose=node` only | 4.8 x 5.5 x 6.1 mm, **correctly on the head** |
+| **both** | **107.0 x 121.6 x 133.7 mm, on the head** |
+
+And in the built `.vrm`, against the installed bundle's 14.0 x 22.4 x 13.4 mm:
+
+```
+CN_F_HAIR_111_Hair_0   10741 verts   372.6 x 465.6 x 423.3 mm
+```
+
+Long hair falling past the shoulders, which is what her source render shows.
+
+**The after-import repair was tried first and withdrawn.** It learned the
+GLB->Blender mapping from the bones the importer placed correctly and applied
+it to the ones it had not — which rests on that mapping being a similarity,
+and it is not. Fitted over 115 control joints it left **124 mm** of residual,
+with `FemaleBody_L_eye_J_0104` **421.9 mm** out and a finger joint 188.0 mm
+out on a 434 mm span. Blender does not place bones from the node hierarchy
+alone, so there is no single transform to recover. The module was deleted
+rather than left as a dead path.
+
+#### Still blocking: the Hair material loses its texture
+
+`cejas1` exports **MASK** correctly, so the eyebrows are fixed. The other two
+are not:
+
+* **`Hair` exports BLEND but with `baseTex` NULL.** Built without
+  `VRM_BLEND_MATERIALS` it keeps its texture and exports OPAQUE; asking for
+  BLEND is what drops it. So the hair would now be the right shape in the
+  right place and untextured.
+* **`aiStandardSurface4` stays OPAQUE** despite being named in
+  `VRM_CUTOUT_MATERIALS`.
+
+The exporter logs `Unexpected alpha clip input node type: NoneType`
+throughout. **She is not installable until that is fixed** — full-size opaque
+hair would render as a grey mass, which is worse than the skullcap she has
+now. Nothing has been installed; her bundle is untouched and the rebuilt file
+is a scratch artefact.
 
 ### Jessica Rabbit's right leg is 92 mm higher than her left, 2026-11-16
 
