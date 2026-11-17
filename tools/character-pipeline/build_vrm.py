@@ -7194,6 +7194,33 @@ for mat in bpy.data.materials:
         # is the answer when a cutout shares a continuous surface with an
         # opaque material. It is opt-in because for most characters the
         # swap is the larger change.
+        # READ THE TINT FIRST. glTF multiplies baseColorTexture by
+        # baseColorFactor, and Blender's importer carries that factor in as a
+        # Mix node between the texture and Base Color -- colour input B holds
+        # it while A takes the image. It has to be read HERE, because
+        # `mt.enabled = True` below REBUILDS THE MATERIAL'S NODE TREE: after
+        # it, this material has no "Base Color" input at all. An earlier fix
+        # read it AFTER enabling, printed nothing, changed nothing and was
+        # removed -- `bsdf.inputs.get("Base Color")` returning None on exactly
+        # the material being fixed is what it was doing, and a debug print at
+        # the line is what finally said so.
+        _tint = None
+        try:
+            _tbi = bsdf.inputs.get("Base Color") if bsdf is not None else None
+            if _tbi is not None and _tbi.links:
+                _tn = _tbi.links[0].from_node
+                if _tn.type in ("MIX", "MIX_RGB"):
+                    _tc = [i for i in _tn.inputs
+                           if getattr(i, "type", "") == "RGBA"]
+                    _tl = [i for i in _tc if i.links]
+                    _tu = [i for i in _tc if not i.links]
+                    if len(_tl) == 1 and len(_tu) == 1:
+                        _cand = tuple(_tu[0].default_value[:3])
+                        if max(abs(c - 1.0) for c in _cand) > 1e-3:
+                            _tint = _cand
+        except Exception:                                        # noqa: BLE001
+            _tint = None
+
         if cut or blend or os.environ.get("VRM_MTOON_ALL"):
             mt.enabled = True
             # AND HAND MToon THE TEXTURE, or enabling it throws the texture
@@ -7230,28 +7257,20 @@ for mat in bpy.data.materials:
             mt.pbr_metallic_roughness.base_color_factor = (
                 _bc[0], _bc[1], _bc[2], blend_alpha)
         else:
-            # KNOWN WRONG, and left wrong deliberately rather than fixed
-            # with something that does not fire. glTF multiplies
-            # baseColorTexture by baseColorFactor, and forcing white here
-            # discards the factor. That is invisible for a full-colour map
-            # with a white factor, and ruinous for a GREYSCALE map whose
-            # colour lives entirely in the factor.
-            #
-            # Prix's hair: `CN_F_HAIR_110_hair` is a 512x512 GREY+ALPHA image
-            # and her factor is (0.0782, 0.0182, 0.0182), near-black. Shipped
-            # at white she gets GREY hair, which is exactly the washed-out
-            # skullcap in her installed bundle next to the near-black hair of
-            # her source render.
-            #
-            # Blender's glTF importer carries the factor in as a Mix node
-            # between the texture and Base Color -- colour input B holds it,
-            # A takes the image, confirmed by reading the graph. A fix that
-            # read it there was written and REMOVED: it never printed and
-            # never changed the output, and the cause was not found. Shipping
-            # a step that silently does nothing is worse than shipping a known
-            # gap, because the next reader believes it.
+            # White ONLY when the source says white. Forcing it discards
+            # the factor, which is invisible for a full-colour map and
+            # ruinous for a GREYSCALE one whose colour lives entirely there.
+            # Prix's hair map is 512x512 grey+alpha and her factor is
+            # (0.0782, 0.0182, 0.0182), near-black -- shipped at white she
+            # gets GREY hair, which is the washed-out skullcap in her
+            # installed bundle next to the near-black hair of her source.
+            _ff = _tint if _tint is not None else (1.0, 1.0, 1.0)
+            if _tint is not None:
+                print("    %s: carrying the source's base colour factor %s "
+                      "rather than shipping its map at white"
+                      % (mat.name, tuple(round(c, 4) for c in _tint)))
             mt.pbr_metallic_roughness.base_color_factor = (
-                1.0, 1.0, 1.0, blend_alpha)
+                _ff[0], _ff[1], _ff[2], blend_alpha)
     except Exception as _e:
         print("    (could not set alpha mode: %s)" % _e)
 

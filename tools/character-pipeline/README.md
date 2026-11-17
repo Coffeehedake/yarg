@@ -940,11 +940,57 @@ the map carries the colour.
 
 Blender's importer brings the factor in as a **Mix node** between the texture
 and Base Color — colour input B holds it, A takes the image, read off the
-graph directly. **A fix that read it there was written and then REMOVED**: it
-never printed and never changed the output, and the cause was not found.
-Shipping a step that silently does nothing is worse than shipping a known
-gap, because the next reader believes it. The gap is recorded at the line
-instead.
+graph directly.
+
+**FIXED, and the first attempt failed for a reason worth keeping.** That
+attempt read the Mix node *after* `mt.enabled = True`, printed nothing and
+changed nothing, and was removed rather than left as a step that silently
+does nothing. A debug print at the line is what finally said why:
+
+```
+DEBUG Hair: bsdf=True base_tex=True bc_linked=None from=None
+DEBUG lambert11: bsdf=True base_tex=True bc_linked=True from=TEX_IMAGE
+```
+
+`bc_linked=None` means `bsdf.inputs.get("Base Color")` returned **None** —
+on the one material being fixed, and not on its neighbour. **Enabling MToon
+REBUILDS the material's node tree**, so by the time the old code looked, the
+Principled graph it wanted to read no longer existed. The tint is now read
+BEFORE MToon is enabled, and the build says so:
+
+```
+Hair: carrying the source's base colour factor (0.0782, 0.0182, 0.0182)
+      rather than shipping its map at white
+```
+
+| | baseColorFactor |
+|---|---|
+| source GLB | (0.0782, 0.0182, 0.0182) |
+| **our build** | **(0.0782, 0.0182, 0.0182)** |
+
+#### She builds clean
+
+| | |
+|---|---|
+| hair geometry | **372.6 x 465.6 x 423.3 mm**, from 14.0 x 22.4 x 13.4 |
+| hair material | BLEND, with its texture, **near-black** |
+| eyebrows | separate mesh, MASK, 834 verts |
+| iris lens | excluded — 100% clear in the source |
+| height | 1700.0 mm |
+| humanoid map | correct; all 4 limb pairs on the side their names claim |
+| meshes / materials | 11 / 8, skin intact |
+
+**Her recipe, which she has never had:**
+
+```
+glb_bake_joint_scale.py prix.glb prix_baked.glb
+VRM_GLTF_BIND_POSE=node VRM_BLEND_MATERIALS="Hair" VRM_CUTOUT_MATERIALS="cejas1"
+build_vrm.py prix_baked.glb <emptytexdir> 1.70 mixamo "Prix" prix.vrm 1024     '^(Icosphere|[LR]_iris_.*)$' '' ''
+```
+
+**Not yet installed, and one thing is still unverified**: whether `eyes1`
+alone gives her the blue irises of her source render. That wants a look at
+her, and the podium render is still broken for every character.
 
 Nothing has been installed. Her bundle is untouched and the rebuilt file is a
 scratch artefact.
