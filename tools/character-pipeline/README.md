@@ -2287,6 +2287,43 @@ diverged to the point where nothing matched, and a reader checking "what is in
 the game" against the nearest convenient copy got a confident wrong answer 44
 times out of 44.
 
+### The real reason `VRM_MTOON_ALL` does nothing to an installed character, 2026-11-18
+
+Chased because yarg-1 and I disagreed on a detail and only one of us could be
+right about the file. **Neither of us was wrong. We were reading different
+artefacts, and the second fact is much bigger than the first.**
+
+| artefact | what it carries |
+|---|---|
+| `aiko-RECIPE-MTOONALL.vrm` | MToon present, `shadeColorFactor` == `baseColorFactor` == (1,1,1) |
+| `AikoMTOONALL.yargchar` -- **OUR EXPORTER'S BUNDLE** | `_BaseColor, _Color, _EmissionColor, _SpecColor` -- **standard Lit. NO MToon properties at all** |
+| `Hatsune Miku (Retry Now ver.).yargchar` -- downloaded | `_ShadeColor, _OutlineColor, _RimColor, _MatcapColor` -- the full MToon set |
+
+**OUR EXPORTER DOES NOT CARRY MToon THROUGH TO THE BUNDLE.** `VRM_MTOON_ALL=1`
+writes MToon into the `.vrm` and the Unity export turns it into a standard
+shader. yarg-1's shade==base observation is true of the intermediate and MOOT:
+a real shade colour would not survive the export either.
+
+The corroboration was already on the table and neither of us had joined it up:
+of the **6 installed bundles carrying MToon, all six are downloaded and none is
+ours**. That is not a coincidence about which characters need toon shading --
+it is what "our exporter drops MToon" looks like from the other end.
+
+**So `VRM_MTOON_ALL` is inert for anything WE build and install** -- which is
+what I originally guessed, for an entirely different and wrong reason. The
+switch is not ignored by the renderer; it never reaches the renderer, because
+the bundle build does not preserve it.
+
+Consequences worth carrying:
+
+- **Peach's recipe row crediting `VRM_MTOON_ALL=1`** is crediting something that
+  cannot survive our export. This file already hedged that row for a different
+  reason -- her recorded arguments describe a build that was never installed.
+- **A toon-shaded character cannot currently be BUILT by us**, only downloaded.
+  If one is ever wanted, the exporter is where the work is, not the builder.
+- MToon itself renders fine, proven on the downloaded bundles -- see the
+  correction below.
+
 ### CORRECTED 2026-11-18: MToon DOES render. My "unlit is not honoured" was unsupported
 
 Checking Hatsune Miku (Retry Now ver.) overturned my own finding from earlier
