@@ -2777,13 +2777,11 @@ section that corrects an earlier one only works for a reader who reaches it.
 
 ### The interior-fault sweep ANSWERED: no character shows a large one, 2026-11-18
 
-> **PROVISIONAL AS OF LATER THE SAME DAY — THE NULL BELOW IS BEING RE-EARNED, NOT ASSUMED.**
-> The depth pass was corrected to match each material's own cull mode (see the next section).
-> The positive control held, so the instrument is sound — but EVERY READING WENT UP, so the
-> conclusion "no character shows a large interior fault" no longer follows from the numbers
-> that produced it. A re-sweep of all 65 is running. **Do not cite the null below until this
-> marker is removed.** Flagged here, at the top of the claim, rather than corrected 300 lines
-> further down — which is the failure this same file diagnosed an hour earlier.
+> **MARKER LIFTED. THE NULL SURVIVED THE CORRECTED INSTRUMENT AND IS STRONGER FOR IT.** It was
+> marked provisional for an hour on the report that "every reading went up" — and that report
+> was itself wrong. See "A RATE IS NOT A COUNT" below: the rates rose because the DENOMINATOR
+> fell, while the violating pixels themselves fell 19% roster-wide. The marker was still the
+> right action on the information available, and is recorded rather than deleted.
 
 The roster was swept for the one fault class every other instrument here is blind to -- geometry
 wrongly occupying another part's space, which no silhouette measure can see. 65 characters, all
@@ -2830,7 +2828,7 @@ This also made the SSAO experiment unnecessary. Disabling screen-space effects w
 touched cast shadows or AA, so a null would have cleared nothing -- while the asymmetry
 correction subtracts all three at once WITHOUT needing to name which.
 
-#### THE ANSWER (SUPERSEDED-PENDING — see the marker at the head of this section)
+#### THE ANSWER (CONFIRMED by the corrected instrument — see below)
 
 **No character on this roster shows a large interior fault.** The worst directional reading is
 0.07 of the body/aux overlap, edge-concentrated, on a character with no transparent material. A
@@ -2892,6 +2890,54 @@ nonetheless more correct, because the depth pass now sees the faces the renderer
 Lola's ratio falling 17.0 to 5.00 is the one figure not to over-read: her overlap denominator
 also collapsed, 1,609 px to 486, so both halves of the fraction moved — and hers was already
 the row flagged as noise-prone on a small denominator.
+
+#### A RATE IS NOT A COUNT, and quoting one as the other cost an hour
+
+The alarm that "every reading went up by roughly 1.7x" was true of the RATES and FALSE of the
+COUNTS. Split across all 46:
+
+    median ratio NEW/OLD
+      violation FRACTION   1.165
+      violating PIXELS     0.904   <- the NUMERATOR FELL
+      overlap DENOMINATOR  0.641   <- the denominator fell much further
+      total violating px   3,714 -> 3,025   (-19% roster-wide)
+
+**The fractions rose BECAUSE THE DENOMINATOR SHRANK.** Backface culling removes aux surfaces
+from the depth map, so the region in which an ordering decision exists AT ALL got smaller
+faster than the violations did. The more correct instrument finds FEWER violating pixels, which
+is the opposite of the story its rates tell.
+
+AND IT PUT AN ARTEFACT AT THE TOP OF THE NEW TABLE. Gordon Freeman jumped 7th to 1st on
+asymmetry at ratio 13.33 — while his violating pixels went **81 to 40, halved**. His overlap
+collapsed 1,156 to 261, so the fraction doubled because the denominator quartered. Lola Bunny
+is the same shape: 121 to 40 pixels on a denominator falling 1,632 to 486.
+
+> **A RATIO WHOSE NUMERATOR AND DENOMINATOR BOTH CHANGE IS TWO FINDINGS WEARING ONE NUMBER.**
+> So the third answer to "did the ranking rescale or reshuffle": IT RESHUFFLED, AND THE
+> RESHUFFLE IS THE DENOMINATOR MOVING, NOT THE SUBJECTS.
+
+**A fraction is not comparable across instrument VERSIONS when the instrument moves the
+denominator.** Within one sweep it remains the right cross-character statistic — it is the only
+scale-free one between a 1.9 m character and a 0.9 m one — but any row whose overlap is a few
+hundred pixels is noise, and that now includes the top row. `MIN_REGION_PX` guards the face
+region; **the overlap denominator has no equivalent guard and should.** That is a defect in the
+tool, not a caveat about this run.
+
+#### FINAL: the null, on the corrected instrument
+
+**No character on this roster shows a large interior fault, and the corrected instrument makes
+that MORE certain.** Roster-wide violating pixels fell 19%; the largest single-character count
+is about 590 px on Jessica Rabbit; the strongly directional rows are 40-100 px at edges. A
+genuinely broken artefact reads 0.42 forward at ratio 4.15. Both controls passed BEFORE the
+sweep, in that order.
+
+Four candidate causes for the residue are ruled out: **transparency** (rho 0.11), **symmetric
+confounds** (26 of 46 reverse-dominant after subtraction), **interpenetration** (shape test
+failed), **sidedness** (fixing it REDUCED violations rather than removing them). What remains
+is 3,025 px across 65 characters, at edges, nothing above ~590.
+
+**STOPPING HERE IS THE RIGHT CALL.** The remaining signal is smaller than the uncertainty in
+how to count it, and the next honest step is the denominator guard — not another hypothesis.
 
 #### What it still cannot see
 
