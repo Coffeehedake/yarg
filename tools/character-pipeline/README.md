@@ -2256,8 +2256,36 @@ labelled `FinalINSTALLED` that loaded a stale path -- all three happened in one
 day. **The installed folder is the only artefact that answers "what is in the
 game".** The store is useful as build output and as nothing else.
 
-Nothing has been deleted or refreshed; the finding is recorded rather than
-acted on, because a snapshot someone deliberately kept is not obviously rubbish.
+#### REFRESHED on Jay's instruction, 2026-11-18
+
+The 44 stale bundles were backed up first, then the folder was refreshed from
+the installed characters.
+
+    backed up    44 bundles, 446 MB, to character-backups/yarg-characters-store-2026-11-18/
+                 every one verified byte-identical to its source before anything was written
+    copied in    65 installed bundles
+    verified     0 mismatches of 65 -- the store now matches the game byte for byte
+
+**Deliberately NOT touched**, because the point was the staleness and not a
+clear-out:
+
+- the **25 `.vrm` build intermediates** (807 MB) -- the irreplaceable part, and
+  the reason this folder exists at all;
+- `README.md`, the `.blend`, and the `backup-2026-11-13-sidedness` DIRECTORY
+  (65 files, 575 MB, an earlier snapshot);
+- **two bundles that exist only here** and have no installed counterpart --
+  `Junio Sonic.yargchar` and `Shadow the Hedgehog.yargchar`. Installed has a
+  differently-named `Sonic.yargchar`, so these are older or alternate builds and
+  deleting them would have destroyed the only copy.
+
+The store is 67 bundles now: the 65 installed plus those two orphans.
+
+Note the folder's own `README.md` always said *"Installed copies live in
+%USERPROFILE%\AppData\LocalLow..."*, so it never claimed to BE the installed
+set. The trap was not the folder lying; it was that the two had silently
+diverged to the point where nothing matched, and a reader checking "what is in
+the game" against the nearest convenient copy got a confident wrong answer 44
+times out of 44.
 
 ### The unlit finding, BOUNDED: 6 of 65, all of them downloaded, none of ours
 
