@@ -198,11 +198,21 @@ public static class YargCharAnim
                     int total = 0, deadPairs = 0;
                     foreach (var m in moved) { total += Math.Max(m, 0); if (m == 0) deadPairs++; }
                     Debug.Log($"[ANIM] {name}: per-frame moved px = {string.Join(",", moved)}");
-                    if (moved.Count > 0 && total == 0)
+                    if (anim == null)
                     {
-                        Debug.LogError($"[ANIM] {name}: CONTROL FAILED -- {frames} frames and NOT ONE PIXEL changed. " +
-                                       "The Animator did not advance, so these frames say nothing about the character. " +
-                                       "Do not read them as 'it stands still'.");
+                        // A STATEMENT ABOUT THE CHARACTER, NOT ABOUT THE HARNESS, and the two must
+                        // not share a verdict. With no Animator the frames are identical BY
+                        // CONSTRUCTION -- that is a correct reading of a character that cannot
+                        // animate, not a broken measurement, and counting it as a failure across a
+                        // roster sweep would bury the real control failures in false alarms.
+                        Debug.Log($"[ANIM] {name}: NO ANIMATOR -- {frames} identical frames, as expected. " +
+                                  "Not a control failure. Nothing here can be read as motion either way.");
+                    }
+                    else if (moved.Count > 0 && total == 0)
+                    {
+                        Debug.LogError($"[ANIM] {name}: CONTROL FAILED -- an Animator IS present, {frames} frames, and " +
+                                       "NOT ONE PIXEL changed. It did not advance, so these frames say nothing about " +
+                                       "the character. Do not read them as 'it stands still'.");
                         failures++;
                     }
                     else
