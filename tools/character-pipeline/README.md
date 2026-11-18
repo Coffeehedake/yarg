@@ -2605,6 +2605,62 @@ measurements to surviving carriers is the right instrument, and this one still s
 because a checksum has no filename and so looks like a fact rather than a measurement needing a
 carrier.
 
+### Two hazards for anyone building an instrument in this project, 2026-11-18
+
+Both were hit the same afternoon, from opposite ends, by two sessions working on unrelated
+problems. Neither announced itself.
+
+#### THIS PROJECT IS URP, AND BUILT-IN-PIPELINE MACHINERY FAILS SILENTLY IN IT
+
+Three separate shapes of the same trap, all measured:
+
+  - `Camera.RenderWithShader` is a **NO-OP under URP**. It does not fail and does not warn --
+    the camera just renders normally, with the real materials. A depth probe decoded that colour
+    frame as depth and got a confident, plausible, entirely fictional depth map: pale skin
+    decoded to ~1.0 and read as "no geometry", the dark podium decoded to ~0 and read as "the
+    nearest surface in frame". It LOOKED like a depth map.
+  - A **built-in-pipeline shader assigned as a material** under URP draws NOTHING, silently. The
+    obvious fix for the above turned the fiction into a blank.
+  - A **built-in-pipeline shader inside a bundle** renders FLAT MAGENTA. `VRM10/MToon10` built,
+    bundled, loaded and passed a shader-name check; it has no pass URP will run.
+
+> **AN INSTRUMENT THAT IS NOT RUNNING DOES NOT NECESSARILY PRODUCE NOTHING.** It can produce
+> output that passes every check except "did the mechanism run".
+
+Log the active render pipeline at instrument startup, and make anything built-in-RP announce
+itself rather than degrade quietly.
+
+#### CHOOSE A CONTROL ON MECHANISM, NOT ON PROVENANCE
+
+Twice in one day a control was picked because the artefact came from the fault's HISTORY --
+"this is the build that was installed when the fault was reported" -- rather than because it
+carried the fault's CAUSE. Both times the control was a perfectly good artefact that simply did
+not contain the thing being measured, so it returned a TRUE number answering a question nobody
+had asked:
+
+  - A positive control that pushed hair TOWARD the camera, for a probe whose entire job is to
+    ignore geometry that is genuinely in front. A zero would have read as a broken probe and
+    invited "fixing" a correct instrument. Under the measurement it replaced, that bad control
+    would have PASSED.
+  - A pre-fix character used as a real-artefact positive, when that build had already been
+    flattened to OPAQUE and never carried the BLEND hair material that causes the fault. The
+    sentence ruling it out was already written in the author's own note.
+
+The failure is specific and worth naming because it does not look like a failure: the numbers
+can support a coherent, well-evidenced wrong explanation. In the second case the aux-half bone
+counts genuinely did support "the probe is blind on this rig" -- and the frames showed the face
+was clear, so the near-zero reading was simply CORRECT. **The numbers agreeing with a wrong
+explanation is the condition under which almost everyone stops looking.**
+
+Ask of any control: does this artefact CARRY THE CAUSE? Provenance is not mechanism.
+
+#### A measurement that changes when nothing changed is the furniture
+
+A conservation check reported a 1,888 px discrepancy and it was read as a transparency
+signature. The same character then read 0, 1,899 and 0 across three runs with nothing altered.
+It was the PODIUM. `anim_sheet.py` locates the podium from the data and excludes it; rendering
+the subject alone on a private layer is the better fix, and both characters then read exactly 0.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still
