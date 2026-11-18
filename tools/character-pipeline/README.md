@@ -2944,6 +2944,41 @@ is 3,025 px across 65 characters, at edges, nothing above ~590.
 **STOPPING HERE IS THE RIGHT CALL.** The remaining signal is smaller than the uncertainty in
 how to count it, and the next honest step is the denominator guard — not another hypothesis.
 
+#### The 19 hold-outs are provably safe, re-verified from the bundles
+
+The depth-order test held out 19 of 65 for having **no aux half** — every triangle dominantly
+weighted to a humanoid bone. That reason is derived from *rigging*, but the fault is a property
+of *materials*: rigid hair weighted hard to `Head` on a blended material fails identically and
+is just as invisible to a bone-based split. So "held out" never meant "rigid, therefore safe".
+
+`holdout_triage.py` separates the two by reading `_Surface` from each installed bundle: **SOUND**
+if no material sits in the transparent queue (no draw-order fault can exist whatever the
+rigging), **HIDING** if one does. The answer is **19 SOUND, 0 HIDING, 0 unreadable**, and it has
+now been produced twice — once in the original sweep, once re-run on 2026-11-18 after both the
+sweep's `part_overlap.json` and its `AikoCONTROLBLEND` control bundle had been deleted. The tool
+therefore accepts a **name list** as well as a JSON (`holdouts-2026-11-18.txt`): a tool whose
+only input no longer exists cannot re-verify its own published result.
+
+**The control is the tool's now, not the operator's**, and it is the strongest form available,
+because the field under test exists on this roster: `_Surface == 1.0` is found on 19 materials
+across 9 non-held-out characters (Adachi Rei, Alcina Dimitrescu, Alice Ivy, Ariel, Gordon
+Freeman, Heels, Pomni, Prix, Sayuri). So a hold-out reading zero is a fact about that character.
+The tool refuses to publish a verdict if the control finds nothing, prefers `_Surface == 1.0`
+over the weaker `_AlphaClip` fallback, and counts key **presence** separately — 141 of the
+roster's 535 materials carry no `_Surface` key at all, so a reader treating a missing key as zero
+would call a quarter of the roster opaque while measuring nothing.
+
+Roster census, measured: **65 bundles, 535 materials, 19 transparent on 9 characters, 25 cutout
+on 10.** That corrects a "40 working alpha cutouts" figure this repo's own exporter comment
+carried, and the claim beside it that every installed character was built by our export path —
+6 of the 65 carry MToon, which the exporter cannot produce, so those were downloaded.
+
+> **The separation was already done when it was proposed as the next task.** The sweep note said
+> "the two cases are not separated here" and answered it 86 lines later; a coordinator read the
+> first sentence and proposed the work. The line is struck in place rather than deleted, because
+> a stale line reads exactly like a current one and this document had already been bitten the
+> same way by a playtest row quoted 376 lines above its own repair.
+
 #### The denominator guard
 
 Built 2026-11-18, in `part_overlap.py` (`overlap_floor`, `guard_overlap`) and used by

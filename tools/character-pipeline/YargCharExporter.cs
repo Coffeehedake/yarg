@@ -495,10 +495,22 @@ public static class YargCharExporter
                     int fixedCount = 0;
                     int cutoutCount = 0;
                     int blendCount = 0;
-                    // OPT-IN, and opt-in on purpose. Every character in the installed set was
-                    // built by the flattening path below, and 40 working alpha cutouts depend on
-                    // it; a default-on change here would move all of them at once to chase a
-                    // feature no shipped character uses yet.
+                    // OPT-IN, and opt-in on purpose: a default-on change here would move every
+                    // character we build at once, to chase a feature no shipped character uses.
+                    //
+                    // MEASURED 2026-11-18, correcting two numbers I put in this comment earlier
+                    // the same day from recollection rather than a read. The installed set is
+                    // 65 bundles, 535 materials: 25 materials carry _AlphaClip == 1.0, on 10
+                    // characters -- NOT the "40 working alpha cutouts" this comment claimed.
+                    // And "every character in the installed set was built by" this path is
+                    // false: 6 of the 65 carry MToon, which this exporter cannot produce, so
+                    // those were downloaded rather than built here.
+                    //
+                    // The claim is about the INSTALLED BUNDLES, which is the layer the risk
+                    // actually lives in -- not about what a recipe asks for or what the
+                    // intermediate .vrm holds. Re-measure with holdout_triage.py's census path
+                    // rather than trusting this number; a figure in a comment is not a
+                    // measurement, which is exactly how the 40 got here.
                     bool keepMToon = Environment.GetEnvironmentVariable("YARG_KEEP_MTOON") == "1";
                     int keptCount = 0;
                     foreach (var r in instance.GetComponentsInChildren<Renderer>(true))

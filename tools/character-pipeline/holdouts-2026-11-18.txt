@@ -1,0 +1,36 @@
+# The 19 characters held out of the depth-order test in the 2026-11-18 interior-fault sweep,
+# for having NO AUX HALF -- every triangle dominantly weighted to a humanoid bone.
+#
+# WHY THIS FILE EXISTS: the sweep's part_overlap.json was deleted with its output directory
+# after being read into measurements/interior-faults-2026-11-18.md. These names are therefore
+# the only surviving machine-readable record of that run's hold-out set, transcribed from that
+# note (the list at "The hold-outs are provably safe -- 19 of 19"). It is a TRANSCRIPTION of a
+# recorded result, not a re-measurement: nothing here was re-derived from a render, and a later
+# sweep will produce its own list rather than inherit this one.
+#
+# Names are the installed bundle basenames under
+#   %USERPROFILE%\AppData\LocalLow\FatalException\YARG-FE\release\custom\characters
+# which differ from the note's prose in two places: "Iron Man" is "Iron Man Mark 85", and the
+# note's "both Spider-Men" are "Spider-Man" and "Spider-Man PS".
+#
+# Used by: holdout_triage.py <this file> <characters-dir>
+
+Alastor
+Baby Groot
+Elite Terrorist
+Harley Quinn
+Iron Man Mark 85
+Mannequin
+Mickey Mouse
+Peacemaker
+Shaggy Rogers
+Skeleton Mage
+Sonic
+Spider-Man
+Spider-Man PS
+Steve
+The Mandalorian
+The Rock
+Vegeta
+Vigilante
+Yui Suzukaze
