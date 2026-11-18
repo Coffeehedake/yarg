@@ -201,9 +201,24 @@ Two ways to lose an hour here, both measured:
   process, not the launcher. And `Get-Process Unity` matches Unity **Hub**'s background helper
   (`unity.exe serve`), not the editor, so a "wait until Unity exits" loop on that name never
   finishes. Use `Start-Process -PassThru` and poll `$p.HasExited`.
-- PowerShell's `Start-Process -ArgumentList` with an **array** joins on spaces **without quoting**,
-  so a project path containing a space arrives as several arguments and Unity exits 1 with
-  `Couldn't set project path`. Build one argument string with embedded quotes.
+- PowerShell's `Start-Process -ArgumentList` with an **array** joins on spaces **without quoting**.
+  Build one argument string with embedded quotes, or bind parameters normally.
+
+  **THE MECHANISM IS THE WARNING; THE SYMPTOM IS NOT.** This entry used to say only "a project
+  path containing a space arrives as several arguments and Unity exits 1 with
+  `Couldn't set project path`" -- and on 2026-11-18 a session that had READ this line walked
+  straight into it anyway, because its spaces were in a 65-entry CHARACTER LIST
+  (`"Adachi Rei.yargchar"`), not in a project path. The list split and `Rei.yargchar|Adachi` was
+  bound to `-Step`, a double. Nothing about "project path" matched what it was doing, so the
+  warning did not fire in its head.
+
+  ANY argument with a space is affected, and the symptom depends entirely on where the stray
+  token lands. It was cheap that time only because `-Step` is a **double** and the type
+  conversion failed loudly with no Unity log at all. **Had the stray token landed in a string
+  parameter, the run would have completed and produced a tidy wrong answer.**
+
+  Write the mechanism into the warning. A hazard indexed by its example is invisible to anyone
+  meeting it in a different costume.
 
 Install to `%USERPROFILE%\AppData\LocalLow\FatalException\YARG-FE\release\custom\characters\`.
 **YARG reads these at startup**, so it must be restarted to see a change.
@@ -2653,6 +2668,20 @@ was clear, so the near-zero reading was simply CORRECT. **The numbers agreeing w
 explanation is the condition under which almost everyone stops looking.**
 
 Ask of any control: does this artefact CARRY THE CAUSE? Provenance is not mechanism.
+
+And the narrower rule, which is the half that nearly cost more:
+
+> **WHEN YOU HAVE AN EXPLANATION FOR WHY A CONTROL FAILED, THAT IS THE MOMENT THE CONTROL NEEDS
+> CHECKING -- NOT THE MOMENT IT IS EXPLAINED. A good explanation for a null is how a null
+> survives.**
+
+The bone-count story was GOOD: `PREFIX Neck=9838/auxTris=1865` against `FIXED Neck=7960/auxTris=2987`
+really is consistent with "more hair sits on a humanoid bone in the older build, so it lands in
+the body half and cannot violate" -- a real mechanism, real numbers, right direction. Accepting it
+would have written a LIMITATION INTO THE TOOL THAT DOES NOT EXIST, and that invented limitation
+would then have explained away the failure of the bad control, protecting it from scrutiny.
+
+What killed it was opening two PNGs and seeing the face was clear.
 
 #### A measurement that changes when nothing changed is the furniture
 
