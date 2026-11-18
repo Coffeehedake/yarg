@@ -2775,6 +2775,87 @@ it dead.
 Strike superseded text WHERE IT SITS, in the same edit that records the new finding. A later
 section that corrects an earlier one only works for a reader who reaches it.
 
+### The interior-fault sweep ANSWERED: no character shows a large one, 2026-11-18
+
+The roster was swept for the one fault class every other instrument here is blind to -- geometry
+wrongly occupying another part's space, which no silhouette measure can see. 65 characters, all
+harness controls clean, 46 measurable by the depth-order test and 19 held out and then proven
+safe. **The answer is a NULL, and it is usable only because the positive control passes beside
+it.**
+
+#### MOST OF THE RAW RANKING WAS A SYMMETRIC CONFOUND
+
+The probe flags "aux visible where the body is geometrically nearer". The puzzle was that 44 of
+46 characters showed some violation while most carry NO transparent material at all -- and
+without transparency every surface writes depth, so the stated mechanism cannot fire.
+
+The thing that cracked it was already in the control numbers:
+
+    AikoCONTROLBLEND (broken)  forward 0.381922  reverse 0.107492   ratio 3.55
+    Aiko (fixed, clean)        forward 0.005191  reverse 0.015033   ratio 0.35
+
+**THE CLEAN CHARACTER READS THREE TIMES HIGHER IN REVERSE THAN FORWARD.** A character with
+nothing wrong should read near zero in both directions. Reverse exceeding forward is the
+signature of a process that is not a draw-order fault at all -- and SSAO, cast shadows and
+anti-aliasing all qualify, because each changes the shading of a surface that WAS ALWAYS SHOWN,
+at the boundary, regardless of which side is nearer. A real draw-order fault is directional; a
+shading confound is not.
+
+So rank on FORWARD MINUS REVERSE and the symmetric part subtracts out. It cost no render time:
+
+    forward-dominant  19 of 46        reverse-dominant  27 of 46
+
+| character | asym | fwd | rev | ratio | rank |
+|---|---|---|---|---|---|
+| Lola Bunny | 0.0696 | 0.0740 | 0.0044 | 17.0 | 2 -> **1** |
+| Yoda | 0.0504 | 0.0516 | 0.0013 | 41.0 | 4 -> **2** |
+| Jessica Rabbit | 0.0478 | 0.1013 | 0.0536 | **1.89** | **1 -> 3** |
+| Batman | 0.0437 | 0.0469 | 0.0032 | 14.5 | 6 -> 4 |
+| Gordon Freeman | 0.0209 | 0.0648 | 0.0439 | **1.48** | 3 -> 7 |
+
+A MAJORITY OF THE ROSTER BEING REVERSE-DOMINANT is the confirmation: a large symmetric component
+was sitting in the raw ranking. **Jessica Rabbit is nearly symmetric at 1.89**, so roughly half
+her forward signal is matched in reverse and most of what put her top was confound. She falls to
+third and her probe case is weaker again.
+
+This also made the SSAO experiment unnecessary. Disabling screen-space effects would not have
+touched cast shadows or AA, so a null would have cleared nothing -- while the asymmetry
+correction subtracts all three at once WITHOUT needing to name which.
+
+#### THE ANSWER
+
+**No character on this roster shows a large interior fault.** The worst directional reading is
+0.07 of the body/aux overlap, edge-concentrated, on a character with no transparent material. A
+genuinely broken artefact reads 0.38 forward at ratio 3.55. The new leader, Lola Bunny, is a THIN
+LINE ALONG ONE EAR EDGE, about 119 px -- her ears are aux geometry on non-humanoid bones and the
+signal traces their boundary.
+
+#### AND A NAMED LIMITATION THAT COULD ACCOUNT FOR THE ENTIRE RESIDUE
+
+Subtracting symmetric confounds does not subtract a DIRECTIONAL one, and there is a directional
+one by construction: **the aux half is typically OPEN, SINGLE-SIDED geometry** -- hair cards,
+cloth, Lola's ears -- **while the body is a CLOSED mesh**. The depth pass runs Cull Off, so for
+open aux it records whichever side is nearest INCLUDING A BACKFACE THE RENDERER NEVER DRAWS,
+while for a closed body it cannot. That bias points one way and survives forward-minus-reverse
+untouched. The Cull Back run moving magnitudes by up to 1.74x is consistent with it.
+
+So Lola Bunny's ear line is exactly what a sidedness mismatch predicts AND exactly what a real
+ear-ordering fault predicts, and nothing measured so far separates them. The test that would:
+match **each material's OWN cull mode** in the depth pass instead of forcing one globally. That
+is a build, not a read.
+
+> A NULL FROM AN INSTRUMENT WITH AN UNQUANTIFIED DIRECTIONAL BIAS IS WORTH LESS THAN THE SAME
+> NULL FROM ONE WITHOUT. The residual here is small and edge-shaped; the reason to resolve it is
+> not Lola's ear, it is that this probe will be pointed at future characters and its nulls have
+> to mean something.
+
+#### What it still cannot see
+
+Everything the brief said it could not: this is a rendered-view test, so geometry hidden from the
+camera at every sampled frame is unmeasured, and the idle is one animation. The 19 hold-outs are
+proven free of transparent material, which rules out draw-order faults on them specifically --
+it does not make them faultless.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still
