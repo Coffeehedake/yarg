@@ -2259,6 +2259,49 @@ game".** The store is useful as build output and as nothing else.
 Nothing has been deleted or refreshed; the finding is recorded rather than
 acted on, because a snapshot someone deliberately kept is not obviously rubbish.
 
+### The unlit finding, BOUNDED: 6 of 65, all of them downloaded, none of ours
+
+"Any past visual conclusion about MToon or unlit from this harness is suspect"
+was true and unbounded. yarg-1 narrowed it to 8 candidate recipes from the
+README; the installed bundles -- the only artefact that can answer -- narrow it
+further. `mtoon_sweep_installed.py`, 65 bundles, 65 readable, 96 distinct
+material property names seen:
+
+| character | MToon materials |
+|---|---|
+| Adachi Rei | 39 of 45 |
+| Inforder Trogen | 26 of 26 |
+| Kaiser Aufhanger | 24 of 24 |
+| Hatsune Miku (Retry Now ver.) | 23 of 23 |
+| Harq Alkahana | 18 of 18 |
+| Hatsune Miku (Dark) (Retry Now ver.) | 14 of 14 |
+
+**Six, and they are exactly the DOWNLOADED VRoid bundles this file already
+lists as not ours.** Not one character WE build carries an MToon material --
+including **Peach, the only one documented as built with `VRM_MTOON_ALL=1`**.
+That is consistent with what this file already admits about her: her recorded
+arguments describe a build that was never installed, and she was fixed with
+`patch_springs.py` rather than rebuilt.
+
+So the blast radius is six author-made bundles, and the practical consequence
+is theirs: they are authored with MToon and this render path does not honour
+`KHR_materials_unlit`, so they render lit where their authors intended
+otherwise. Nothing we built is affected, because nothing we built has an MToon
+material to begin with.
+
+#### The first version of this sweep returned a confident, meaningless ZERO
+
+It read the shader NAME off each material. A bundle references shaders it does
+not contain, so `m_Shader.read()` throws, a `try/except` swallowed it, and the
+sweep reported **"0 of 65 carry MToon"** having read no shader at all.
+
+**Its own control is what caught it**: zero MToon is plausible, but zero
+DISTINCT SHADER NAMES across 65 characters is impossible if the read worked.
+The rewrite matches MToon's distinctive material PROPERTIES instead, and prints
+the property-name count beside the result so the same failure cannot return
+silently. Third instance in one day of a wrapper reporting success about
+something it never read.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still
