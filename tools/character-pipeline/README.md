@@ -1638,6 +1638,89 @@ her -- no hair flying, no clipping through her dress. That confirms in motion wh
 the two static renders said at rest, and it is the check the static renders could
 not make.
 
+### The roster swept in motion, 2026-11-18: no character fault, three instrument faults
+
+All 65 installed characters rendered through their idle and ranked by
+`anim_sweep.py`. **Nothing on the roster is broken in motion by anything this can
+see. Every finding the sweep produced was my own instrument, and each one was
+plausible enough to have been written up.**
+
+**Jay: all the in-game idles are THE SAME ANIMATION.** That is what makes this
+sweep worth running at all, and it was not known when it was built. One clip
+across 65 characters means a difference between two characters cannot be "that
+one has a livelier idle" -- the confound the design was braced for does not
+exist. Divergence from the population is divergence in the RIG, so the
+population median stops being a convenience and becomes the expected behaviour.
+It also makes a false positive more dangerous, not less, because every outlier
+now looks like a real rig fault.
+
+Coverage, asserted rather than assumed: 65 of 65 logged `CONTROL OK`, 0
+`CONTROL FAILED`, 0 `NO ANIMATOR`, 650 frames, 65 distinct prefixes on disk.
+
+#### What the instrument did wrong, in the order it did it
+
+**1. A background cutoff of 18 cut dark costumes in half.** The frames are black
+and PNG is lossless, so 18 sounds conservative. A dark costume renders at 13-15.
+`silhouette()` then split the character, "largest connected component" returned a
+TORSO -- 18,314 px of y 131..331 where the whole figure is 46,000 px of y 75..563
+-- and the bottom row of that torso, a WAIST, was measured as feet.
+
+That produced a foot-movement reading of **1.2172 body heights on Inforder
+Trogen** and 0.2787 on Elite Terrorist, against **exactly 0.0000 for the other 63**.
+Two isolated outliers in a population of perfect zeros, on a shared animation
+that moves nobody's feet. It looked like two broken rigs; her sheet even looked
+like her lower legs had come off. At a cutoff that does not clip her costume all
+65 read 0.0000 and both characters vanish from every list.
+
+**2. A cutoff of 6 still clipped the darkest costume.** With 18 fixed, one
+outlier remained and looked solid: **Kaiser Aufhanger at z=22.28**, `area_cv`
+0.2031 against a roster median of 0.0208 -- ten times everyone else, with clear
+air to second place at 6.78. He has **88,666 pixels in the 1..12 brightness band**.
+Sweeping the cutoff is what settled it, because a real motion survives every
+cutoff and a flicker does not:
+
+| cutoff | his `area_cv` |
+|---|---|
+| >2 | **0.0167** |
+| >6 | 0.1269 |
+| >12 | 0.1572 |
+| >18 | 0.0637 |
+
+At a cutoff that captures his costume he sits BELOW the roster median. The
+"finding" was his near-black coat crossing my threshold and back.
+
+**3. The metrics are quantisation noise on a character 34 px tall.** With both
+cutoffs fixed the top of the list was **Baby Groot, z=7.10 on drift** -- and he
+renders at 34 px, 9% of the roster's median height. At that size a few pixels is
+a large fraction of his body. Not a fault, and not a scale fault either:
+`height_check_installed.py` reads him at **0.348 m** and Yoda at **0.660 m**, both
+correct, 0 flagged. (Note the rendered-pixel proxy UNDERSTATED him -- 9% against a
+true ~20% -- because the camera is framed for a full-height figure. Rendered px
+is not a scale measurement.)
+
+#### What the result actually is
+
+After all three, the ranking is SMOOTH -- 7.10, 6.04, 4.93, 3.55, 3.35, 2.81 --
+with no break anywhere. The calibration is what makes that readable: **Miku sits
+at z=4.93, and she is independently known to be fine.** A known-good character
+outranks most of the list, so nothing on it is suspicious.
+
+#### What this sweep did NOT look at, which is most of what could be wrong
+
+* **It is silhouette-only.** Hair across a face, a hand through a skirt, an arm
+  inside a torso -- the outline is unchanged. **Aiko's open fault is exactly this
+  class**, so a clean sweep is not a clean roster.
+* **One yaw.** Front view only; a fault visible only from the side cannot appear.
+* **10 frames of one clip**, and a `-warmup` that settles the springs first.
+
+**The lesson, which is the same one this file keeps writing down:** a threshold
+that silently discards data does not report less, it reports WRONG -- and it does
+so hardest on exactly the subjects it clips, which here were the characters with
+the darkest costumes. Three times the instrument produced a specific, mechanistic,
+believable fault about a named character. The thing that broke each one was a
+control: 63 perfect zeros making two outliers suspicious, a cutoff sweep, and a
+character already known to be fine sitting mid-table.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still

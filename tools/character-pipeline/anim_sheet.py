@@ -32,6 +32,20 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw
 
+# BACKGROUND CUTOFF. The frames are rendered on pure black and PNG is lossless, so anything
+# meaningfully above zero is the character.
+#
+# THIS WAS 18, AND 18 WAS TOO HIGH. A dark costume renders at 13-15, fell below the cut, and SPLIT
+# THE CHARACTER IN TWO. "Largest connected component" then handed back a TORSO -- 18,314 px of
+# y 131..331 instead of 46,000 px of y 75..563 -- and the bottom row of that torso, which is a
+# waist, was measured as if it were feet. On Inforder Trogen that invented a foot movement of 1.2
+# body heights and a pair of detached legs on a character who had neither, while 63 other
+# characters read exactly 0.0000 and made the two outliers look like a finding.
+#
+# A threshold that silently discards geometry does not report less, it reports WRONG, and it does
+# so most on exactly the characters whose costumes are darkest.
+BG = 2
+
 try:
     from scipy import ndimage
 except ImportError:
@@ -40,7 +54,7 @@ except ImportError:
 
 def silhouette(path):
     im = np.asarray(Image.open(path).convert("RGB"), dtype=np.int16)
-    mask = im.max(axis=2) > 18
+    mask = im.max(axis=2) > BG
     if ndimage is not None and mask.any():
         lab, n = ndimage.label(mask)
         if n > 0:
