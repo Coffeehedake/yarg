@@ -2488,6 +2488,123 @@ expressible -- but "probably" is not a measurement, and the history in this file
 plausible things that turned out not to be true. Build one, render it, and compare it against
 a downloaded MToon character before writing a conclusion here.
 
+### YARG_KEEP_MTOON: the exporter CAN preserve MToon. Built one, 2026-11-18
+
+Opt-in, because 59 installed characters and 40 working alpha cutouts were all built by the
+flattening path and a default-on change would move every one of them at once.
+
+    YARG_KEEP_MTOON=1  blender-built .vrm  ->  Unity export  ->  .yargchar on MToon
+
+PAIRED BUILD, same `.vrm`, same arguments, only the flag differing, so the difference cannot be
+the source:
+
+| | shaders carried | materials | kept |
+|---|---|---|---|
+| `AikoMToonCONTROL` (flag off) | `Universal Render Pipeline/Lit` | 3 -> Lit | **0** |
+| `AikoMToonKEEP` (flag on) | `VRM10/Universal Render Pipeline/MToon10` | 3 -> MToon | **3** |
+
+Sidedness still carried, via `_M_CullMode`, and the log NAMES the property it used. MToon10-URP
+spells cull `_M_CullMode` while MToon0X spells it `_CullMode`, and `SetFloat` on a property a
+shader does not have is a silent no-op -- no throw, no warning -- so a sidedness fix written the
+obvious way would report success having done nothing.
+
+Most of the Lit path turns out to be MOOT for MToon rather than needing translation. MToon has no
+specular and no environment reflection, which is the entire reason `YARG_NO_SHINE_MATERIALS`
+exists; and base colour, normal, emission, shade, rim, outline and matcap are already correct on
+the imported material. **Copying is what loses them.** The Lit path copies five slots and
+discards the rest by construction.
+
+#### The import produces MToon, not Standard -- the file's own comment was wrong
+
+A `source shader` log line now prints for every material, and it settles a question that had been
+guessed at: UniVRM registers `[ScriptedImporter(1, "vrm")]`, so a `.vrm` arrives as REAL MToon
+materials. The exporter's comment calling them "the Standard material it was imported as" is true
+of a Blender glTF and false of an MToon VRM -- and that wrong comment is what made the flattening
+look unavoidable.
+
+#### THE VARIANT IS AS LOAD-BEARING AS THE SHADER, and this cost a build
+
+The first working build rendered a FLAT MAGENTA SILHOUETTE. The importer hands back
+`VRM10/MToon10` -- the BUILT-IN pipeline shader -- and this project is URP.
+
+| | magenta pixels |
+|---|---|
+| ours, built-in MToon10 | **37.39%** |
+| ours, after forcing the URP variant | **0.56%** |
+| URP/Lit control, same `.vrm` | 0.00% |
+| Hatsune Miku (Retry Now ver.), downloaded | 1.97% (her dress, confirmed by looking) |
+
+That bundle **built cleanly, loaded, and CARRIED its shader** -- `bundle_shaders.py` passed it
+without complaint. A built-in surface shader simply has no pass URP will run.
+
+**"The shader is in the bundle" and "the shader works" are different claims, and only a render
+separates them.** The bundle-level check added earlier the same day would have shipped a magenta
+character with a green tick.
+
+The fix assigns `VRM10/Universal Render Pipeline/MToon10` -- one property block between the two
+variants, so every value carries. If that shader is ever missing the exporter logs an error and
+falls through to URP/Lit rather than ship magenta, and the log says explicitly not to read the
+absence of magenta as the flag having worked.
+
+#### WHAT IS NOT PROVEN: she renders, but she does not look toon
+
+Measured in the BUNDLE, which is the artefact that matters and the layer neither of us had
+checked -- the `.vrm` reading was taken this morning:
+
+    _ShadingToonyFactor 0.900   _ShadingShiftFactor -0.200   26 float + 6 colour properties
+    _Color == _ShadeColor == (1.000, 1.000, 1.000) on ALL THREE materials, delta 0.000
+
+So the MToon property block survives fully populated -- the preservation is real -- and Aiko has
+**no shade-to-base gap to show**. MToon's visible effect IS that gap. She is mechanically ideal
+for this test and visually mute, and her render differs from the Lit control mainly by the absent
+specular.
+
+**A toon-shaded character has therefore NOT been demonstrated.** What has been demonstrated is
+that the pipeline no longer destroys the information needed for one. Proving the look needs a
+character with an actual shade colour, which is a different build.
+
+#### A GREEN RUN ON DIRTY STATE IS NOT EVIDENCE THE STEP WORKS
+
+Found on the way: `YargCharExporter` created only the leaf `Work` folder and assumed
+`Assets/__TempExport` existed. `AssetDatabase.CreateFolder` returns an empty GUID rather than
+throwing when its parent is missing, so there was no folder, no error, and a
+`DirectoryNotFoundException` three lines later on the `File.Copy` -- **a failure that accuses its
+own input**, reading as "the .vrm is missing" when the .vrm was fine.
+
+It had therefore NEVER worked on a clean project. It passed only because a previous run left the
+folder behind, while the standing instruction for this pipeline is to delete `Assets/__TempExport`
+after every run. The cleanup and the exporter contradicted each other, and the contradiction was
+invisible to every individual run because nobody did both in the same session.
+
+#### CORRECTION: `VRM_CUTOUT_MATERIALS` on Aiko is OVERRIDDEN, not inert
+
+Rebuilt from source rather than quoted from a note, because both original artefacts had been
+deleted and the surviving logs carry no checksum:
+
+    opaque-only         md5 f24f1d432a813e68844126bc8a0e59ee   2,736,540 bytes
+    opaque-plus-cutout  md5 f24f1d432a813e68844126bc8a0e59ee   2,736,540 bytes
+
+Byte-identical, and matching the size of the deleted `aiko-RECIPE-OPAQUE.vrm`, so the recipe is
+deterministic. But the build logs differ: with the flag, `HairFace` takes the CUTOUT branch and
+reads the base map's own alpha, and `VRM_OPAQUE_MATERIALS` then erases the difference downstream.
+
+> With `VRM_OPAQUE_MATERIALS=HairFace` set, `VRM_CUTOUT_MATERIALS=HairFace` is OVERRIDDEN, not
+> inert: it still selects the cutout branch and still touches the base map's alpha, and the
+> force-opaque switch downstream erases the difference. Output is byte-identical
+> (md5 `f24f1d432a813e68844126bc8a0e59ee`, 2,736,540 bytes). **Equal output under one
+> configuration is not equal behaviour.**
+
+The distinction is load-bearing, not pedantic. "Inert" invites the next person to drop the flag as
+a no-op -- and the moment anyone removes `VRM_OPAQUE_MATERIALS` to try MASK, which is the obvious
+next experiment, the cutout flag becomes the thing deciding her hair, through a branch that
+reaches for a texture on a dead `F:` path.
+
+**A MEASUREMENT IS ONLY AS DURABLE AS THE ARTEFACT IT WAS TAKEN FROM.** Deleting an input silently
+converts every number derived from it into a recollection. A provenance table that maps
+measurements to surviving carriers is the right instrument, and this one still slipped through it,
+because a checksum has no filename and so looks like a fact rather than a measurement needing a
+carrier.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still

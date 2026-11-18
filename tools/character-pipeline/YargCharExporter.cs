@@ -420,8 +420,23 @@ public static class YargCharExporter
                         continue;
                     }
 
+                    // CREATE THE WHOLE CHAIN, not just the leaf. AssetDatabase.CreateFolder
+                    // needs its PARENT to exist and returns an empty GUID rather than throwing
+                    // when it does not, so a missing Assets/__TempExport produced no folder, no
+                    // error, and then a DirectoryNotFoundException three lines later on the
+                    // File.Copy -- which reads as "the .vrm is missing" and is not.
+                    //
+                    // This made the exporter unable to run on a CLEAN project, and the standing
+                    // instruction for this pipeline is to delete Assets/__TempExport after every
+                    // run. So it only ever worked because a previous run had left the folder
+                    // behind: the cleanup and the exporter disagreed, and whichever ran last won.
+                    if (!AssetDatabase.IsValidFolder("Assets/__TempExport"))
+                        AssetDatabase.CreateFolder("Assets", "__TempExport");
                     if (!AssetDatabase.IsValidFolder(WorkFolder))
                         AssetDatabase.CreateFolder("Assets/__TempExport", "Work");
+                    if (!AssetDatabase.IsValidFolder(WorkFolder))
+                        throw new Exception("could not create " + WorkFolder
+                            + " -- do not read the File.Copy failure that follows as a missing .vrm");
 
                     var assetPath = WorkFolder + "/" + Path.GetFileName(vrmPath);
                     File.Copy(vrmPath, assetPath, true);
@@ -480,6 +495,12 @@ public static class YargCharExporter
                     int fixedCount = 0;
                     int cutoutCount = 0;
                     int blendCount = 0;
+                    // OPT-IN, and opt-in on purpose. Every character in the installed set was
+                    // built by the flattening path below, and 40 working alpha cutouts depend on
+                    // it; a default-on change here would move all of them at once to chase a
+                    // feature no shipped character uses yet.
+                    bool keepMToon = Environment.GetEnvironmentVariable("YARG_KEEP_MTOON") == "1";
+                    int keptCount = 0;
                     foreach (var r in instance.GetComponentsInChildren<Renderer>(true))
                     {
                         var mats = r.sharedMaterials;
@@ -488,6 +509,97 @@ public static class YargCharExporter
                             var src = mats[i];
                             if (src == null) continue;
                             if (remapped.TryGetValue(src, out var done)) { mats[i] = done; continue; }
+
+                            // NAME THE SOURCE SHADER FOR EVERY MATERIAL, whatever happens to it
+                            // next. Until this line existed, "what does importing a .vrm actually
+                            // produce?" could only be guessed at -- and the comment below guesses
+                            // "Standard", which is true for a Blender glTF and FALSE for an MToon
+                            // VRM: UniVRM registers [ScriptedImporter(1, "vrm")] and builds real
+                            // MToon materials. One log line ends that question permanently.
+                            var srcShader = src.shader != null ? src.shader.name : "<null>";
+                            bool srcIsMToon = srcShader.IndexOf("MToon", StringComparison.OrdinalIgnoreCase) >= 0;
+                            Debug.Log($"[YARGCHAR] {outName}: source shader {src.name} -> {srcShader}"
+                                      + (srcIsMToon ? "  [MTOON]" : ""));
+
+                            // KEEP MTOON rather than rebuilding as URP/Lit. Most of the work below
+                            // is either MOOT for MToon or already correct on the imported material:
+                            //   - shine/metallic/reflections: MToon has no specular or environment
+                            //     reflection at all, which is the entire reason YARG_NO_SHINE_MATERIALS
+                            //     exists for the Lit path. Nothing to flatten.
+                            //   - base colour, normal, emission, shade colour, rim, outline, matcap:
+                            //     the importer already set them FROM the file. Copying them by hand
+                            //     is what loses them -- the Lit path copies five slots and discards
+                            //     the rest by construction.
+                            // So the only intent that still has to be carried is SIDEDNESS, below.
+                            // THE VARIANT MATTERS AS MUCH AS THE SHADER, and this cost a build
+                            // to learn. UniVRM's importer hands back VRM10/MToon10 -- the BUILT-IN
+                            // pipeline shader -- and this project is URP. That bundle builds
+                            // cleanly, loads, and CARRIES its shader, and the character renders
+                            // FLAT MAGENTA: measured 37.4% magenta pixels, against 0.0% for the
+                            // URP/Lit control built from the same .vrm and 1.97% for a downloaded
+                            // MToon character (whose pink is her dress). A built-in surface shader
+                            // has no pass URP will run. "The shader is in the bundle" is NOT the
+                            // same claim as "the shader works", and only a render separates them.
+                            Shader urpMToon = null;
+                            if (keepMToon && srcIsMToon)
+                            {
+                                urpMToon = Shader.Find("VRM10/Universal Render Pipeline/MToon10");
+                                if (urpMToon == null)
+                                    Debug.LogError($"[YARGCHAR] {outName}: YARG_KEEP_MTOON is set and {src.name} "
+                                        + "is MToon, but VRM10/Universal Render Pipeline/MToon10 was NOT FOUND. "
+                                        + "Keeping the built-in variant would ship a FLAT MAGENTA character, so "
+                                        + "this material falls through to URP/Lit instead. The character is "
+                                        + "correct and NOT toon-shaded -- do not read the absence of magenta as "
+                                        + "this flag having worked.");
+                            }
+                            if (keepMToon && srcIsMToon && urpMToon != null)
+                            {
+                                // Built-in and URP MToon10 share one property block, so assigning the
+                                // shader carries every value across -- shade colour, rim, outline,
+                                // matcap, cull, alpha. This is why keeping beats copying: the Lit
+                                // path below copies five slots and loses the rest by construction.
+                                if (src.shader != urpMToon)
+                                {
+                                    src.shader = urpMToon;
+                                    EditorUtility.SetDirty(src);
+                                }
+                                sheetShare.TryGetValue(src, out var mShare);
+                                bool mDouble = mShare >= SheetAreaShare;
+                                var mCullOff = Environment.GetEnvironmentVariable("YARG_CULL_OFF_MATERIALS");
+                                var mCullOn = Environment.GetEnvironmentVariable("YARG_CULL_ON_MATERIALS");
+                                string mWhy = mDouble ? "measured sheet" : "measured solid";
+                                if (!string.IsNullOrEmpty(mCullOff) && Array.IndexOf(mCullOff.Split(';'), src.name) >= 0)
+                                { mDouble = true; mWhy = "forced by YARG_CULL_OFF_MATERIALS"; }
+                                else if (!string.IsNullOrEmpty(mCullOn) && Array.IndexOf(mCullOn.Split(';'), src.name) >= 0)
+                                { mDouble = false; mWhy = "forced by YARG_CULL_ON_MATERIALS"; }
+                                // MToon10-URP spells cull `_M_CullMode`; MToon0X spells it
+                                // `_CullMode`. SetFloat on a property a shader does NOT have is a
+                                // SILENT no-op -- no throw, no warning -- so this picks the one
+                                // that exists and PRINTS which, and shouts when there is neither.
+                                // Setting both and hoping is how a sidedness fix reports success
+                                // having done nothing.
+                                string cullProp = src.HasProperty("_M_CullMode") ? "_M_CullMode"
+                                                : src.HasProperty("_CullMode") ? "_CullMode" : null;
+                                if (cullProp == null)
+                                    Debug.LogWarning($"[YARGCHAR] {outName}: KEPT MToon {src.name} has NEITHER "
+                                                     + "_M_CullMode nor _CullMode. Sidedness was NOT applied -- "
+                                                     + "that is a GAP, not a pass.");
+                                else if (mDouble)
+                                {
+                                    src.SetFloat(cullProp, 0f);   // 0 = Cull Off
+                                    EditorUtility.SetDirty(src);
+                                }
+                                Debug.Log($"[YARGCHAR] {outName}: KEPT MToon {src.name} "
+                                          + $"(in: {srcShader} -> out: {src.shader.name}); "
+                                          + $"sheet-area {mShare * 100f:F1}% -> "
+                                          + (mDouble ? "DOUBLE-SIDED" : "culled")
+                                          + $" ({mWhy}) via {cullProp ?? "NO CULL PROPERTY"}");
+                                keptCount++;
+                                remapped[src] = src;
+                                mats[i] = src;
+                                continue;
+                            }
+
                             if (urp == null || src.shader == urp) continue;
 
                             var baseMap = GetAny(src, "_BaseMap", "_MainTex");
@@ -643,7 +755,10 @@ public static class YargCharExporter
                         r.sharedMaterials = mats;
                     }
                     AssetDatabase.SaveAssets();
-                    Debug.Log($"[YARGCHAR] {outName}: retargeted {fixedCount} materials to URP/Lit ({cutoutCount} alpha-cut, {blendCount} alpha-blended)");
+                    Debug.Log($"[YARGCHAR] {outName}: retargeted {fixedCount} materials to URP/Lit "
+                              + $"({cutoutCount} alpha-cut, {blendCount} alpha-blended), "
+                              + $"KEPT {keptCount} as MToon"
+                              + (keepMToon ? "" : " (YARG_KEEP_MTOON not set, so 0 is expected)"));
 
                     var character = instance.GetComponent<VRMCharacter>() ?? instance.AddComponent<VRMCharacter>();
                     character.Type = VenueCharacter.CharacterType.Vocals;
