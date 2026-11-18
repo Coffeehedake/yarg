@@ -2287,6 +2287,55 @@ diverged to the point where nothing matched, and a reader checking "what is in
 the game" against the nearest convenient copy got a confident wrong answer 44
 times out of 44.
 
+### CORRECTED 2026-11-18: MToon DOES render. My "unlit is not honoured" was unsupported
+
+Checking Hatsune Miku (Retry Now ver.) overturned my own finding from earlier
+the same day. **MToon renders correctly in this path. Nothing below it about
+`VRM_MTOON_ALL` "doing nothing anywhere" should be relied on.**
+
+#### What was wrong with the test
+
+I shot two builds under a red light, saw both take the colour, and concluded
+`KHR_materials_unlit` was being dropped. **MToon IS A LIT SHADER** -- it has a
+shade ramp. So "both responded to light" is equally consistent with *MToon
+rendering correctly*, and my test could never have told MToon-lit from
+standard-lit. It was the wrong discriminator and I read a null from it as a
+finding.
+
+#### What actually shows
+
+Rendered Miku (Retry Now, 23 of 23 MToon) beside our own Miku (no MToon at all):
+hers is **flat, cel-shaded, with crisp anime shading**; ours has **gradient
+falloff and specular highlights**. A plain visible difference, in the direction
+MToon predicts.
+
+And the mechanism, read from the materials -- MToon's visible effect is the gap
+between `_Color` and `_ShadeColor`:
+
+| bundle | MToon materials | with a REAL shade colour |
+|---|---|---|
+| Hatsune Miku (Retry Now ver.) | 23 | **7** -- hair base(1,1,1) -> shade(0.00,0.80,1.00), delta **1.000** |
+| `aiko-RECIPE-MTOONALL` | yes | **none -- no `_ShadeColor` written at all** |
+
+**That is the whole explanation for the 0.047.** `VRM_MTOON_ALL` on Aiko
+produced MToon materials carrying no shade colours, so MToon had nothing to
+draw and the result matched PBR. Not because the shader was ignored -- because
+the builder gave it nothing to work with. A different claim with a different
+consequence: the switch is not useless, it is incomplete on a character whose
+source has no toon shading to carry over.
+
+**So the 6-of-65 list below stands as a FACT and its interpretation does not.**
+Those six carry MToon and it renders; they are not "rendering lit where their
+authors intended otherwise".
+
+#### A fourth false zero on the way to this
+
+The colour reader that produced the table above returned "no shade/base pairs"
+on its first run, for a bundle I had **already measured** as carrying
+`_ShadeColor` on all 23 materials. The entries are TUPLES `("_Color", {...})`
+and it was reading `e.get("second")`. The earlier measurement is the only
+reason the zero was not believed -- a known positive beside the zero, again.
+
 ### The unlit finding, BOUNDED: 6 of 65, all of them downloaded, none of ours
 
 "Any past visual conclusion about MToon or unlit from this harness is suspect"
