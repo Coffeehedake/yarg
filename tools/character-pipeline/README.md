@@ -45,7 +45,7 @@ needed for the job-object breakaway.
 | ~~**The Mandalorian**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Reported as armour off-centre; it was a **3.3° spine lean**, not the "two half-skeletons" this file first recorded, and the lean was inherited. Skeleton **37.2 → 6.0 mm** read back off the installed file with Spartan at 0.0 as the control, geometry untouched (armour planes −8.00→−7.70, −8.60→−8.80), load test identical, renders indistinguishable. It does not SHOW — the fault was the rig, not the look. Baking the body with the bones, the other sense of "straighten", throws his helmet 50 mm off; that build is kept beside the installed one in `character-backups/mando-straighten-2026-11-17/` |
 | **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. **DECIDED: leave her** — do not re-open |
 | ~~**Kronk**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Not a half-body step: a **57.0 mm lean**, and unlike The Mandalorian his GEOMETRY leans with it (37.2 mm of it), because his source is `Kronk_Doing_the_Hokey_Pokey.usdz` and the T-pose step squares the limbs but never touches the spine. Rebuilt from source, straightened BAKED and re-centred: skeleton **57.0 → 13.4 mm**, geometry **37.2 → 9.6 mm**, and the podium render is visibly straighter. Never reported by anyone |
-| **Aiko** | 29.95° off; a rebuild squares her but puts her hair over her face. Nothing installed |
+| ~~**Aiko**~~ | **DIAGNOSED AND RENDERED 2026-11-18, not installed.** Not a lean but a **YAW**, so straighten_spine was never involved. The sheet over her face is an **alphaMode draw-order artefact** (BLEND materials do not write depth), a builder REGRESSION from e921bf62 against her 2026-11-07 intermediate — not a gap in her recipe, and that claim is corrected in three places. RECIPE build renders clean in every frame at 1.4 s and 20 s. A second, LATENT defect (hair chains built upside down) is real in the file but invisible in this idle. Install is a separate decision |
 | ~~**Limb capsules**~~ | **DONE — SWEPT AND INSTALLED 2026-11-17**, and the scope was far smaller than this line implied: of 65 bundles **35 have no spring chains at all**, so their capsules are inert, and 9 more were already right. **194 resizes across 21 characters**, median +11.7 mm; **20 installed, Alcina held** because p90 on her legs is her gown. Still run: 0 worse, 1 better (Inforder Trogen 33.15 → 8.34 mm), 20 unchanged. Load test identical on every pair. (That run measures instantiate-pose to settled-pose, NOT ejection — see "Miku's 1748 mm") |
 | **Alcina Dimitrescu** | **HELD out of the limb sweep on purpose**, not a regression: p90 on her legs is her GOWN (thigh 0.111 → 0.207, shin 0.091 → 0.199), and for her the median is the closer approximation of a leg. Her still run is 0.10 mm either way, so nothing is lost. Re-open only with a flesh-only percentile |
 | ~~**Hatsune Miku (Retry Now ver.)**~~ | **DONE — RENDERED 2026-11-18, NOTHING IS WRONG WITH HER.** The 283 mm is a modest, correct settle, not an ejection. Rendered `-rebind 0` and normally with `Miku` in frame as the control; her rest pose is ALREADY tidy, which is exactly why she settles 283 mm where Miku settles 1748. Nothing installed, nothing changed. She does carry **5 non-anchor joints starting inside their own colliders**, one of them 46.4 mm in at r/centre 0.450 — the Gadget Hackwrench signature — **and it does no visible damage**; see "A joint inside a collider is not by itself a fault" |
@@ -602,7 +602,7 @@ a wall in any Markdown viewer. The rows themselves were always fine.
 | The Rock | arms are squiggly | **FIXED 2026-11-16 BY A REBUILD.** His upper arm is **61% over** the population norm and his forearm 13% under — upper/forearm ratio **2.37** where his own source `Rock.fbx` has **0.96**. Every existing check passes him because nothing is BENT (elbow 0.0/0.0) and nothing is DISPLACED; the segments are the wrong LENGTHS, which nothing measured. Reproduced exactly: `fit_joints.py` places a joint at the midpoint of two flesh centroids, and his upper-arm group keeps dominant weight 209 mm past his elbow, so it lands at 70% of the arm where it belongs at 49% — the shipped bundle is 70.3%. ~~His legs go the same way~~ and ~~three fixes tried and all three measured wrong~~ — **all of that was an artefact of a broken staging** that applied the armature's transform and its 21 parented meshes' together, counting it twice and reading a 1.9638 m model as 3.2915 m. The real cause is `scale_rig.py` sizing the skeleton from `Object.bound_box`, which is a CACHE and goes stale (and survives `evaluated_get(depsgraph)`): it scaled him by **0.6668** where his recipe records **0.3978**, and the midpoint rule then landed the elbow at 69.5% of a wrongly scaled arm against the shipped 70.3%. `fit_joints.py` was innocent — on a correctly scaled rig it puts the elbow at 50.7% against the rig's own 48.9%. scale_rig now reads vertices. Rebuilt: upper arm 0.344 → **0.176** (human 0.186), reach 1.272 → **0.932** (documented 0.938). See "The Rock's arms, 2026-11-16" |
 | Spartan Mark V | asymmetric right leg | **FIXED 2026-11-15.** His whole right leg hung off one bad `thigh.R` offset, sitting **29.7 mm clear of a hip socket his left leg sits 4.7 mm inside** — and after the fix it reads 4.6 mm, his left leg's own figure. (An earlier version of this row said "92.12 mm from the mirror of his `thigh.L`"; that number came from a tool that was withdrawn the same day for comparing local offsets under a rotated shared parent. The fault was real, the number was not — the evidence is the socket gap, his provably symmetric source, and his lower torso's self-mirror error going to 0.00 mm when the bone moved.) No ANGLE check could see it: the leg moved rigidly, so his knee and ankle match his left side to four decimals. His source `.blend` is an exact mirror in both bones and flesh, and a rebuild from it today is 0.000 mm out, so this came from a build that no longer exists. Patched in the four structures that hold that offset. See "Spartan Mark V's right leg, 2026-11-15" — **but see the correction below: the patch is correct and the GAME DISCARDS IT** |
 | Jessica Rabbit | dress clips through the body, not rigged to it, and the sprung parts of the body and the dress move separately | **DRESS FIXED 2026-11-16; a SEPARATE rig fault found the same day and NOT fixed.** Her whole right leg sits **92.4 mm higher** than her left and her whole right arm 29.0 mm higher and 74.1 mm further back, while her shoulder bones are symmetric to a tenth of a millimetre and each limb's flesh is symmetric about its own bone to 0.1 mm — so whole limbs are displaced, correctly skinned to bones in the wrong place. Her 92.4 mm is the worst limb-height fault on the roster, double the next. It is identical in all four of her snapshots that day, so it predates every patch and our builder reproduces it faithfully from her source. Settled: not a pose — her left shoe hangs 67 mm below her own skirt hem and 92 mm below the plane her right foot stands on, where three symmetric characters put both feet at the identical height. Traced to her Hips bone's X axis sitting **25.71° out of horizontal**, inherited from a source posed leaning on a microphone; her thighs are mirrored to seven decimal places and entirely innocent. **DECIDED: leave her**, because every available correction trades the buried shoe for a twisted pelvis. See "Jessica Rabbit's right leg is 92 mm higher than her left, 2026-11-16". Dress note follows: **FIXED 2026-11-16, both halves.** Her dress is two meshes and **every vertex of both was weighted to ONE bone** — `spine`, her humanoid hips — at one influence: bodice 24,035 verts, skirt 13,275. It followed her hips and nothing else, so the one part of her that moved (`breast.L`/`breast.R`) swung inside cloth that did not. *(Those two chains having no collider group was separately called a fault and "fixed" on five characters; that was wrong -- the builder skips chest chains deliberately -- and all five were reverted.)* Shaken in the spring runtime the installed character's only moving bones were the two breast tips at 90.6 mm. Rebuilt from her documented recipe: skirt now **17 bones, 1-3 influences**, chains 2 → **10**, colliders 2 (referenced by none) → **10 (referenced by 8 of 10)**, skirt peak deflection **1024 mm**; clips, meshes, textures and materials all identical. ~~The bodice is still 24,035 verts on `spine`~~ — **also fixed**, by a new step in `build_vrm.py` that re-weights a mesh once the build has CARRIED it into place: the bodice is now on **9 bones** including `breast.L`/`breast.R`, so the cloth over her chest deforms with the sprung chest instead of being a shell it swings through, and the skirt on **21** including both thighs. Geometry moved 0.0000 mm. The step is gated on a mesh this script auto-weighted itself landing ≥90% on a bone ABOVE the humanoid root, and the control proves it inert: Spartan Mark V rebuilt before and after is **byte-identical**, md5 `b68ce9e4…`. See "Jessica Rabbit's dress, 2026-11-16" |
-| Aiko | *(not reported — found by the yaw sweep)* | **MEASURED 2026-11-16, NOT FIXED, nothing installed.** She stands **29.95° off**, the worst on the roster. Today's builder detects and corrects it unprompted (`facing: feet point (-0.5, -0.87, 0.0), 30 deg off forward`) and the rebuild reads **+0.03°, spread 0.15** — but it puts her hair as a flat sheet over her face, with AND without the hair rigger, so `GirlsInAction.blend` with `^Girl2\.[0-9]` is not her whole recipe. The turn has never been reported and the hair would be, so she keeps the 30°. See "Aiko, 2026-11-16" |
+| Aiko | *(not reported — found by the yaw sweep)* | **MEASURED 2026-11-16, NOT FIXED, nothing installed.** She stands **29.95° off**, the worst on the roster. Today's builder detects and corrects it unprompted (`facing: feet point (-0.5, -0.87, 0.0), 30 deg off forward`) and the rebuild reads **+0.03°, spread 0.15** — but it puts her hair as a flat sheet over her face, with AND without the hair rigger, -- **CORRECTED 2026-11-18: the recipe IS right; the BUILDER changed under it (e921bf62, 2026-11-09) and her 2026-11-07 intermediate predates it. The sheet is an alphaMode draw-order artefact, now fixed and rendered.**. The turn has never been reported and the hair would be, so she keeps the 30°. See "Aiko, 2026-11-16" |
 | Spartan Mark V | ~~asymmetric right leg~~ **leg still sticking out at the right hip** | **FIXED 2026-11-16 BY A REBUILD, and the earlier patch provably did nothing in game.** Two separate findings. (1) The patch IS in the file and IS right — his hip offsets read L 161.8 mm / R 161.8 mm at instantiate, against 161.8 / 244.5 before. (2) **Unity's humanoid Animator re-poses the skeleton from the AVATAR, and the four rest structures are not what the Avatar retargets from.** After `Animator.Rebind()` the patched bundle reads L 161.8 / R **244.5** — byte-for-byte the unpatched figure. (3) Separately, the whole character is **turned 20.00°**: hips, shoulders, knees and feet all agree to two decimals, because his source is a perfect mirror about a plane 20° off the x axis and nothing straightens him. His left hip faces the camera, which is the hip reported. **No bundle patch can fix either** — the Avatar has to be regenerated, so he was REBUILT and installed. Today's `build_vrm.py` already carries a facing stage that detects and corrects the 20° itself, so his plain recorded recipe was enough and now reproduces him. Verified through the Animator, which is where the patch failed: hips L/R 143.3 / 143.3 mm after `Rebind()` against 161.8 / 244.5, and post-`Rebind` yaw 4.56° / −7.96° against Doom Slayer's control 4.20° / −7.89°. Both hips were wrong in the old build, not only the right one. See "Spartan Mark V, 2026-11-16: the Animator does not read what we patch" |
 | Killer Clown | hair clipping through her hat | **FIXED 2026-11-15, and the hat was the smaller half of it.** Her lashes, brows and hair are one material, and the hair rigger's material fallback takes every mesh that shares the hair material — so her **eyebrows are 146 of 146 vertices on hair spring chains** and her **eyelashes 2,357 of 4,640**, swinging on hair physics across her face. They are 2,503 of the 2,890 vertices those four chains move; the hair itself is 387. Of those 387, **371 sit inside her jester hat**, up to 51.8 mm deep, while 95% of the hair the rigger left rigid is outside it — the physics went on the hair nobody can see and the visible hair stayed rigid. Both are selection faults, so no parameter fixes either: the four chains were removed. See "Killer Clown's hat, 2026-11-15" |
 | Miku | necktie sticking straight out | **FIXED 2026-11-15, and it is not ours.** Her `Bip01 Spine1` → `Bone01` → `Bone02` → `Bone03` tie chain runs **71° off vertical** — 89 mm of drop for 255 mm of reach, geometry out to z +0.545 against a chest surface at z +0.08. Her source `Miku.fbx` has the same chain at 69.1° and 72.4°, the same story as her hair being "splayed outward in the ORIGINAL download": an MMD rig whose tie was meant to be settled by rigid-body physics a VRM export does not carry. Re-aimed with `patch_bone_aim.py` to 15° from vertical — straight down puts 14 of its 20 vertices inside her chest. See "Miku's necktie, 2026-11-15" |
@@ -1721,7 +1721,77 @@ believable fault about a named character. The thing that broke each one was a
 control: 63 perfect zeros making two outliers suspicious, a cutoff sweep, and a
 character already known to be fine sitting mid-table.
 
-### The side yaw, 2026-11-18: Power Girl's cape is a plank, and the obvious fix is wrong
+### RETRACTED 2026-11-18: Power Girl's cape is FINE. I never measured the thing I claimed
+
+**Jay: "I do believe her cape drops, grab some frames from later in the idle
+animation." He was right and the finding below is withdrawn in full.** Nothing
+is wrong with her cape, nothing should be changed, and the section beneath this
+one is kept only so the mistake stays readable.
+
+Measured side-on, pitch of the cape tip from horizontal (0 = straight out
+behind, -90 = hanging straight down):
+
+| window | frames | pitch range |
+|---|---|---|
+| 20 s (`-frames 20 -step 1.0`) | 20 | **-80.9 to -40.2 deg** |
+| the 1.35 s I judged it on | 10 | **-83.6 to -41.4 deg** |
+
+Her silhouette area swings **62% of its mean** across the long window. The cape
+sweeps 40 degrees, reaching nearly straight down. **It drops, it swings, it
+behaves like a cape.**
+
+#### The error was not the sampling window. It was asserting what I had not measured
+
+The first instinct -- "my window was too short" -- is ALSO WRONG, and worth
+recording because it is the comfortable explanation. The short window shows a
+**42.2 degree** range, slightly WIDER than the long one. The cape was swinging
+through forty degrees in the very ten frames I was looking at.
+
+What actually happened: I looked at ten thumbnails on a contact sheet, formed
+the impression *"flat and straight through all ten frames, swinging as a rigid
+board"*, and wrote that down as a finding. **At no point did I measure cape
+pitch.** The four numbers this sweep computes are area, span, jump and drift --
+none of them is "is the cape rigid", which is the claim I made.
+
+Then the error compounded in the most convincing possible direction: I went and
+built a MECHANISM for it. Read the rest pose, found `gravityPower = 0`, checked
+Batman as a control, killed two rival hypotheses with real measurements, and
+produced a tidy table showing identical spring parameters and a 40-degree
+difference in authored rest pitch. **Every one of those measurements is correct.
+They were all downstream of a premise I never tested**, and their quality is
+exactly what made the conclusion persuasive.
+
+The rest-pose numbers do still stand as facts -- her cape IS authored at -45 deg
+where Batman's is at -85 deg. That difference simply has no consequence, because
+the chain does not stay in its rest pose.
+
+#### A second error inside the first: the parameters came from the wrong file
+
+The table below quotes stiffness 0.6 / drag 0.45 "identical on both". That is
+from the `.vrm` build intermediates in a scratchpad. **The installed bundles,
+which are what the game loads, carry stiffness 0.850 and drag 0.800** on both
+characters -- `patch_springs.py` rewrites exactly those fields. `gravityPower`
+is 0.000 in both artifacts, so that part held, but I quoted a file the game
+never reads. Same class as reading a height in the wrong space.
+
+#### What this costs the rest of the sweep
+
+The roster sweeps above sampled **1.5 s per character**, and every "no fault
+found" in them is a statement about 1.5 seconds. On the evidence here that
+window is not obviously too short -- Power Girl's cape showed its full range
+inside it -- but no one has checked that for the other 64, and the honest
+position is that the sweeps are unvalidated beyond their window rather than
+clean.
+
+**The rule that would have caught this: if the claim names a quantity, measure
+THAT quantity.** A contact sheet is for noticing; it is not evidence for a
+mechanical assertion about something the metrics never looked at.
+
+---
+
+#### SUPERSEDED, kept for the record -- the original claim, which was wrong
+
+##### The side yaw, 2026-11-18: Power Girl's cape is a plank, and the obvious fix is wrong
 
 The front-view sweep found nothing. **Adding one more camera angle found a real
 fault on the first character it looked at**, which is the argument for the
@@ -1805,6 +1875,100 @@ costs something different and none is obviously right.
 Anything INTERIOR. Hair across a face changes the outline side-on only if it
 projects past the profile; a hand inside a skirt never does, at any angle.
 **Aiko's open fault is still outside this sweep** and still needs its own render.
+
+### Aiko RESOLVED 2026-11-18: it was the alpha queue. Finding 1 confirmed, Finding 2 is latent
+
+Diagnosed by yarg-1 in Blender, rendered here in Unity, which is the half Blender
+provably cannot do -- Cycles is a path tracer with no depth-sorted transparency,
+so it cannot reproduce a no-depth-write artefact. yarg-1 said so itself and
+declined to offer its attempt as evidence.
+
+**The brief I gave it was wrong on two counts and it checked rather than
+complied.** I said she needed straightening and offered three candidate causes
+that all assumed a bake. She is a **YAW**, not a lean (-29.95 deg, whole body
+turned), `straighten_spine.py` has nothing to do on her and was never run; the
+hair breaks on a plain rebuild. I also said her `.vrm` was in
+`Documents\YARG-Characters`. It is not, and never was.
+
+#### The 2x2, with one cell dropped, and predictions registered BEFORE the run
+
+Her two faults have different signatures IN TIME, which is what separates them:
+
+| build | alphaMode | hair chains | isolates |
+|---|---|---|---|
+| `aiko-control` | BLEND/BLEND/BLEND | inverted (UP) | both, as rebuilt today |
+| `aiko-ALPHAONLY` | OPAQUE/MASK/OPAQUE | inverted (UP) | the chains alone |
+| `aiko-RECIPE` | OPAQUE/MASK/OPAQUE | correct (DOWN) | both fixed |
+| `Miku` | - | - | known-good yardstick |
+
+Verified independently here before rendering, with tooling written fresh rather
+than taking the report on trust -- and the last row is the one that matters:
+
+| build | chains aim | roots vs Head bone |
+|---|---|---|
+| control / ALPHAONLY | UP x4 | -121.3 .. -106.8 mm (the tips) |
+| RECIPE | DOWN x4 | **+80.5 .. +89.0 mm** (the crown) |
+| **Aiko.vrm, as shipped** | DOWN x4 | **+80.5 .. +89.0 mm** |
+
+RECIPE does not invent a rig. It recovers the shipped one, on a character who is
+now square.
+
+#### FINDING 1 CONFIRMED -- the sheet is a draw-order artefact
+
+`aiko-control` shows the dark sheet over her face **in every frame, frame 0
+included**, at both 1.4 s and 20 s sampling. Its stated death -- "if frame 1 is
+clean my whole Finding 1 is wrong" -- does not fire. `aiko-RECIPE` is **clean in
+every frame** at both windows: face visible, hair on the scalp.
+
+A BLEND material sits in the transparent queue and does not write depth, so the
+hair behind her head draws over her face. The hair never moved; it was drawn in
+the wrong ORDER, which is why it read as a flat sheet. Two of her three
+materials went BLEND on an alpha that is opaque at every pixel.
+
+**It is a REGRESSION, not a gap in her recipe.** The honour-the-authored-blend
+step landed in `e921bf62` on 2026-11-09; her shipped intermediate is 2026-11-07,
+built before it. The claim elsewhere in this file that `GirlsInAction.blend` with
+`^Girl2\.[0-9]` "is not her whole recipe" is WRONG -- the recipe is fine and the
+builder changed underneath it. Corrected in all three places.
+
+#### FINDING 2 IS LATENT -- real in the file, invisible in the game
+
+`aiko-ALPHAONLY` differs from `aiko-RECIPE` by chain direction ALONE, and across
+**both** windows the two are indistinguishable: area range 2.83% vs 2.55% at
+1.4 s, and **15.22% vs 15.23% at 20 s**, with her hair staying on her scalp
+throughout. By yarg-1's own registered death condition -- "if indistinguishable
+from RECIPE across the whole clip, Finding 2 is cosmetic" -- **it is cosmetic.**
+
+The inversion is REAL: independently measured, chain roots sit 107-121 mm BELOW
+the Head bone aiming upward instead of 80-89 mm above it aiming down. It simply
+has no visible consequence in this idle. Whether it bites in some other
+animation is unknown and untested; the honest label is latent, not harmless.
+
+The 20 s re-run exists because the prediction was explicitly time-dependent
+("as the clip plays") and the first run sampled 1.4 s of it. After the Power
+Girl retraction above, judging a time-dependent claim on a short window was not
+a thing to do twice.
+
+#### Not a finding: she renders as bare skin
+
+All three rebuilds show her untextured. **So does the installed bundle that
+shipped**, rendered in the same run as the control. That is how the character
+is, not a regression, and it is recorded here only so the next person does not
+rediscover it as one.
+
+#### Source material rescued
+
+Everything needed to rebuild her -- `GirlsInAction.blend`, textures, her `.vrm`
+intermediates -- existed ONLY in a session scratchpad under `Temp\claude\`,
+which a cleanup removes. Copied to `build/aiko-source-2026-11-18/` (135 MB,
+outside every repo, with a README warning against committing it). yarg-1 found
+this and correctly refused to move another session's material unasked.
+
+#### Still not installed
+
+The recipe is verified but nothing has been installed. That is a separate
+decision, and `MASK` versus the `OPAQUE` she shipped with has not been compared
+by eye.
 
 ### The limb-capsule sweep, 2026-11-17
 
@@ -3037,8 +3201,9 @@ The second reproduces her structure exactly -- 6 clips, 1 controller, 1 mesh,
 3 textures, 3 materials, 84 transforms, 4 chains / 16 joints, and the load test
 puts it beside the installed one at 81 bones each. The hair is wrong in both,
 so the rigger is not the cause: **the rebuild misplaces her hair whatever is
-done about springs**, and `GirlsInAction.blend` with `^Girl2\.[0-9]` is
-therefore not the whole recipe.
+done about springs** -- and the claim that `GirlsInAction.blend` with
+`^Girl2\.[0-9]` is therefore not the whole recipe is **WRONG, corrected
+2026-11-18**: the recipe reproduces her, the builder changed underneath it.
 
 So she keeps her 30 degrees for now. That is the honest trade: the turn has
 never been reported, the hair would be reported immediately, and a fault nobody
@@ -6135,7 +6300,7 @@ code -- the other 57 were written and correct.
 | Prix | mixamo | 1.70 | **SHE HAS A SOURCE AND A RECIPE AS OF 2026-11-16** — Jay supplied `prix.glb` (53,038,136 bytes, sha256 `7b3d7836af17a1e4`, Sketchfab-16.56.0). **Bake the joint scale FIRST**, or her hair arrives 22x too small: `python glb_bake_joint_scale.py prix.glb prix_baked.glb`. Then build from the BAKED file with `VRM_GLTF_BIND_POSE=node` (her IBMs and node tree disagree and the importer follows the IBMs, which puts her hair at the world origin), `VRM_BLEND_MATERIALS="Hair"`, `VRM_CUTOUT_MATERIALS="cejas1"`, and exclude `^(Icosphere\|[LR]_iris_.*)$` — the Icosphere is a 2 m sphere that wrecks the height, and the two iris meshes are 100% transparent in the source so they are better dropped than cut out. Shape keys still drop by default, which is what keeps her off 0.42 m. Earlier note follows: shape keys must be dropped, else she builds at 0.42 m. **As installed 2026-11-12:** `aiStandardSurface4` (the lens on `L_iris`/`R_iris`) is set to alpha 0.08 with `set_material_alpha.py` — it shipped OPAQUE, wearing her SKIN atlas, parked in front of perfect blue eyes. She has no source here, so this is an edit to the built `.vrm`, not a rebuild; census identical and only the two collider helper nodes differ in rotation. **Her hair stays untouched** |
 | Pomni | pomni | 1.70 | exclude `^Circle`; `VRM_VISEME_GAIN=3.0` (4.4 turns her upper lip inside out); `VRM_BLINK_BAKE="EyelidSup.L=1,0.55,0,0;EyelidInf.L=1,-0.5,0,0;EyelidSup.R=1,0.5,0,0;EyelidInf.R=1,-0.5,0,0"` and `VRM_BLINK_LASH="^Lashes"` (lash ticks lie on the closed seam, 4 mm in front of the lid, keeping 40% of their height) -- her blink is four eyelid BONES (peak at frame 30 of `Animation`), not a shape key; her `Lashes/Closed` key only moves two lash ticks and leaves the eyes open. The bake applies Solidify+Subsurf to the lid meshes, writes the closed pose as a `Blink` key and binds it. Rendered at weight 1.0: dark lids with a slit, matching her Sketchfab blink. Her iris `Big`/`Small` keys ride on YARG's own facial events: `VRM_EXPR="Wide_eyed=Eye.L/Big;Squint=Eye.L/Small"` makes them custom expressions named for lipsync event types, which `VRMCharacter.TryGetExpressionKey(string)` sets by name -- `Big` fills the eye with iris, `Small` shrinks it to a pinpoint (rendered, both eyes). The chart generator emits `Squint` but not `Wide_eyed`. **Added 2026-11-12, and she cannot be rebuilt without it:** `VRM_VISEME="aa=Face/A,ee=Face/ClosedTeeth,ih=Face/ClosedTeeth@0.7,oh=Face/OpenNoTeeth,ou=Face/OpenNoTeeth@0.6"` — her mouth shapes are named for an artist and only `A` is guessable, so without this she builds at 1/5 visemes. 32,764 triangles, 16 meshes, 27 morph targets, 5/5 bound. **Rebuilt and reinstalled 2026-11-12 for the collider-group fix alone** (item 0a) — no alpha change; backup `.precolgroup` |
 | Sayuri / Aiko | cc_base / mixamo | 1.70 | hairrig `^Hair$` — no hair bones of their own. **Sayuri as installed 2026-11-11:** add `VRM_BREASTRIG=1` (the recovered ARGV is the original build and omits it — without it the rebuild comes back with 4 spring chains against her 6) and `VRM_TEX="Eye_Shadows=Eyelashes_Opacity.png:alpha"` (she has one `Eyelashes_Opacity.png` and two materials that need it; the picker gives it to the one whose name matches). Her model is `source/Sayuri dans.fbx`, its texture paths point at `C:\Temp\CharacterCreator4Temp\` on someone else's machine and the builder relocates all 8 of them. 91,632 triangles. **As installed 2026-11-12:** add `VRM_BLEND_MATERIALS="Eyelashes;Eye_Shadows;Lace;Moles;Hair"`, then run the result through `add_colliders.py` with `VRM_RECOLLIDE=1`. **That last step is not optional and is not in the ARGV**: what is installed went through that round trip, which adds 19 named collider nodes and normalises bone rolls, so a direct build reads as `differs` against the installed bundle (25 bones off by exactly 90° or 180°) until it has been round-tripped too |
-| Aiko | mixamo | 1.70 | exclude `^Girl2\.[0-9]` — one girl, 15 Mixamo clips. **This recipe does NOT reproduce her, measured 2026-11-16**: built from `girls14/inner/GirlsInAction.blend` with `girls14/textures` it matches her counts exactly when the hairrig `hair` is added (84 transforms, 4 chains / 16 joints, 6 clips, 3 materials) — and her hair comes out hanging over her face, with and without that rigger. Something about her hair is not in this row |
+| Aiko | mixamo | 1.70 | exclude `^Girl2\.[0-9]` — one girl, 15 Mixamo clips. **CORRECTED 2026-11-18 -- it DOES reproduce her; the 2026-11-16 reading below was the builder's alphaMode regression, not the recipe.** (was: "This recipe does NOT reproduce her"): built from `girls14/inner/GirlsInAction.blend` with `girls14/textures` it matches her counts exactly when the hairrig `hair` is added (84 transforms, 4 chains / 16 joints, 6 clips, 3 materials) — and her hair comes out hanging over her face, with and without that rigger. Something about her hair is not in this row |
 | Batman | multiversus | 1.88 | run `prep_batman.py` first: two half-characters on two armatures |
 | Chibi Rem | rigify_def | 1.55 | exclude `'^(?!GME_Rem$).*'` |
 | Gwen Stacy | mixamo | 1.70 | hairrig `island:1`, `HAIR_ANCHOR=0.70 HAIR_SEGS=2 HAIR_STRANDS=3` |
