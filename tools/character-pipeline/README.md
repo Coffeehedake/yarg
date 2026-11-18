@@ -2145,6 +2145,25 @@ rendered ZERO frames** after a C# compile error, and the task notification
 reported "completed" exactly as on a real run. Wrappers must assert their own
 postconditions; an empty result is not a success.
 
+#### CAVEAT CLOSED 2026-11-18: re-tested WITH the colliders, and the verdict holds
+
+The caveat below was recorded, then tested rather than left standing. ALPHAONLY
+against RECIPE again, both rebuilt with the **10 colliders** a real install
+carries, 20 frames over 20 seconds:
+
+| | area range | span range | cx range |
+|---|---|---|---|
+| chains INVERTED | 15.14% | 64 | 129.2 |
+| chains CORRECT | 15.09% | 75 | 130.8 |
+
+Still indistinguishable, and specifically **no ejection**: if the inverted roots
+107-121 mm below the Head bone were being pushed out of the head sphere, area
+and span would have GROWN. They did not. Confirmed by eye too -- hair on her
+scalp, face clear, all 20 frames.
+
+So the inversion is latent WITH guards as well as without. It remains real in
+the file and untested in any other animation; it is not a fault in this one.
+
 #### A caveat this puts on Finding 2 above
 
 The chain-inversion verdict -- ALPHAONLY indistinguishable from RECIPE, therefore
