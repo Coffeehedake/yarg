@@ -2777,6 +2777,14 @@ section that corrects an earlier one only works for a reader who reaches it.
 
 ### The interior-fault sweep ANSWERED: no character shows a large one, 2026-11-18
 
+> **PROVISIONAL AS OF LATER THE SAME DAY — THE NULL BELOW IS BEING RE-EARNED, NOT ASSUMED.**
+> The depth pass was corrected to match each material's own cull mode (see the next section).
+> The positive control held, so the instrument is sound — but EVERY READING WENT UP, so the
+> conclusion "no character shows a large interior fault" no longer follows from the numbers
+> that produced it. A re-sweep of all 65 is running. **Do not cite the null below until this
+> marker is removed.** Flagged here, at the top of the claim, rather than corrected 300 lines
+> further down — which is the failure this same file diagnosed an hour earlier.
+
 The roster was swept for the one fault class every other instrument here is blind to -- geometry
 wrongly occupying another part's space, which no silhouette measure can see. 65 characters, all
 harness controls clean, 46 measurable by the depth-order test and 19 held out and then proven
@@ -2822,7 +2830,7 @@ This also made the SSAO experiment unnecessary. Disabling screen-space effects w
 touched cast shadows or AA, so a null would have cleared nothing -- while the asymmetry
 correction subtracts all three at once WITHOUT needing to name which.
 
-#### THE ANSWER
+#### THE ANSWER (SUPERSEDED-PENDING — see the marker at the head of this section)
 
 **No character on this roster shows a large interior fault.** The worst directional reading is
 0.07 of the body/aux overlap, edge-concentrated, on a character with no transparent material. A
@@ -2848,6 +2856,42 @@ is a build, not a read.
 > NULL FROM ONE WITHOUT. The residual here is small and edge-shaped; the reason to resolve it is
 > not Lola's ear, it is that this probe will be pointed at future characters and its nulls have
 > to mean something.
+
+#### The sidedness hypothesis is DEAD, and the instrument is better anyway
+
+The directional limitation named above — open single-sided aux against a closed body, with the
+depth pass running Cull Off — was tested by matching **each material's own cull mode**.
+
+THE STOP CONDITION HELD, which was the real risk of the change: a depth pass that agrees more
+closely with the renderer could suppress the genuine signal as easily as the bias.
+
+    AikoCONTROLBLEND  global Cull Off  forward 0.374791  ratio 4.01
+                      per-material     forward 0.415679  ratio 4.15   UNMOVED, slightly stronger
+    synthetic positive still monotonic, and over a WIDER range than before
+
+**And the hypothesis failed. Nobody fell — every reading went UP.**
+
+| character | before | after | cull modes |
+|---|---|---|---|
+| Jessica Rabbit | fwd 0.1013 r1.89 | fwd 0.1877 r2.07 | **mixed** (Back=20, Off=2) |
+| Batman | fwd 0.0469 r14.5 | fwd 0.0798 r16.6 | |
+| Lola Bunny | fwd 0.0740 r17.0 | fwd 0.0823 r5.00 | Back ONLY |
+| Yoda | fwd 0.0516 r41.0 | fwd 0.0634 r33.5 | Back ONLY |
+| Aiko | fwd 0.0052 r0.35 | fwd 0.0038 r0.38 | |
+
+So sidedness does not account for the residue, which remains unexplained. The instrument is
+nonetheless more correct, because the depth pass now sees the faces the renderer sees.
+
+> **AN EXPERIMENT IS NOT TESTING WHAT ITS NAME SAYS UNLESS THE THING IN ITS NAME ACTUALLY
+> VARIES.** Lola Bunny and Yoda report a SINGLE cull mode, Back. For them "per-material cull"
+> was simply global-Off to Back, with no per-material variety involved at all. Only Jessica
+> Rabbit is genuinely mixed — and she moved most. Without a log of the cull modes actually
+> found, the change would have been credited for movement it did not cause on most of its own
+> subjects.
+
+Lola's ratio falling 17.0 to 5.00 is the one figure not to over-read: her overlap denominator
+also collapsed, 1,609 px to 486, so both halves of the fraction moved — and hers was already
+the row flagged as noise-prone on a small denominator.
 
 #### What it still cannot see
 
