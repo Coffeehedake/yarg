@@ -2201,6 +2201,45 @@ analysis and produced an apparent difference at 70-100% of the figure's height
 that had nothing to do with the character. Any whole-frame metric must exclude
 the podium -- `anim_sheet.py` already does, by finding it as the static blob.
 
+### `Documents\YARG-Characters` IS NOT THE INSTALLED CHARACTERS. Not one file matches
+
+Found 2026-11-18 by yarg-1 while checking the Aiko install from its side, and
+measured here across the whole store. There are **three** different Aiko bundles
+on this machine:
+
+| bytes | where | what it is |
+|---|---|---|
+| 3,345,402 | `Documents\YARG-Characters` | a build snapshot from **2026-11-07** |
+| 3,305,669 | `character-backups/aiko-2026-11-18/` | what was ACTUALLY installed at 00:45 |
+| 3,342,003 | the game's `custom/characters` | today's install |
+
+That snapshot is eleven days and three patches behind what was really running:
+the 11-12 colliders, the 11-15 shine flattening and the 11-16 reclear are all
+absent from it.
+
+**AND IT IS NOT JUST HER.** Compared every `.yargchar` in that store against its
+installed counterpart by size:
+
+    identical            0
+    DIFFERENT           42
+    not installed at all 2
+    largest divergence   Doom Slayer, 34,689,963 against 21,532,236 installed
+
+**Zero of forty-four match.** Every file in that folder is a build-time snapshot
+from 7-8 November; the installed folder has 65 characters and has been patched
+repeatedly since. Anyone who reads that store as "the installed character" is
+comparing against the wrong artefact **every single time**, and will get a clean,
+confident, wrong answer.
+
+This is the same failure as reading a spring parameter out of a `.vrm` build
+intermediate when the shipped bundle carries different values, and as a render
+labelled `FinalINSTALLED` that loaded a stale path -- all three happened in one
+day. **The installed folder is the only artefact that answers "what is in the
+game".** The store is useful as build output and as nothing else.
+
+Nothing has been deleted or refreshed; the finding is recorded rather than
+acted on, because a snapshot someone deliberately kept is not obviously rubbish.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still
