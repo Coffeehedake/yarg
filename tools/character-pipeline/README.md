@@ -43,7 +43,7 @@ needed for the job-object breakaway.
 |---|---|
 | ~~**Prix**~~ | **DONE 2026-11-16.** All four reported faults closed, three confirmed by eye on the podium; chest chains restored (5c/15j). What remains is a **31.9 mm arm depth asymmetry** that is her authored pose and hair that reads auburn under the podium light — neither reported, neither a fault |
 | ~~**The Mandalorian**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Reported as armour off-centre; it was a **3.3° spine lean**, not the "two half-skeletons" this file first recorded, and the lean was inherited. Skeleton **37.2 → 6.0 mm** read back off the installed file with Spartan at 0.0 as the control, geometry untouched (armour planes −8.00→−7.70, −8.60→−8.80), load test identical, renders indistinguishable. It does not SHOW — the fault was the rig, not the look. Baking the body with the bones, the other sense of "straighten", throws his helmet 50 mm off; that build is kept beside the installed one in `character-backups/mando-straighten-2026-11-17/` |
-| **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. ~~**DECIDED: leave her** — do not re-open~~ **RE-OPENED 2026-11-18 by Jay**, on new evidence: the interior-fault probe ranks her WORST on the roster (z=8.5) with violations at the dress slit over her thigh. The closure assumed the only symptom was a buried shoe |
+| **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. ~~**DECIDED: leave her** — do not re-open~~ **RE-OPENED 2026-11-18 by Jay**, on new evidence: the interior-fault probe ranks her WORST on the roster (z=8.5). The closure assumed the only symptom was a buried shoe. **The probe's own result is since DOWNGRADED — see below; it is not evidence of a fault.** The re-opening stands on the 92.4 mm leg, which is measured and open |
 | ~~**Kronk**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Not a half-body step: a **57.0 mm lean**, and unlike The Mandalorian his GEOMETRY leans with it (37.2 mm of it), because his source is `Kronk_Doing_the_Hokey_Pokey.usdz` and the T-pose step squares the limbs but never touches the spine. Rebuilt from source, straightened BAKED and re-centred: skeleton **57.0 → 13.4 mm**, geometry **37.2 → 9.6 mm**, and the podium render is visibly straighter. Never reported by anyone |
 | ~~**Aiko**~~ | **DONE — INSTALLED 2026-11-18.** Not a lean but a **YAW**; the sheet over her face was an **alphaMode draw-order artefact**, a builder regression (e921bf62) against her 2026-11-07 intermediate, NOT a recipe gap. Installed `aiko-RECIPE-OPAQUE-v2-colliders`: **yaw −29.95° → +0.03°** (spread 0.15), height 1.700 m, **10 colliders, 0 of 4 chains unguarded** (was 9), face clear in all 10 frames. Backup `character-backups/aiko-2026-11-18/`. A latent chain inversion remains — real in the file, invisible in this idle |
 | ~~**Limb capsules**~~ | **DONE — SWEPT AND INSTALLED 2026-11-17**, and the scope was far smaller than this line implied: of 65 bundles **35 have no spring chains at all**, so their capsules are inert, and 9 more were already right. **194 resizes across 21 characters**, median +11.7 mm; **20 installed, Alcina held** because p90 on her legs is her gown. Still run: 0 worse, 1 better (Inforder Trogen 33.15 → 8.34 mm), 20 unchanged. Load test identical on every pair. (That run measures instantiate-pose to settled-pose, NOT ejection — see "Miku's 1748 mm") |
@@ -2692,9 +2692,15 @@ the subject alone on a private layer is the better fix, and both characters then
 
 ### Jessica Rabbit RE-OPENED 2026-11-18, and her top ranking is not what it looked like
 
-Jay re-opened her after the interior-fault probe put her WORST on the roster: 0.1085, z=8.5,
-5,675 violating pixels, on her chest and along the dress slit over her thigh. Three measurements
-taken on re-opening, and each one moved the question.
+Jay re-opened her after the interior-fault probe put her WORST on the roster: 0.1085, z=8.5, on
+her chest and along the dress slit over her thigh.
+
+**TWO NUMBERS IN THE FIRST VERSION OF THIS SECTION WERE WRONG AND ARE CORRECTED HERE.** I wrote
+"5,675 violating pixels". 5,675 is the `overlap px` column — the DENOMINATOR, pixels where body
+and aux overlap on screen — and the column is labelled that. I misread a correctly-labelled
+column and then repeated the figure twice. **Her actual flagged pixels are 598**, about 0.2% of a
+512 frame, in 25 components averaging 24 px. Her case is far smaller than the first write-up
+made it sound.
 
 **THE CORROBORATION WAS AGAINST A STALE LINE IN THIS FILE.** The finding was supported by the
 playtest row reading "dress static while the body moves" -- a fault FIXED on 2026-11-16, whose
@@ -2718,6 +2724,29 @@ different findings and the roster ranking means different things under each. A p
 committed before looking: under the first, her violation pixels should lie on a THIN CURVE where
 two surfaces cross; a filled region would favour the second.
 
+**THAT PREDICTION FAILED AND INTERPENETRATION IS NOT SUPPORTED.** Erosion test on the painted
+frames — strip one pixel from the boundary and a curve 1-3 px wide nearly vanishes while a blob
+keeps its area:
+
+    Jessica Rabbit   (11 opaque mats)  n=598  retained(1px) 0.510  25 components, largest 239
+    AikoCONTROLBLEND (3 BLEND mats)    n=469  retained(1px) 0.663  13 components, largest 340
+
+0.510 against a curve threshold of 0.25. Her pixels are not a curve, and their shape is CLOSER
+to the known draw-order positive than to an intersection line. It does not establish the
+false-positive branch either — 0.510 sits between the two expectations and the known positive
+only reaches 0.663, so the discriminator is weak. **The mechanism behind her score is
+UNIDENTIFIED.** Ruled out so far: transparency (she has none), backface culling (tested, moved
+the numbers the wrong way), and a clean interpenetration curve.
+
+A method note that nearly cost the test: the obvious way to extract the violation mask is to
+select the marker colour the frames were painted with. **HER COSTUME HAS GREEN ON IT.** The mask
+was taken by differencing the painted frame against the plain one instead, which is exact.
+Selecting on the marker would have measured her dress and returned a confident number either
+way.
+
+> **THE RANKING IS NOT EVIDENCE OF FAULTS.** It is a list of characters where something the probe
+> reacts to is concentrated, and on opaque geometry that something is still unidentified.
+
 **WHY SHE MAY BE A REAL FINDING ANYWAY, stated as a hypothesis.** Her dress is fixed, but her
 **right leg is still 92.4 mm higher than her left**, from a Hips bone rolled 25.71°. That is the
 fault this file closed as "leave her", on the grounds that every available correction trades the
@@ -2726,9 +2755,25 @@ interpenetrates it -- **at the dress slit, which is where the probe found it**. 
 closure was decided on an incomplete symptom list: it weighed a buried shoe against a twisted
 pelvis and did not know the same bone also pushes her leg through her dress.
 
-**That is the argument for re-opening, and it is about COST, not about correctness.** The original
-decision was not wrong on the facts it had. It is that a fault with two visible symptoms is worth
-more to fix than a fault with one, and nobody had the second symptom when the trade was weighed.
+**The test that would have connected her leg to the probe's score is the one that just failed**, so
+the leg is NOT folded into the probe result and remains a hypothesis with one measurement behind
+it.
+
+**The re-opening still stands, on its own terms.** The 92.4 mm displacement is measured, open, and
+the worst limb-height fault on the roster at double the next. Its closure weighed a buried shoe
+against a twisted pelvis. Whether that trade is right is worth re-reading — but on the leg's own
+evidence, not on a probe score whose mechanism is unidentified.
+
+#### A README ACCUMULATES STATEMENTS BUT NOT THEIR EXPIRY
+
+Two stale-row incidents from this one file in a single day, one each. A recipe row read as a fact
+about an installed bundle; and a fault row sitting 376 lines above the row recording its own
+repair. The common shape is that **the newest fact about a character is not where you look for
+it** — the file grows by appending, so the oldest claim is the most prominent and nothing marks
+it dead.
+
+Strike superseded text WHERE IT SITS, in the same edit that records the new finding. A later
+section that corrects an earlier one only works for a reader who reaches it.
 
 ### The limb-capsule sweep, 2026-11-17
 
