@@ -2416,6 +2416,78 @@ the property-name count beside the result so the same failure cannot return
 silently. Third instance in one day of a wrapper reporting success about
 something it never read.
 
+### Why nothing we build carries MToon: OUR OWN EXPORTER remaps every material, 2026-11-18
+
+"Nothing we built has an MToon material to begin with", above, is true, and it reads like a
+property of the models we convert. It is not. It is one `Shader.Find` in our own exporter.
+
+`YargCharExporter.cs` does this to every material on every renderer:
+
+    var urp = Shader.Find("Universal Render Pipeline/Lit");
+    ...
+    if (urp == null || src.shader == urp) continue;
+    var nm = new Material(urp) { name = src.name + "_urp" };
+
+and then copies a FIXED LIST of properties onto the new material: `_BaseMap`/`_MainTex`,
+`_BaseColor`, `_BumpMap`, `_MetallicGlossMap`, `_EmissionMap`. Every material is rebuilt as
+URP/Lit unconditionally. `_ShadeColor`, `_ShadingToonyFactor`, `_ShadingShiftFactor`,
+`_RimColor`, `_OutlineColor` and `_MatcapColor` have nowhere to go and are discarded BY
+CONSTRUCTION -- not dropped by glTF, not by Unity, not by the bundle format.
+
+So `VRM_MTOON_ALL=1` is not doing nothing. It does exactly what it claims to the `.vrm`, and
+then the Unity export stage throws the result away. That is why the intermediate and the
+bundle disagree, and it is the fourth artefact-layer divergence recorded in this file.
+
+**The remap is not there for shading at all.** Its own comment says what it is for: a fresh
+URP/Lit culls back faces, the Standard material the glTF import produces has no cull property
+to carry the source's intent, and single-sided sheets -- a hair fringe, an ear, an eye plane --
+vanish from the side their normals face away from. It is a CULL AND ALPHA fix. Flattening the
+shader is a side effect of how that fix was built, not its purpose.
+
+#### RETRACTED, and it is my own text one section up: "a bundle references shaders it does not contain"
+
+That sentence is false, and the inference resting on it did the damage.
+
+Measured, three bundles, with a type histogram as the control -- zero distinct types would
+mean the read failed, so the numbers below are not a silent zero:
+
+| bundle | Shader objects CARRIED | materials whose shader resolves in-bundle |
+|---|---|---|
+| Hatsune Miku (Retry Now ver.) | 3 | 23 of 23 |
+| Hatsune Miku (Dark) (Retry Now ver.) | 3 | 14 of 14 |
+| Aiko (ours) | 3 | 3 of 3 |
+
+Every bundle CONTAINS its shaders. What actually fails is reading `m_Name` on a bundled
+Shader -- it comes back EMPTY -- and an empty name was read as an absent object. The real name
+is in `m_ParsedForm.m_Name`, and with that:
+
+    Hatsune Miku (Retry Now ver.)  ->  VRM10/Universal Render Pipeline/MToon10
+    Aiko (ours)                    ->  Universal Render Pipeline/Lit
+
+**The consequence is the entire point.** If a shader lived outside the bundle, shipping MToon
+ourselves would depend on the GAME BUILD carrying MToon -- and it does not: MToon is absent
+from `m_AlwaysIncludedShaders` (three built-in shaders are listed, and nothing in
+`ProjectSettings/` mentions MToon at all). The false premise therefore produced the
+discouraging answer. In fact the character carries its own shader, the one Miku carries is the
+URP variant that already ships in the `com.vrmc.vrm` package in this project
+(`MToon10/Shaders/vrmc_materials_mtoon_urp.shader`), and the game build never needs to know.
+
+An empty string is not a failed read, and "not here" is not the only thing a blank name can
+mean. Two conclusions in one day rested on that, in opposite directions.
+
+#### What this establishes, and what it does NOT
+
+MEASURED: the loss is ours, and it is one unconditional remap at a known line; bundles are
+self-sufficient for shaders; the MToon URP shader is already in this project; a downloaded
+MToon character resolves entirely in-bundle.
+
+NOT MEASURED, and required before anyone says we can ship a toon-shaded character: **nobody
+has built one.** Preserving MToon through the exporter must still deliver the cull and alpha
+intent the remap exists for. MToon carries its own cull and alpha modes, so it is probably
+expressible -- but "probably" is not a measurement, and the history in this file is mostly of
+plausible things that turned out not to be true. Build one, render it, and compare it against
+a downloaded MToon character before writing a conclusion here.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still

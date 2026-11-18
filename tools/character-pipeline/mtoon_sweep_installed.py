@@ -1,8 +1,26 @@
 # MToon materials carry distinctive PROPERTY names (_ShadeColor, _MToonVersion, _RimColor...).
-# The shader OBJECT cannot be read -- a bundle references shaders it does not contain, so
-# m_Shader.read() throws, and a try/except around it returns a confident zero. That is how the
-# first version of this sweep reported "0 of 65 carry MToon" having read no shader at all.
-# Its own control caught it: zero distinct shader names is impossible if the read worked.
+# This sweep reads PROPERTY names, and that is still the right thing for it to do. But the
+# reason given here for not reading the shader object was WRONG, and it is corrected below
+# rather than deleted, because it sent a later reader (me) down the wrong road for an hour.
+#
+# WHAT THIS HEADER USED TO SAY: "The shader OBJECT cannot be read -- a bundle references
+# shaders it does not contain, so m_Shader.read() throws, and a try/except around it returns
+# a confident zero." The first half of that is false and the inference from it is worse.
+#
+# MEASURED 2026-11-18, three bundles, with a type histogram as the control: EVERY .yargchar
+# CONTAINS its shaders, and every material's shader PPtr resolves inside the bundle --
+# 23 of 23 in Hatsune Miku (Retry Now ver.), 14 of 14 in her Dark variant, 3 of 3 in our Aiko.
+# What actually fails is reading m_Name on a bundled Shader: it comes back EMPTY. The real
+# name is in m_ParsedForm.m_Name, and with that:
+#
+#     Hatsune Miku (Retry Now ver.)  carries  VRM10/Universal Render Pipeline/MToon10
+#     Aiko (ours)                    carries  Universal Render Pipeline/Lit
+#
+# An empty string is not a failed read, and "the object is not here" is not the only thing a
+# blank name can mean. That mistake mattered: believing the shader lived outside the bundle
+# made "could we ship MToon ourselves?" look like it depended on the GAME BUILD carrying
+# MToon (it does not -- the character carries it), and MToon is absent from
+# m_AlwaysIncludedShaders, so the wrong answer was the discouraging one.
 import os, sys, collections
 import UnityPy
 MARK = ("_mtoonversion", "_shadecolor", "_shadetexture", "_rimcolor", "_outlinewidth",
