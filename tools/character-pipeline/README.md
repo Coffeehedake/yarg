@@ -1976,6 +1976,94 @@ The recipe is verified but nothing has been installed. That is a separate
 decision, and `MASK` versus the `OPAQUE` she shipped with has not been compared
 by eye.
 
+### Aiko, MASK vs OPAQUE, 2026-11-18: take OPAQUE. And my harness cannot see the thing MTOON_ALL changes
+
+Four builds, **one character geometrically** -- yarg-1 verified 81 of 81 bones to
+better than 0.10 mm and 81 of 81 directions to better than 0.05 deg, only the
+materials move. That is what makes pixel-differencing legitimate here.
+
+| build | Body | HairFace | Scalp |
+|---|---|---|---|
+| shipped | OPAQUE PBR | OPAQUE PBR | OPAQUE PBR |
+| `aiko-RECIPE-OPAQUE` | OPAQUE PBR | OPAQUE PBR | OPAQUE PBR |
+| `aiko-RECIPE` | OPAQUE PBR | **MASK MToon UNLIT** | OPAQUE PBR |
+| `aiko-RECIPE-MTOONALL` | **unlit** | **MASK MToon UNLIT** | **unlit** |
+
+**MASK is inseparable from a shading-model change in this builder** -- `mt.enabled`
+is driven by `cut or blend` and the exporter will not write MASK unless MToon is
+on, which exports `KHR_materials_unlit`. So "MASK vs OPAQUE" was never one
+variable and my request for it was not achievable. yarg-1 said so instead of
+building what I asked and letting the result look like an answer. It also caught
+that my suggested route to the OPAQUE build -- dropping `HairFace` from
+`VRM_CUTOUT_MATERIALS` -- yields BLEND, not OPAQUE, which would have
+reintroduced the original fault.
+
+#### The numbers
+
+Geometrically identical pair, so the pixels are directly comparable:
+
+| pair | differs in | mean abs diff on the character |
+|---|---|---|
+| OPAQUE vs RECIPE | HairFace only | **2.91** |
+| OPAQUE vs MTOONALL | all three materials | **2.95** |
+| MTOONALL vs RECIPE | Body + Scalp, lit vs unlit | **0.047** |
+
+And the torso is **pixel-identical, exactly zero**, between OPAQUE and RECIPE --
+which is also the internal check that the comparison is sound, because if the
+scene had lit them differently the torso could not match.
+
+Hair edges, measured as the isoperimetric ratio of the head silhouette: MASK is
+wispier, stable in direction across every head fraction, **by 0.5%** -- iso 3.967
+against 3.943, perimeter identical to the pixel, area differing 277 px in 41,000.
+Real, and far too small to see.
+
+**No face or jaw seam.** The Peach configuration does not bite here.
+
+#### THE CONTROL FAILED, and the failure is the finding
+
+yarg-1 pointed out the four builds give a free positive control: OPAQUE is lit
+everywhere, MTOONALL is unlit everywhere, neither has a seam, so if a flatness
+measure cannot separate those two it cannot have detected a seam in RECIPE
+either and a clean reading from it means nothing.
+
+It could not separate them. Torso luminance std 30.446 against 30.437; gradient
+2.2954 against 2.2941. **0.03%.**
+
+The instrument is not blind. The PREMISE is false: **under this scene's lighting
+an unlit material and a lit one render almost identically on skin**, which the
+direct pixel difference confirms independently at 0.047.
+
+**And that is a limitation of MY HARNESS, not of the builds.** `YargCharAnim`
+forces `podium.Light.color = Color.white` and shoots the character-select
+podium -- bright, white, near-uniform. That is the least discriminating setting
+possible for a lit-versus-unlit question. An unlit character stops responding to
+STAGE lighting, and a rhythm game's venue lights are coloured and dynamic. **So
+this render systematically under-tests exactly the property MTOON_ALL changes,
+and "no difference" here must not be read as "no difference in game".**
+
+#### Recommendation: `aiko-RECIPE-OPAQUE`
+
+It keeps the fix that matters -- the depth-write cure for the sheet over her
+face, which is the actual reported bug -- reproduces the shipped look, keeps her
+responding to light, and gives up only a 0.5% hair-edge refinement nobody can
+see. MTOONALL buys nothing measurable here and costs a property this harness
+cannot test. Not installed; the decision is Jay's.
+
+Note what the builder cannot offer: **one shading model, LIT, with cutouts
+kept.** MASK requires MToon and MToon exports unlit. So this is a trade between
+three imperfect options rather than a fix, and Peach's row should not be read as
+making MTOON_ALL the answer in general -- for Peach the alternative was a tan
+plate across her brow, here the alternative is the character as she already
+ships.
+
+#### A harness artefact worth knowing
+
+The podium's emissive ring renders **purple in one run and cyan in another**. It
+is per-instantiation and it is large: it dominated a naive whole-frame band
+analysis and produced an apparent difference at 70-100% of the figure's height
+that had nothing to do with the character. Any whole-frame metric must exclude
+the podium -- `anim_sheet.py` already does, by finding it as the static blob.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still
