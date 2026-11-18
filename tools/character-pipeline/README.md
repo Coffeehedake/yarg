@@ -1584,6 +1584,60 @@ correct**: she renders correctly with the springs on and with them off. Editing
 the author's colliders to satisfy a threshold she visibly does not need would
 risk a working character to tidy a number.
 
+### Animation testing: frames and a contact sheet, 2026-11-18
+
+`YargCharAnim.cs` + `anim_sheet.py`. Renders a character as a SEQUENCE through its
+own clip and tiles it into one still image, because a fault that only shows in
+motion cannot be caught by the single settled frame `YargSceneShot` produces --
+it calls `anim.Update(1.0f)` exactly once.
+
+    Unity -batchmode -quit -projectPath <scratch> -executeMethod YargCharAnim.Run
+          -yargchars "<path>|<Name>" -shotDir <out> -frames 12 -step 0.125 -warmup 1.0
+    python anim_sheet.py <frames-dir> <sheet.png> <NamePrefix>
+
+**A sheet, not a GIF or a video, and that is the whole design.** The output exists
+to be LOOKED at, and a reader that can open a still cannot watch a GIF (it arrives
+as its first frame) or a video (not at all). A contact sheet is the motion in one
+still, read left to right, beside per-frame numbers.
+
+`-warmup` settles the spring chains before frame 0, so the settle does not land in
+the first frame pair and swamp the motion.
+
+#### The control is inside the tool, at both ends
+
+Identical frames are indistinguishable from a character correctly standing still,
+and this project has already read a harness's own zero as a finding about five
+characters. So `YargCharAnim` counts moved pixels between consecutive frames and
+logs `CONTROL OK` / `CONTROL FAILED`, and `anim_sheet.py` checks the same thing
+again from the images. Agreeing checks at both ends is deliberate: the failure is
+silent at both.
+
+#### Two faults in the measurement, caught by the numbers and not by the pictures
+
+Both were in this tool on its first run, and both are why the numbers matter:
+
+* **THE PODIUM WAS BEING MEASURED AS PART OF THE CHARACTER.** "Largest connected
+  component" does not isolate him -- his feet touch the podium, so it returns him
+  WELDED TO THE FURNITURE. The tell was two different characters agreeing to the
+  pixel: both components ran to y=633 and both had their widest row at y=546. The
+  podium is now found from the data by the one property it has and the character
+  does not -- it does not move -- and everything below it is excluded.
+* **`span` was counting filled pixels in a row rather than measuring its extent.**
+  A figure with its legs apart has a gap, so a count under-reads, and it read the
+  podium's solid disc as the widest thing in frame. It sat at a constant 217 across
+  24 frames and two characters. **A number that never changes looks like a stable
+  measurement and is usually a dead one.** Fixed to a real extent, it varies 179-209.
+
+Neither was visible in the renders, which looked fine throughout.
+
+#### First use
+
+Hatsune Miku (Retry Now ver.), 12 frames at 0.125 s, with `Miku` as the control.
+Both move (11 of 11 frame pairs). She steps, turns and her twintails swing with
+her -- no hair flying, no clipping through her dress. That confirms in motion what
+the two static renders said at rest, and it is the check the static renders could
+not make.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still
