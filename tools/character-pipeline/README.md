@@ -45,7 +45,7 @@ needed for the job-object breakaway.
 | ~~**The Mandalorian**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Reported as armour off-centre; it was a **3.3° spine lean**, not the "two half-skeletons" this file first recorded, and the lean was inherited. Skeleton **37.2 → 6.0 mm** read back off the installed file with Spartan at 0.0 as the control, geometry untouched (armour planes −8.00→−7.70, −8.60→−8.80), load test identical, renders indistinguishable. It does not SHOW — the fault was the rig, not the look. Baking the body with the bones, the other sense of "straighten", throws his helmet 50 mm off; that build is kept beside the installed one in `character-backups/mando-straighten-2026-11-17/` |
 | **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. **DECIDED: leave her** — do not re-open |
 | ~~**Kronk**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Not a half-body step: a **57.0 mm lean**, and unlike The Mandalorian his GEOMETRY leans with it (37.2 mm of it), because his source is `Kronk_Doing_the_Hokey_Pokey.usdz` and the T-pose step squares the limbs but never touches the spine. Rebuilt from source, straightened BAKED and re-centred: skeleton **57.0 → 13.4 mm**, geometry **37.2 → 9.6 mm**, and the podium render is visibly straighter. Never reported by anyone |
-| ~~**Aiko**~~ | **DIAGNOSED AND RENDERED 2026-11-18, not installed.** Not a lean but a **YAW**, so straighten_spine was never involved. The sheet over her face is an **alphaMode draw-order artefact** (BLEND materials do not write depth), a builder REGRESSION from e921bf62 against her 2026-11-07 intermediate — not a gap in her recipe, and that claim is corrected in three places. RECIPE build renders clean in every frame at 1.4 s and 20 s. A second, LATENT defect (hair chains built upside down) is real in the file but invisible in this idle. Install is a separate decision |
+| ~~**Aiko**~~ | **DONE — INSTALLED 2026-11-18.** Not a lean but a **YAW**; the sheet over her face was an **alphaMode draw-order artefact**, a builder regression (e921bf62) against her 2026-11-07 intermediate, NOT a recipe gap. Installed `aiko-RECIPE-OPAQUE-v2-colliders`: **yaw −29.95° → +0.03°** (spread 0.15), height 1.700 m, **10 colliders, 0 of 4 chains unguarded** (was 9), face clear in all 10 frames. Backup `character-backups/aiko-2026-11-18/`. A latent chain inversion remains — real in the file, invisible in this idle |
 | ~~**Limb capsules**~~ | **DONE — SWEPT AND INSTALLED 2026-11-17**, and the scope was far smaller than this line implied: of 65 bundles **35 have no spring chains at all**, so their capsules are inert, and 9 more were already right. **194 resizes across 21 characters**, median +11.7 mm; **20 installed, Alcina held** because p90 on her legs is her gown. Still run: 0 worse, 1 better (Inforder Trogen 33.15 → 8.34 mm), 20 unchanged. Load test identical on every pair. (That run measures instantiate-pose to settled-pose, NOT ejection — see "Miku's 1748 mm") |
 | **Alcina Dimitrescu** | **HELD out of the limb sweep on purpose**, not a regression: p90 on her legs is her GOWN (thigh 0.111 → 0.207, shin 0.091 → 0.199), and for her the median is the closer approximation of a leg. Her still run is 0.10 mm either way, so nothing is lost. Re-open only with a flesh-only percentile |
 | ~~**Hatsune Miku (Retry Now ver.)**~~ | **DONE — RENDERED 2026-11-18, NOTHING IS WRONG WITH HER.** The 283 mm is a modest, correct settle, not an ejection. Rendered `-rebind 0` and normally with `Miku` in frame as the control; her rest pose is ALREADY tidy, which is exactly why she settles 283 mm where Miku settles 1748. Nothing installed, nothing changed. She does carry **5 non-anchor joints starting inside their own colliders**, one of them 46.4 mm in at r/centre 0.450 — the Gadget Hackwrench signature — **and it does no visible damage**; see "A joint inside a collider is not by itself a fault" |
@@ -2154,6 +2154,29 @@ chain whose roots sit 107-121 mm BELOW the Head bone would start inside the head
 sphere the collider step fits at about that height. Nobody is claiming the
 verdict changes. It was measured without the colliders a real install carries,
 and that belongs here now rather than being discovered later.
+
+#### INSTALLED 2026-11-18, and what the gate caught on the way
+
+Installed `aiko-RECIPE-OPAQUE-v2-colliders`, 3,342,003 bytes. Verified AFTER the
+copy, against the file now in the game's folder:
+
+| check | before | after |
+|---|---|---|
+| yaw off square | **-29.95 deg** | **+0.03 deg**, spread 0.15 |
+| height | 1.700 m | 1.700 m, 0 flagged |
+| colliders | 9 in 1 group | **10 in 1 group**, all used |
+| chains unguarded | 0 of 4 | **0 of 4** |
+| sheet over her face | present | **gone, all 10 frames** |
+
+Backup at `character-backups/aiko-2026-11-18/Aiko.yargchar.pre-ropaque`, verified
+byte-identical before anything was replaced.
+
+**The gate earned its keep twice.** First it stopped the v1 install over missing
+colliders. Then, on the verification render, a script edited by `sed` rendered a
+STALE bundle under the label `FinalINSTALLED` -- the label said one thing and the
+path said another, and reading the label would have "verified" the install
+against a file that was never installed. The rerun names the actual path in its
+own output and asserts a frame count, so neither can drift again.
 
 #### Recommendation: `aiko-RECIPE-OPAQUE`
 
