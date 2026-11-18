@@ -1920,10 +1920,16 @@ included**, at both 1.4 s and 20 s sampling. Its stated death -- "if frame 1 is
 clean my whole Finding 1 is wrong" -- does not fire. `aiko-RECIPE` is **clean in
 every frame** at both windows: face visible, hair on the scalp.
 
-A BLEND material sits in the transparent queue and does not write depth, so the
-hair behind her head draws over her face. The hair never moved; it was drawn in
-the wrong ORDER, which is why it read as a flat sheet. Two of her three
-materials went BLEND on an alpha that is opaque at every pixel.
+**The CAUSE is measured; the MECHANISM is reasoned, and they are different
+claims** (yarg-1 drew this distinction on its own finding and it is right).
+MEASURED: aiko-control and aiko-ALPHAONLY differ in alphaMode ALONE, and the
+sheet is present in one from frame 0 and absent in the other. One variable.
+REASONED, never isolated: that a BLEND material sits in the transparent queue
+and writes no depth, so hair behind her head draws over her face. That story
+fits every fact and nothing here tested it. The fix does not depend on it being
+right, and it must not be written down as though it had been shown.
+
+Two of her three materials went BLEND on an alpha that is opaque at every pixel.
 
 **It is a REGRESSION, not a gap in her recipe.** The honour-the-authored-blend
 step landed in `e921bf62` on 2026-11-09; her shipped intermediate is 2026-11-07,
