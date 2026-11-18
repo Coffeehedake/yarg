@@ -2093,6 +2093,68 @@ guaranteed to be as lucky, and Peach IS the case where it went wrong, so this
 file must not be read as making her outcome the typical one. It is one
 measurement on one character under one light.
 
+#### The missing colliders were a HARNESS fault, and the log said so five times
+
+The pre-install gate stopped the install: the candidate carried **0 colliders**
+against the installed bundle's **9 in 1 group**, leaving 4 of 4 hair chains
+unguarded. My proposed remedy -- `patch_springs.py --collide` -- was WRONG, and
+yarg-1 stopped it before it ran.
+
+Cause: it built from a COPY of `build_vrm.py` in its own scratch directory. The
+collider step does `sys.path.insert(os.path.dirname(__file__))` then
+`import vrm_colliders`; `__file__` was the copy, that folder had no
+`vrm_colliders.py`, the import raised, **a try/except swallowed it**, and the
+build exported a valid character with no colliders.
+
+**The log says so in plain words, in all five builds**, and went unread for hours:
+
+    collider setup failed: ModuleNotFoundError: No module named 'vrm_colliders'
+
+**A GREP WRITTEN FROM WHAT YOU EXPECT TO SEE CAN ONLY RETURN WHAT YOU EXPECT TO
+SEE.** Every filter run over those logs matched `colliders:`, `hair rig:`,
+`material`, `VERIFIED` -- the lines a SUCCESSFUL build prints. A step failing on
+every run was invisible to a filter built from the happy path. **The builder in
+this repo is FINE**: yarg-1's control, built from today's unmodified file,
+failed identically for the same reason.
+
+Measured from the files, which is what settles where her colliders came from:
+
+| file | date | colliders | chains guarded |
+|---|---|---|---|
+| `Aiko.vrm` (behind the installed bundle) | 2026-11-07 | **0** | 0 of 4 |
+| `aiko/Aiko.vrm` | 2026-11-12 | **9 in 1 group** | 4 of 4 |
+| today's five builds | 2026-11-18 | **0** | 0 of 4 |
+
+**Her installed nine never came from a build.** The intermediate behind the
+shipped bundle has zero; the nine arrived via a separate `add_colliders.py`
+round trip, exactly as this file already records for Sayuri and Jessica Rabbit
+("that is where her colliders come from"). So the fix is a correct rebuild --
+which produces them from the build itself -- not a patch.
+
+#### I ran the same test on my OWN logs, and that is the part to repeat
+
+Grepping my Unity logs for failure vocabulary I had never filtered for returned
+**2,379 "shader not found"** and 1,017 "Fallback" -- alarming enough to overturn
+the unlit finding committed minutes earlier. They are all Unity's built-in
+**Terrain** shaders, benign import chatter, and the unlit-test log is clean with
+UniVRM v0.131.0 loaded. **The finding stands -- but only because I looked for
+what my filters hid rather than trusting that they had found nothing.**
+
+A related one from the same hour: one of my own scripts **exited 0 having
+rendered ZERO frames** after a C# compile error, and the task notification
+reported "completed" exactly as on a real run. Wrappers must assert their own
+postconditions; an empty result is not a success.
+
+#### A caveat this puts on Finding 2 above
+
+The chain-inversion verdict -- ALPHAONLY indistinguishable from RECIPE, therefore
+**latent** -- was measured on rigs that had **no colliders at all**. The
+comparison is internally valid (both sides lacked them equally), but an inverted
+chain whose roots sit 107-121 mm BELOW the Head bone would start inside the head
+sphere the collider step fits at about that height. Nobody is claiming the
+verdict changes. It was measured without the colliders a real install carries,
+and that belongs here now rather than being discovered later.
+
 #### Recommendation: `aiko-RECIPE-OPAQUE`
 
 It keeps the fix that matters -- the depth-write cure for the sheet over her
