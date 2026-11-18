@@ -43,7 +43,7 @@ needed for the job-object breakaway.
 |---|---|
 | ~~**Prix**~~ | **DONE 2026-11-16.** All four reported faults closed, three confirmed by eye on the podium; chest chains restored (5c/15j). What remains is a **31.9 mm arm depth asymmetry** that is her authored pose and hair that reads auburn under the podium light — neither reported, neither a fault |
 | ~~**The Mandalorian**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Reported as armour off-centre; it was a **3.3° spine lean**, not the "two half-skeletons" this file first recorded, and the lean was inherited. Skeleton **37.2 → 6.0 mm** read back off the installed file with Spartan at 0.0 as the control, geometry untouched (armour planes −8.00→−7.70, −8.60→−8.80), load test identical, renders indistinguishable. It does not SHOW — the fault was the rig, not the look. Baking the body with the bones, the other sense of "straighten", throws his helmet 50 mm off; that build is kept beside the installed one in `character-backups/mando-straighten-2026-11-17/` |
-| **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. **DECIDED: leave her** — do not re-open |
+| **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. ~~**DECIDED: leave her** — do not re-open~~ **RE-OPENED 2026-11-18 by Jay**, on new evidence: the interior-fault probe ranks her WORST on the roster (z=8.5) with violations at the dress slit over her thigh. The closure assumed the only symptom was a buried shoe |
 | ~~**Kronk**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Not a half-body step: a **57.0 mm lean**, and unlike The Mandalorian his GEOMETRY leans with it (37.2 mm of it), because his source is `Kronk_Doing_the_Hokey_Pokey.usdz` and the T-pose step squares the limbs but never touches the spine. Rebuilt from source, straightened BAKED and re-centred: skeleton **57.0 → 13.4 mm**, geometry **37.2 → 9.6 mm**, and the podium render is visibly straighter. Never reported by anyone |
 | ~~**Aiko**~~ | **DONE — INSTALLED 2026-11-18.** Not a lean but a **YAW**; the sheet over her face was an **alphaMode draw-order artefact**, a builder regression (e921bf62) against her 2026-11-07 intermediate, NOT a recipe gap. Installed `aiko-RECIPE-OPAQUE-v2-colliders`: **yaw −29.95° → +0.03°** (spread 0.15), height 1.700 m, **10 colliders, 0 of 4 chains unguarded** (was 9), face clear in all 10 frames. Backup `character-backups/aiko-2026-11-18/`. A latent chain inversion remains — real in the file, invisible in this idle |
 | ~~**Limb capsules**~~ | **DONE — SWEPT AND INSTALLED 2026-11-17**, and the scope was far smaller than this line implied: of 65 bundles **35 have no spring chains at all**, so their capsules are inert, and 9 more were already right. **194 resizes across 21 characters**, median +11.7 mm; **20 installed, Alcina held** because p90 on her legs is her gown. Still run: 0 worse, 1 better (Inforder Trogen 33.15 → 8.34 mm), 20 unchanged. Load test identical on every pair. (That run measures instantiate-pose to settled-pose, NOT ejection — see "Miku's 1748 mm") |
@@ -240,7 +240,7 @@ had simply never been looked at.
 | Prix, Pomni | eyes render as solid white; hair reads as a cap | every material in every character exports `alphaMode: OPAQUE` — see below. **Pomni's eyes are fixed** (her own row, further down). **Prix's are not, and her hair must be left alone**: the only hair map in her folder is a DIFFERENT model's atlas reached by the loose fallback, so honouring its alpha leaves her bald. Her eye textures are still open |
 | Ariel, Heels | lower hair hangs in space while the body moves | the hair rigger leaves part of the hair behind. Chains are correctly parented and every vertex is weighted, so it is neither of the obvious two |
 | Mando | cape folded in on itself, static | the documented cloak case, and the recipe alone was not enough: built with `HAIR_BONE=Spine1` the rigger took the HEM as the attached end, pinned it to his thighs and left the swinging tip at his collar |
-| Jessica Rabbit | dress static while the body moves; sequin texture on her skin | the rigger took one group per build, so her hair and her dress could not both be rigged. `rskin` had already been given its own map |
+| Jessica Rabbit | ~~dress static while the body moves~~ **SUPERSEDED — FIXED 2026-11-16, and the fix is INSTALLED** (verified in the shipped bundle 2026-11-18: her 24,035-vert bodice is on 9 bones including breast.L and breast.R). Sequin texture on her skin still stands | the rigger took one group per build, so her hair and her dress could not both be rigged. `rskin` had already been given its own map |
 | Alcina | chest drifts like a balloon | **chest spring parameters do not scale.** 0.85 stiffness and 0.60 drag were set looking at Prix at 1.70 m; Alcina is 2.9 m and VRM spring stiffness is scale-dependent |
 | Yui | looks out of proportion | not yet measured |
 
@@ -2689,6 +2689,46 @@ A conservation check reported a 1,888 px discrepancy and it was read as a transp
 signature. The same character then read 0, 1,899 and 0 across three runs with nothing altered.
 It was the PODIUM. `anim_sheet.py` locates the podium from the data and excludes it; rendering
 the subject alone on a private layer is the better fix, and both characters then read exactly 0.
+
+### Jessica Rabbit RE-OPENED 2026-11-18, and her top ranking is not what it looked like
+
+Jay re-opened her after the interior-fault probe put her WORST on the roster: 0.1085, z=8.5,
+5,675 violating pixels, on her chest and along the dress slit over her thigh. Three measurements
+taken on re-opening, and each one moved the question.
+
+**THE CORROBORATION WAS AGAINST A STALE LINE IN THIS FILE.** The finding was supported by the
+playtest row reading "dress static while the body moves" -- a fault FIXED on 2026-11-16, whose
+own fix is recorded in this same document 376 lines further down. Read in the shipped bundle
+rather than in the README: `Object_1`, 24,035 verts, her bodice, sits on **9 bones including
+`breast.L` (15.6%) and `breast.R` (12.1%)** -- the post-fix state exactly. The fix is installed.
+The row has been struck.
+
+> A DOCUMENT THAT RECORDS A FAULT AND ITS FIX 376 LINES APART WILL BE READ AS RECORDING THE
+> FAULT. Strike the original where it sits; do not rely on a later section to correct it.
+
+**AND SHE HAS NO BLENDED MATERIALS AT ALL.** `alpha_sweep_installed.py` on the shipped bundle:
+**opaque=11**. Every one. Nothing in her fails to write depth.
+
+That matters because the probe's stated mechanism is that `BLEND` does not write depth, so
+geometry behind composites over the body in front. **She cannot produce that mechanism, and she
+is the top row by a factor of 1.5.** So either the probe measures more than it claims --
+interpenetrating OPAQUE geometry gives near-coincident depths along the intersection curve, where
+which surface wins is arbitrary -- or it has a false-positive mode on opaque geometry. Those are
+different findings and the roster ranking means different things under each. A prediction
+committed before looking: under the first, her violation pixels should lie on a THIN CURVE where
+two surfaces cross; a filled region would favour the second.
+
+**WHY SHE MAY BE A REAL FINDING ANYWAY, stated as a hypothesis.** Her dress is fixed, but her
+**right leg is still 92.4 mm higher than her left**, from a Hips bone rolled 25.71°. That is the
+fault this file closed as "leave her", on the grounds that every available correction trades the
+buried shoe for a twisted pelvis. A thigh 92 mm out of place inside a correctly-rigged skirt
+interpenetrates it -- **at the dress slit, which is where the probe found it**. If that holds, the
+closure was decided on an incomplete symptom list: it weighed a buried shoe against a twisted
+pelvis and did not know the same bone also pushes her leg through her dress.
+
+**That is the argument for re-opening, and it is about COST, not about correctness.** The original
+decision was not wrong on the facts it had. It is that a fault with two visible symptoms is worth
+more to fix than a fault with one, and nobody had the second symptom when the trade was weighed.
 
 ### The limb-capsule sweep, 2026-11-17
 
