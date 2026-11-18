@@ -48,7 +48,7 @@ needed for the job-object breakaway.
 | **Aiko** | 29.95° off; a rebuild squares her but puts her hair over her face. Nothing installed |
 | ~~**Limb capsules**~~ | **DONE — SWEPT AND INSTALLED 2026-11-17**, and the scope was far smaller than this line implied: of 65 bundles **35 have no spring chains at all**, so their capsules are inert, and 9 more were already right. **194 resizes across 21 characters**, median +11.7 mm; **20 installed, Alcina held** because p90 on her legs is her gown. Still run: 0 worse, 1 better (Inforder Trogen 33.15 → 8.34 mm), 20 unchanged. Load test identical on every pair. (That run measures instantiate-pose to settled-pose, NOT ejection — see "Miku's 1748 mm") |
 | **Alcina Dimitrescu** | **HELD out of the limb sweep on purpose**, not a regression: p90 on her legs is her GOWN (thigh 0.111 → 0.207, shin 0.091 → 0.199), and for her the median is the closer approximation of a leg. Her still run is 0.10 mm either way, so nothing is lost. Re-open only with a flesh-only percentile |
-| **Hatsune Miku (Retry Now ver.)** | **283 mm** between her instantiate pose and her settled pose, on a hair joint — the one still-run outlier not yet rendered. Miku's own 1748 mm turned out to be her springs working, so this is a QUESTION, not a finding: render her with `-rebind 0` and normally and compare. Not reported by anyone |
+| ~~**Hatsune Miku (Retry Now ver.)**~~ | **DONE — RENDERED 2026-11-18, NOTHING IS WRONG WITH HER.** The 283 mm is a modest, correct settle, not an ejection. Rendered `-rebind 0` and normally with `Miku` in frame as the control; her rest pose is ALREADY tidy, which is exactly why she settles 283 mm where Miku settles 1748. Nothing installed, nothing changed. She does carry **5 non-anchor joints starting inside their own colliders**, one of them 46.4 mm in at r/centre 0.450 — the Gadget Hackwrench signature — **and it does no visible damage**; see "A joint inside a collider is not by itself a fault" |
 | **Arbiter** | 13 handoffs open and never pulled |
 
 **Settled on 2026-11-17**, each with its own section below. Two characters
@@ -1501,6 +1501,88 @@ claims otherwise. **A big number there is a question, not a finding**, and the
 way to answer it is the two renders. On that reading the other seven are
 unremarkable settles of 8-37 mm, except Hatsune Miku (Retry Now) at 283 mm,
 which has not been rendered and is the only one still worth a look.
+
+### Hatsune Miku (Retry Now ver.): 283 mm is a correct settle, 2026-11-18
+
+The last still-run outlier, and the answer is the same shape as Miku's but for
+the opposite reason. **Nothing is wrong with her. Nothing was changed.**
+
+`YargSpringProbe -still` reads **283 mm** from her instantiate pose to her
+settled pose on a hair joint. That number cannot distinguish an ejection from
+an authored rest pose the solver disagrees with, so it was rendered twice:
+once with `-rebind 0`, which leaves her in the pose the bundle ships and
+disables the Animator so the springs never run, and once normally.
+
+**Both renders are fine.** That was not one of the two outcomes written down
+beforehand, and it is the answer:
+
+* **At rest her twintails already hang neatly** down either side, symmetric,
+  close to the body. She was authored near where the solver wants her.
+* **Sprung, they hang slightly closer still.** No ballooning, nothing flung
+  out, no hair across her face.
+
+So the 283 mm is the small distance between an already-sensible authored pose
+and the solver's own. **That is why she reads 283 mm where Miku reads 1748**:
+Miku is authored splayed out past her elbows and has a long way to travel,
+and this one does not. A large settle means the authored pose was far from the
+solver's; a small one means it was near. Neither means a fault.
+
+#### The control is the reason this can be asserted at all
+
+`Miku` was rendered IN THE SAME TWO RUNS, by one build of the harness. She is
+the known case. Her rest render shows the splayed twintails this file already
+describes, and her sprung render shows them pulled **in and up** -- and since
+the Animator cannot move hair, that movement is what proves the spring solver
+actually ran. Without her in frame, "both renders look fine" would have been
+indistinguishable from "the springs never ran and I am looking at one pose
+twice". A render with no reference is an opinion.
+
+(Both runs log `VRMCharacter init skipped: NullReferenceException` equally, so
+it is not what separates them; the control is what rules it out as a cause.)
+
+#### A joint inside a collider is not by itself a fault
+
+This is the part worth carrying, because it corrects something this file and
+`joint_inside_check_installed.py` both imply.
+
+She has **5 non-anchor joints that start inside one of their own chain's
+colliders**, none carrying our shrink guard's 0.950 signature -- they are the
+author's geometry, as expected for a downloaded VRoid bundle we never built:
+
+| chain | inside | depth | collider r | r/centre |
+|---|---|---|---|---|
+| Hair | `J_Bip_L_UpperArm` | **46.4 mm** | 45 mm | **0.450** |
+| Hair | `J_Bip_C_UpperChest` | 21.6 mm | 62 mm | 1.530 |
+| Hair | `J_Bip_C_UpperChest` | 21.6 mm | 62 mm | 1.530 |
+| Hair | `J_Bip_L_UpperArm` | 13.0 mm | 45 mm | 1.412 |
+| Hair | `J_Bip_C_UpperChest` | 8.6 mm | 62 mm | 1.160 |
+
+The docstring of that tool describes Gadget Hackwrench: three hair joints in a
+0.193 sphere, one **44%** in, ejecting her hair ~100 mm on a head 0.45 wide
+until it "ballooned into a mass bigger than she was", and calls that set
+"exactly the set that came back looking wrong". The top row here is **45%** in
+-- the same signature, near enough to the same number -- **and she renders
+correctly.**
+
+The difference is not the ratio, it is **where the collider sits and how long
+the chain is**. Gadget's was on the HEAD, where every hair chain converges, and
+the ejection was a fifth of the head's width. These are on the upper arm and
+upper chest, and the chain is a twintail hanging past the knee, so a ~46 mm
+lateral nudge near its root is a small bend in something very long.
+
+So `joint_inside_check_installed.py` reports a real geometric fact and should
+keep reporting it -- but **its output is a list of candidates, not a list of
+faults**, and severity has to be read as ejection depth against the chain's own
+scale and the collider's position. Deciding from the ratio alone would have had
+us edit a working character.
+
+#### Not corrected, on purpose
+
+Jay's standing rule is that "not ours" is no reason to leave a fault. It is not
+being invoked here, because **the measurement says there is no fault to
+correct**: she renders correctly with the springs on and with them off. Editing
+the author's colliders to satisfy a threshold she visibly does not need would
+risk a working character to tidy a number.
 
 ### The limb-capsule sweep, 2026-11-17
 
