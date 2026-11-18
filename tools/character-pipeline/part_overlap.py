@@ -49,6 +49,37 @@ sets the scale via a robust z (median and MAD, so a handful of genuinely broken 
 cannot inflate the yardstick meant to catch them), and the tail is what gets looked at.
 
 =======================================================================================
+AND A FRACTION NEEDS A DENOMINATOR BIG ENOUGH TO CARRY IT
+=======================================================================================
+
+Being a fraction is what makes these numbers comparable across a 1.9 m character and a 0.9 m
+one. It is also how a row gets to the top of the ranking on fourteen pixels. `Gwen Stacy`
+ranked FIFTH on this roster at 0.0534 over an overlap region of 262 px -- 14 violating pixels,
+and one pixel either way would have moved her 0.5 of a z. The denominator is not shown by the
+rate and the reader has no way to recover it, which is exactly how the top row's `5675` was
+read as a count of violations by the person who wrote the column.
+
+So the ranked table now carries THREE things next to every rate, and the guard is derived from
+the population rather than chosen:
+
+  * `viol_px`, the COUNT behind the rate. A fraction and its numerator side by side cannot be
+    mistaken for one another.
+  * `z/px`, what ONE pixel is worth in the units the ranking is done in -- `(1/overlap_px)/MAD`.
+    A row at 0.5 is a row whose rank is three pixels wide.
+  * A HOLD-OUT below `overlap_floor()`, named with its reason like every other hold-out, never
+    silently dropped. The floor is the denominator at which one pixel moves a row's z by a
+    whole unit, i.e. `ceil(1/MAD)` -- below it the rate is quantised more coarsely than the
+    scale it is being ranked on, so it cannot be ranked at all. It is held at no less than the
+    run's own `min_region_px`, because this test should not guard its denominator more weakly
+    than the face-region test below already guards its own.
+
+The floor comes FROM the population it then filters, so it is derived twice: once on everything
+measured, once on what survives, and the output says whether the second pass moved it. One pass
+and a report, never a silent loop. `--no-overlap-guard` reproduces the ungated ranking, and the
+gated run prints the rank changes against it, so the guard can never quietly be the thing doing
+the work.
+
+=======================================================================================
 THE CONTROL GATES, WHICH PRINT BEFORE ANY RESULT
 =======================================================================================
 
@@ -72,6 +103,7 @@ said, in numbers:
     fault on demand has no demonstrated power to report one at all.
 """
 import json
+import math
 import os
 import sys
 
@@ -89,6 +121,68 @@ def robust_z(vals):
     if mad == 0:
         return np.zeros_like(v), med, 0.0
     return 0.6745 * (v - med) / mad, med, mad
+
+
+def overlap_floor(mad, min_region_px):
+    """The smallest denominator a RATE can be ranked over. DERIVED from the population.
+
+    Returns (floor_px, derivation) -- the second is the sentence the output prints, because a
+    threshold whose origin is not stated beside it becomes a magic number within a week.
+
+    One pixel of a fraction over N px is worth 1/N. The ranking is done in robust-z units,
+    whose unit IS the MAD. So when 1/N exceeds the MAD, a single pixel moves the row by more
+    than a whole z and the rate is quantised more coarsely than the scale ranking it. That is
+    not a noisy measurement, it is an unrankable one, and `ceil(1/MAD)` is where it starts.
+
+    Held at no less than `min_region_px`, the floor the FACE-REGION test already applies to its
+    own region at the same resolution -- it held out Lola Bunny at 172 px. A test that guards
+    one denominator at 200 px and the other at nothing is inconsistent in the direction that
+    flatters the result.
+
+    WITHOUT numpy there is no MAD, so there is no derived part: the floor is `min_region_px`
+    alone and the derivation says so rather than implying a calculation happened.
+    """
+    if not mad or mad <= 0.0:
+        return int(min_region_px), ("floor = min_region_px %d px (no MAD available, so NOTHING "
+                                    "was derived -- this is the face-region floor reused, not a "
+                                    "population result)" % int(min_region_px))
+    derived = int(math.ceil(1.0 / mad))
+    mr = int(min_region_px)
+    floor = max(derived, mr)
+    # THE SENTENCE MUST NOT OVERSTATE THE BOUND THAT DID NOT BIND. "below the floor one pixel
+    # is worth more than a z" is only true of the DERIVED floor; when min_region_px is the
+    # higher of the two, a pixel at the floor is worth 1/(floor*MAD) of a z and saying
+    # otherwise is a reason contradicting its own number -- the defect fixed two tests down.
+    if derived >= mr:
+        why = ("the DERIVED bound binds. Below %d px one pixel moves a row's z by more than 1, "
+               "so the rate is quantised more coarsely than the scale ranking it." % floor)
+    else:
+        why = ("the min_region_px bound binds and the derived one (%d px) is NOT doing the work "
+               "-- at the floor one pixel is worth %.2f of a z, which is coarse but rankable. "
+               "This floor is the face-region test's, reused for consistency; the population "
+               "would have allowed a weaker one." % (derived, (1.0 / floor) / mad))
+    return floor, ("floor = %d px = max(ceil(1/MAD) = %d, min_region_px = %d); %s"
+                   % (floor, derived, mr, why))
+
+
+def guard_overlap(rows, floor):
+    """Hold out rows whose denominator is below the floor. Returns the rows it held out.
+
+    A hold-out, NOT a drop: it writes `depth_out`, which is the same field every other
+    unmeasurable reason uses, so the character is printed by name under "HELD OUT -- unmeasured,
+    NOT clean" with the pixel count that disqualified it. A cutoff that removes rows without
+    naming them is how a sweep came to split dark characters in half and invent three faults.
+    """
+    held = []
+    for r in rows:
+        if r["depth_out"]:
+            continue
+        if r["overlap_px"] < floor:
+            r["depth_out"] = ("overlap denominator %d px < the %d px floor -- a rate over this "
+                              "many pixels cannot be ranked (see overlap_floor)"
+                              % (r["overlap_px"], floor))
+            held.append(r)
+    return held
 
 
 def load(paths):
@@ -281,6 +375,10 @@ def main():
         i = args.index("--top")
         topn = int(args[i + 1])
         del args[i:i + 2]
+    # The ungated run, kept so the guard's effect is always checkable against it rather than
+    # taken on trust. Everything the guard removes is still printed, by name, with its number.
+    guard = "--no-overlap-guard" not in args
+    args = [a for a in args if a != "--no-overlap-guard"]
 
     runs = load(args)
     if not runs:
@@ -293,10 +391,31 @@ def main():
         for ch in run.get("characters") or []:
             rows.append(summarise(ch, int(run.get("min_region_px") or 200)))
 
-    d_ok = [r for r in rows if not r["depth_out"]]
-    d_out = [r for r in rows if r["depth_out"]]
     f_ok = [r for r in rows if not r["head_out"]]
     f_out = [r for r in rows if r["head_out"]]
+
+    # ---------------------------------------------------------------- the denominator guard
+    # This runs BEFORE the control gates print, so a character held out for a denominator too
+    # small to rank appears in the same named hold-out list as every other unmeasurable one.
+    min_region = int(meta.get("min_region_px") or 200)
+    ungated = [r for r in rows if not r["depth_out"]]
+    ungated_order = [r["name"] for r in sorted(ungated, key=lambda r: -r["depth_max"])]
+    floor, derivation, floor_pass2, held = 0, "guard DISABLED by --no-overlap-guard", None, []
+    mad1 = 0.0
+    if guard:
+        v1 = [r["depth_max"] for r in ungated]
+        mad1 = robust_z(v1)[2] if (np is not None and len(v1) > 2) else 0.0
+        floor, derivation = overlap_floor(mad1, min_region)
+        held = guard_overlap(rows, floor)
+        # SECOND PASS. The floor came from a population that included the rows it just removed,
+        # so re-derive it on what survived and SAY whether it moved. One pass and a report: a
+        # loop that settles silently is a cutoff choosing its own survivors.
+        surv = [r["depth_max"] for r in rows if not r["depth_out"]]
+        mad2 = robust_z(surv)[2] if (np is not None and len(surv) > 2) else 0.0
+        floor_pass2 = overlap_floor(mad2, min_region)[0]
+
+    d_ok = [r for r in rows if not r["depth_out"]]
+    d_out = [r for r in rows if r["depth_out"]]
 
     print("=" * 78)
     print("CONTROL GATES -- read these before any result below")
@@ -305,6 +424,20 @@ def main():
           % (meta.get("res"), meta.get("frames"), meta.get("diff_lo"),
              meta.get("diff_hi"), meta.get("min_region_px")))
     print("characters in run:                  %d" % len(rows))
+    print("overlap denominator guard:          %s" % ("ON" if guard else "OFF (--no-overlap-guard)"))
+    print("  %s" % derivation)
+    if guard:
+        print("  held out by the guard:            %d of %d otherwise-measurable"
+              % (len(held), len(ungated)))
+        if floor_pass2 != floor:
+            print("  SECOND PASS MOVED THE FLOOR: %d px -> %d px on the surviving population."
+                  % (floor, floor_pass2))
+            print("  The floor is NOT re-applied at the new value. It is reported because a floor")
+            print("  that moves when its own filtering is undone is a floor partly chosen by the")
+            print("  rows it removed; re-run with --no-overlap-guard and compare before trusting")
+            print("  the tail of this ranking.")
+        else:
+            print("  second pass on the surviving population re-derives the SAME floor (%d px)" % floor)
     print("DEPTH-ORDER test looked at:         %d   (held out %d)" % (len(d_ok), len(d_out)))
     print("FACE-REGION test looked at:         %d   (held out %d)" % (len(f_ok), len(f_out)))
     if d_out:
@@ -330,8 +463,10 @@ def main():
     print("=" * 78)
     if d_ok:
         vals = [r["depth_max"] for r in d_ok]
+        mad_rank = 0.0
         if np is not None and len(vals) > 2:
             z, med, mad = robust_z(vals)
+            mad_rank = float(mad)
             print("population: median %.6f, MAD %.6f (no fixed threshold is invented)" % (med, mad))
             for r, zz in zip(d_ok, z):
                 r["z"] = float(zz)
@@ -340,13 +475,53 @@ def main():
                 r["z"] = float("nan")
         d_ok.sort(key=lambda r: r["depth_max"], reverse=True)
         print()
-        print("%-24s %11s %11s %7s %10s %11s"
-              % ("character", "worst", "median", "z", "overlap_px", "reverse"))
+        print("`viol_px` is the COUNT behind the rate; `overlap_px` is the DENOMINATOR, not a")
+        print("count of anything wrong. `z/px` is what ONE pixel is worth in z -- at 0.5, this")
+        print("row's position is three pixels wide.")
+        print()
+        print("%-22s %10s %10s %6s %8s %10s %6s %9s"
+              % ("character", "worst", "median", "z", "viol_px", "overlap_px", "z/px", "reverse"))
         for r in d_ok[:topn]:
             rv = "-" if r["rdepth_max"] is None else "%.6f" % r["rdepth_max"]
-            print("%-24s %11.6f %11.6f %7.1f %10d %11s"
-                  % ((r["name"] or "?")[:24], r["depth_max"], r["depth_med"] or 0.0,
-                     r["z"], r["overlap_px"], rv))
+            viol = int(round(r["depth_max"] * r["overlap_px"]))
+            # In the SAME MAD the `z` column is expressed in, so the two are readable together.
+            zpx = ((1.0 / r["overlap_px"]) / mad_rank) if (mad_rank > 0 and r["overlap_px"]) else None
+            print("%-22s %10.6f %10.6f %6.1f %8d %10d %6s %9s"
+                  % ((r["name"] or "?")[:22], r["depth_max"], r["depth_med"] or 0.0,
+                     r["z"], viol, r["overlap_px"],
+                     "-" if zpx is None else "%.2f" % zpx, rv))
+
+        # WHAT THE GUARD CHANGED, against the ranking taken before it ran. Without this the
+        # guard is unfalsifiable from its own output: a tidy table says nothing about whether
+        # the cutoff or the data produced the order.
+        if guard:
+            gated_order = [r["name"] for r in d_ok]
+            print()
+            if not held:
+                print("GUARD CHANGED NOTHING: no character's denominator was below the floor, so")
+                print("this ranking is identical to --no-overlap-guard. The guard is here for the")
+                print("next run, not this one.")
+            else:
+                # IT REPORTS THE REMOVALS, NOT A COLUMN OF RANK SHIFTS. Dropping rows cannot
+                # reorder the rows that remain -- the sort key is unchanged -- so every
+                # survivor below a removal shifts up by one and a "moved" marker fires on all
+                # of them. The first version of this block printed exactly that: nine rows
+                # flagged as moved, not one of which had changed place relative to any other,
+                # which is a signal that teaches a reader to ignore it. What a reader cannot
+                # get anywhere else is WHERE the removed rows sat, because a guard that
+                # quietly removed the TOP of the ranking is the one case that changes the
+                # conclusion rather than tidying it.
+                print("WHAT THE GUARD REMOVED, with the rank each held in the ungated ranking.")
+                print("Removal cannot reorder the survivors, so these rows ARE the whole change:")
+                for r in sorted(held, key=lambda r: ungated_order.index(r["name"])
+                                if r["name"] in ungated_order else 10 ** 6):
+                    rank = ungated_order.index(r["name"]) + 1 if r["name"] in ungated_order else 0
+                    viol = int(round(r["depth_max"] * r["overlap_px"]))
+                    flag = "   <- THE GUARD REMOVED THE TOP ROW" if rank == 1 else ""
+                    print("  ungated rank %2d  %-22s %.6f over %d px = %d violating px%s"
+                          % (rank, (r["name"] or "?")[:22], r["depth_max"],
+                             r["overlap_px"], viol, flag))
+                print("Re-run with --no-overlap-guard to see them back in place.")
         nz = [r for r in d_ok if r["depth_max"] > 0]
         print()
         print("characters with ANY depth-order violation: %d of %d measured" % (len(nz), len(d_ok)))

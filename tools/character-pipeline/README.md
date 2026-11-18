@@ -2923,6 +2923,11 @@ hundred pixels is noise, and that now includes the top row. `MIN_REGION_PX` guar
 region; **the overlap denominator has no equivalent guard and should.** That is a defect in the
 tool, not a caveat about this run.
 
+> **FIXED 2026-11-18.** The guard is built, in both tools, and what it does to this run is
+> written up under *The denominator guard* below. Read that before re-using any number above:
+> the headline is that **the guard changes none of the figures in this section**, which is a
+> result about this roster and not a reason the guard was unnecessary.
+
 #### FINAL: the null, on the corrected instrument
 
 **No character on this roster shows a large interior fault, and the corrected instrument makes
@@ -2938,6 +2943,65 @@ is 3,025 px across 65 characters, at edges, nothing above ~590.
 
 **STOPPING HERE IS THE RIGHT CALL.** The remaining signal is smaller than the uncertainty in
 how to count it, and the next honest step is the denominator guard — not another hypothesis.
+
+#### The denominator guard
+
+Built 2026-11-18, in `part_overlap.py` (`overlap_floor`, `guard_overlap`) and used by
+`asymmetry_rank.py`. Covered by `overlap_guard_test.py`.
+
+**The floor is derived, not chosen.** One pixel of a fraction over `N` px is worth `1/N`. The
+ranking is done in robust-z units whose unit is the MAD, so when `1/N` exceeds the MAD a single
+pixel moves a row by more than a whole z and the rate is quantised more coarsely than the scale
+ranking it. That is not a noisy row, it is an unrankable one, and `ceil(1/MAD)` is where it
+starts. The floor is then held at no less than the run's own `MIN_REGION_PX`, because guarding
+one denominator at 200 px and the other at nothing is an inconsistency in the direction that
+flatters the result.
+
+**On this run the derived bound would have been WEAKER than the one we already had.** Median
+0.012829, MAD 0.007560, so `ceil(1/MAD)` = 133 px against `MIN_REGION_PX` = 200. The 200 binds
+and the output says so in those words — a derivation that let a reader think the population
+chose 200 would be false, and at 200 px one pixel is worth 0.66 of a z, which is coarse but
+genuinely rankable. The derived bound only binds on a tighter population; on the `asym` scale,
+whose spread is narrower, it derives 222 px, so **the two tools disagree about a row at 210 px
+and that disagreement is kept** rather than reconciled by a shared constant nobody derived.
+
+**What it changes here: nothing.** No character in the ranking has a denominator below 200 px —
+Gwen Stacy is the smallest at 262 — so the table, the ranking and the null all stand exactly as
+recorded above. The guard is for the next sweep. Saying this plainly matters more than the guard
+does: a new cutoff that arrives alongside an unchanged conclusion is very easy to describe as
+having confirmed it.
+
+**What it changes about how the table READS is the actual gain.** Every ranked row now carries
+`viol_px` (the numerator) beside `overlap_px` (the denominator), and `z/px`. Gwen Stacy's fifth
+place reads **14 violating pixels over 262 px at 0.51 z/px** — her position is three pixels wide,
+visible in the row instead of recoverable only by a reader who knows which column is which. That
+is the same confusion that produced `5,675` being reported three times as a violation count by
+the person who wrote the column; the fix for a unit error is to print both units, not to
+remember harder.
+
+**Held out, never dropped.** A row below the floor gets a `depth_out` reason naming its own
+pixel count and appears in the existing *HELD OUT — unmeasured, NOT clean* list. The output also
+names which rows the guard removed **and the rank each held ungated**, because a guard that
+quietly removed the top row is the one case that changes a conclusion. It deliberately does NOT
+print a column of rank shifts: removing rows cannot reorder the survivors, so every row below a
+removal shifts up one and a "moved" marker fires on all of them — the first version printed nine
+such markers, not one of which was a real change in relative order.
+
+**Two passes, reported, never a silent loop.** The floor comes from the population it then
+filters, so it is re-derived on the survivors and the output says whether it moved. It is not
+re-applied at the new value: a floor that moves when its own filtering is undone is a floor
+partly chosen by the rows it removed, and that is a fact for the reader, not something to
+iterate away.
+
+**Verified against a synthetic fixture, and that is a limitation.** The real
+`part_overlap.json` no longer exists — not anywhere under `C:\dev` to depth 7, checked with a
+control for a file known to be present before concluding it. So `overlap_guard_test.py` builds a
+run that **reproduces the recorded median and MAD**, and *asserts* that it does rather than
+claiming it in a comment: the first version centred the filler on 0.012829 and landed the
+population at 0.0147, because the eight high rows pull the median up, and its own check caught
+that. The fixture is not that sweep and cannot re-measure any character. `--null-guard` stubs
+the guard out and the three hold-out assertions go red while every control stays green, so the
+suite has been seen to fail.
 
 #### What it still cannot see
 
