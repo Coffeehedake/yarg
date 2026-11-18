@@ -2033,13 +2033,65 @@ The instrument is not blind. The PREMISE is false: **under this scene's lighting
 an unlit material and a lit one render almost identically on skin**, which the
 direct pixel difference confirms independently at 0.047.
 
-**And that is a limitation of MY HARNESS, not of the builds.** `YargCharAnim`
-forces `podium.Light.color = Color.white` and shoots the character-select
-podium -- bright, white, near-uniform. That is the least discriminating setting
-possible for a lit-versus-unlit question. An unlit character stops responding to
-STAGE lighting, and a rhythm game's venue lights are coloured and dynamic. **So
-this render systematically under-tests exactly the property MTOON_ALL changes,
-and "no difference" here must not be read as "no difference in game".**
+**I first wrote that this was a limitation of my harness -- white light being
+the least discriminating setting for a lit-versus-unlit question. THAT WAS
+WRONG, and yarg-1 caught it by applying my own morning rule to me:** 0.047 on
+0-255 is **0.018%**, and that is not "small", it is very nearly exactly
+nothing -- the tell for a dead number rather than a steady one. It offered a
+rival hypothesis I had not considered: that the unlit flag never reaches the
+renderer at all. Both hypotheses predict zero, so the measurement could not
+separate them.
+
+**TESTED, and the rival won.** Added `-light r,g,b` and shot both builds under
+a pure RED light, where an honoured unlit material must ignore the light while a
+lit one takes its colour:
+
+| | (G+B)/R on the torso |
+|---|---|
+| white light, lit build | 1.6242 |
+| white light, unlit build | 1.6242 |
+| **red light, lit build** | **1.3881** |
+| **red light, unlit build** | **1.3895** |
+
+The light change WORKED -- both moved from 1.624 to 1.388, which is the control
+for the mechanism. **And they moved TOGETHER.** An honoured unlit material would
+have stayed at 1.624. Both responded, so both render LIT.
+
+**`KHR_materials_unlit` is not honoured in this render path.** So the
+lit-versus-unlit trade described above is not real here: `VRM_MTOON_ALL` changes
+the exported materials and changes nothing anyone can see, the "two shading
+models on her head" risk is moot in this path, and **the Peach row crediting
+`VRM_MTOON_ALL=1` is crediting a switch that does not do what it says** -- at
+least through this renderer.
+
+WHAT IS STILL UNTESTED: whether the SHIPPED GAME honours it. This is the editor
+batch path that every visual check in this project goes through, which is the
+point -- any past or future visual conclusion about MToon or unlit drawn from
+this harness is suspect by the same argument.
+
+#### The recipe is ONE environment variable, proved by hash not by reasoning
+
+With `VRM_OPAQUE_MATERIALS=HairFace` set, `VRM_CUTOUT_MATERIALS=HairFace` is
+INERT -- the force-opaque gate clears whatever the cutout branch did. yarg-1
+built it both ways rather than asserting it and the outputs are BYTE-IDENTICAL,
+md5 `f24f1d432a813e68844126bc8a0e59ee`:
+
+    VRM_OPAQUE_MATERIALS=HairFace blender -b --python build_vrm.py --       <...>/girls14/inner/GirlsInAction.blend  <...>/girls14/textures       1.70 mixamo Aiko <out>.vrm 1024 '^Girl2\.[0-9]' '' hair
+
+plus the alpha-guard patch. One variable, not two.
+
+#### The seam worry measured out at ZERO, and that is not the same as it not existing
+
+Recording this as yarg-1 asked, because a worry that was checked and came back
+zero is worth more than one quietly dropped. **The Peach configuration IS
+present in `aiko-RECIPE`** -- two shading models sharing one head, 3,905
+HairFace verts unlit against 3,984 Body verts lit, overlapping within
+millimetres. It produced **no visible seam on her.**
+
+Both halves matter. The next character with that configuration is not
+guaranteed to be as lucky, and Peach IS the case where it went wrong, so this
+file must not be read as making her outcome the typical one. It is one
+measurement on one character under one light.
 
 #### Recommendation: `aiko-RECIPE-OPAQUE`
 

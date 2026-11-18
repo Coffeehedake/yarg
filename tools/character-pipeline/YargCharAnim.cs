@@ -142,7 +142,22 @@ public static class YargCharAnim
                     podiumGo.transform.localPosition = Vector3.zero;
                     podiumGo.SetActive(true);
                     var podium = podiumGo.GetComponent<Podium>();
-                    if (podium.Light != null) podium.Light.color = Color.white;
+                    // -light r,g,b forces the podium light to a COLOUR instead of white.
+                    // White is the default because it is neutral for geometry work, but it is
+                    // also the least discriminating possible setting for a LIT-versus-UNLIT
+                    // question: under uniform white, a lit material and an unlit one converge.
+                    // A strongly coloured light separates them with no statistics at all --
+                    // an honoured unlit material ignores it, a lit one takes the colour.
+                    if (podium.Light != null)
+                    {
+                        var lc = Arg(args, "-light");
+                        if (lc != null)
+                        {
+                            var p3 = lc.Split(',');
+                            podium.Light.color = new Color(float.Parse(p3[0]), float.Parse(p3[1]), float.Parse(p3[2]));
+                        }
+                        else podium.Light.color = Color.white;
+                    }
 
                     var bundle = AssetBundle.LoadFromFile(file);
                     if (bundle == null) throw new Exception("could not load " + file);
