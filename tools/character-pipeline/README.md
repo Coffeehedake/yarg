@@ -1721,6 +1721,91 @@ believable fault about a named character. The thing that broke each one was a
 control: 63 perfect zeros making two outliers suspicious, a cutoff sweep, and a
 character already known to be fine sitting mid-table.
 
+### The side yaw, 2026-11-18: Power Girl's cape is a plank, and the obvious fix is wrong
+
+The front-view sweep found nothing. **Adding one more camera angle found a real
+fault on the first character it looked at**, which is the argument for the
+second yaw in one line.
+
+A second yaw is not more sampling, it is a DIFFERENT AXIS. Head-on, the
+silhouette's horizontal extent is the character's WIDTH and depth is compressed
+to zero -- so a cape billowing backward, a ponytail swinging forward and a hand
+crossing the chest all happen along the axis the camera threw away. At 90
+degrees that same extent IS depth.
+
+65 of 65 rendered again at yaw 90: 65 `CONTROL OK`, 0 failed, 650 frames.
+
+#### The finding
+
+**Power Girl ranks z=7.17 side-on against z=0.88 head-on** -- the largest
+front/side disagreement on the roster (+6.29). Her cape does not hang. It
+projects straight out behind her like a plank, roughly 45 degrees above
+horizontal, running off the edge of frame, and stays flat and straight through
+all ten frames, swinging as a rigid board rather than draping.
+
+**Batman is the control, and he is why this is readable.** He also has a cape,
+also ranks high side-on (5.27), and his cape DRAPES correctly -- shoulders to
+below the knee, following his body. Capes can work here. A high side-on score is
+not by itself a fault; his is legitimate cape motion.
+
+#### The mechanism, and the two hypotheses it killed
+
+| | Power Girl | Batman |
+|---|---|---|
+| cape spring chains | 9 x 13 joints | 11 x 11 joints |
+| stiffness / gravityPower / drag | 0.6 / **0.0** / 0.45 | 0.6 / **0.0** / 0.45 |
+| vertices weighted to cape bones | 2090 | 2184 |
+| **cape REST pitch** | **-44.6 to -48.3 deg** | **-84.4 to -89.2 deg** |
+| cape tip offset behind | **-1.16 m** | ~0.00 m |
+| chain span | **1.75 m** | 1.04-1.31 m |
+| height | 1.811 m | 1.889 m |
+
+Both killed hypotheses were plausible and both were wrong:
+
+* **"Her cape mesh is not weighted to the chain"** -- the rigger-matched-its-own-work
+  failure this project has hit before. No: 2090 vertices carry real weight on her
+  cape bones, against Batman's 2184.
+* **"Her spring parameters are wrong"** -- No: they are IDENTICAL to his, to every
+  decimal.
+
+What is left is the rest pose. **With `gravityPower = 0` a VRM spring chain has
+no force pulling it down**: it answers to root motion and otherwise returns to the
+pose it was authored in. Batman's cape is authored hanging (-85 deg), so zero
+gravity leaves it hanging. Hers is authored FLARED (-45 deg, tip 1.16 m behind),
+so zero gravity leaves it flared, for ever. The springs are working exactly as
+configured on both.
+
+This is the same lesson as Hatsune Miku (Retry Now) earlier the same day -- an
+authored rest pose the solver will not move -- but here it is visible and wrong.
+
+#### DO NOT "just make it hang". The obvious fix creates a worse fault
+
+Her cape spans **1.75 m on an 1.811 m character**; Batman's is 1.20 m on 1.889 m.
+Taking a shoulder at roughly 1.45 m:
+
+| | at 45 deg (as authored) | at 85 deg (like Batman) |
+|---|---|---|
+| Power Girl | tip at **+0.21 m**, just clear | tip at **-0.29 m**, THROUGH THE PODIUM |
+| Batman | +0.70 m | +0.35 m |
+
+**Her 45-degree flare is very likely load-bearing** -- it is roughly what keeps a
+nearly-body-length cape off the floor. Re-posing it to hang would trade a stiff
+cape for one buried in the podium. (The shoulder figure is an ESTIMATE, not a
+measurement; the direction is robust because a 1.75 m cape on an 1.81 m body
+cannot hang vertically from the shoulders without reaching the ground, but the
+exact tip heights are not measurements.)
+
+So this is **reported, not fixed**, and it is Jay's call. The options are to
+shorten the chain, to drop it partway (60-70 deg) and accept a flare, to give her
+cape alone a non-zero `gravityPower` with a floor collider, or to leave it. Each
+costs something different and none is obviously right.
+
+#### What two yaws still cannot see
+
+Anything INTERIOR. Hair across a face changes the outline side-on only if it
+projects past the profile; a hand inside a skirt never does, at any angle.
+**Aiko's open fault is still outside this sweep** and still needs its own render.
+
 ### The limb-capsule sweep, 2026-11-17
 
 Closed. The open item read *"every character built before 2026-11-15 still
