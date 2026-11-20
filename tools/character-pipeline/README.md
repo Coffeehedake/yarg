@@ -15,10 +15,19 @@ first; this file is only how to *run* it.
 > measurements taken while she was installed, and those say **66** on purpose. A count of 66 is a
 > statement about when it was measured, not a stale 65; anything measured after that date says 65.
 
-## Where it stands, 2026-11-17
+## Where it stands — open items, last reconciled 2026-11-20
 
 The runlist further down is the full history. This is only what is OPEN, so a
 session picking this up does not have to reconstruct it.
+
+> **The date on this heading is the last time the list was CHECKED, not the last
+> time anything was done.** It read `2026-11-17` until 2026-11-20 while already
+> carrying three 11-18 outcomes (Aiko installed, Miku resolved, Jessica Rabbit
+> re-opened), so a reader could date the whole section three days earlier than
+> its newest row and treat a closed item as open. On 2026-11-20 that is exactly
+> what happened from the other end: a handoff three generations stale sent work
+> at the podium render and Prix, both finished on 11-16. **Re-date this heading
+> whenever you touch a row, even to close one.**
 
 **The podium render is FIXED, 2026-11-16: drop `-nographics`.** It had been
 writing **identical 12,477-byte blank frames** for every character, good and
@@ -49,7 +58,7 @@ needed for the job-object breakaway.
 | ~~**Limb capsules**~~ | **DONE — SWEPT AND INSTALLED 2026-11-17**, and the scope was far smaller than this line implied: of 65 bundles **35 have no spring chains at all**, so their capsules are inert, and 9 more were already right. **194 resizes across 21 characters**, median +11.7 mm; **20 installed, Alcina held** because p90 on her legs is her gown. Still run: 0 worse, 1 better (Inforder Trogen 33.15 → 8.34 mm), 20 unchanged. Load test identical on every pair. (That run measures instantiate-pose to settled-pose, NOT ejection — see "Miku's 1748 mm") |
 | **Alcina Dimitrescu** | **HELD out of the limb sweep on purpose**, not a regression: p90 on her legs is her GOWN (thigh 0.111 → 0.207, shin 0.091 → 0.199), and for her the median is the closer approximation of a leg. Her still run is 0.10 mm either way, so nothing is lost. Re-open only with a flesh-only percentile |
 | ~~**Hatsune Miku (Retry Now ver.)**~~ | **DONE — NOTHING IS WRONG WITH HER, checked twice.** (1) The 283 mm is a modest, correct settle, not an ejection — rendered rest and sprung with  as control; her rest pose is already tidy, which is why she settles 283 where Miku settles 1748. (2) Re-opened 2026-11-18 because she carries **23 of 23 MToon materials** and I had claimed this path ignores MToon — **that claim was WRONG and she disproved it**: she renders flat and cel-shaded against our Miku’s gradient, and 7 of her materials carry real shade colours (hair delta 1.000). MToon draws her as authored. She also has 5 joints inside their own colliders with no visible damage. Nothing installed, nothing changed |
-| **Arbiter** | 13 handoffs open and never pulled |
+| ~~**Arbiter**~~ | **CLEARED for this project 2026-11-20.** 12 handoffs remain open estate-wide and **none of them is yarg's** — the chain RHBDK4 → UR3U3Z → UJFAX7 → LR4GZ6 is all claimed. Each link was superseded by the next, so three of them were live invitations into work that was already finished, and on 2026-11-20 one of them was acted on: `UR3U3Z` was picked up and its `next_action` ("fix the podium render first, then Prix") had been done on 11-16. **A superseded handoff still reads like an instruction** — the hub's own `warning` field is the only thing that says otherwise, so pull the chain to its end before working from one |
 
 **Settled on 2026-11-17**, each with its own section below. Two characters
 STRAIGHTENED and installed, and they are the two halves of one lesson: The
