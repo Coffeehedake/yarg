@@ -11198,3 +11198,69 @@ kept backup (refused) and Miku's verified 86.6 mm tie capsule against her author
 with itself excluded (accepted, 12.2% against her author's 32.0%). A gate with only the refusals
 would be indistinguishable from one that refuses everything, which is why the control is in the
 test and why the test names the backup it needs rather than passing when it is gone.
+
+### "The cape cuts directly through his torso" — the mechanism was in his file all along (2026-11-21)
+
+With the three bad capsules gone and Batman reloaded, Jay reported it again and more precisely:
+**"the cape cuts directly through his torso."** This time the measurement came before the fix.
+
+**AT REST, THE ONLY CAPE INSIDE HIM IS THE COLLAR YOKE, AND IT IS AUTHORED.** Measured on the
+cape's vertices against his author's own torso axis, with the body's forward direction derived
+from his belt buckle rather than assumed to be +z:
+
+| bone | in front AND inside | worst | y range |
+|---|---|---|---|
+| `L/R_capeClav_b` | 10 each | **113.1 mm** | 1.421–1.488 |
+| `L/R_capeClav_c` | 6 each | 74.3 mm | 1.456–1.491 |
+| `L/R_capeEdge_b` | 13 each | 57.3 mm | 1.391–1.424 |
+| `L/R_capeClav_a` | 13 / 11 | 38.8 mm | 1.440–1.482 |
+
+98 vertices on 13 bones, **every one between y 1.39 and 1.49**, and symmetric left to right to
+the tenth of a millimetre. That is a cape collar modelled to tuck under the costume at the
+shoulders so there is no gap, it is permanently invisible, and removing it would lift his cape
+off his shoulders. The eleven spring chains are 0–2% inside at rest and what little there is
+sits BEHIND him. None of the lower drape is in front of him at rest.
+
+**SO IT IS A FAULT OF MOTION, AND THE MECHANISM IS HIS OWN TORSO CAPSULE.** `fml_un_C_pelvis_att`
+is **111.8 mm**. His torso skin, measured from that same axis:
+
+| band | median | p90 | max |
+|---|---|---|---|
+| y 1.00–1.05 | 145.3 mm | 169.6 | 178.2 |
+| y 1.05–1.10 | 147.7 mm | 172.5 | 180.3 |
+| y 1.10–1.15 | 146.9 mm | 165.9 | 185.1 |
+
+The capsule that is supposed to stop his cape reaching his body sits **34 to 70 mm inside his own
+waist**. Cloth that reaches the capsule has that much further to travel before anything stops it,
+and it ends up in his torso. The stopper is inside the thing it is meant to protect.
+
+**THE FIX USES HIS AUTHOR'S AXIS, WHICH IS THE PART THAT WAS NEVER WRONG.** Fitting my own axis
+is what produced the arm-swallowing tubes: five free parameters, four of them unnecessary. Take
+his axis and the only question left is how wide, with the top end shortened to y 1.250 so the
+capsule stops below the collar — which keeps the two `C_cape_att` joints at y 1.460 from being
+displaced and keeps his head out of it.
+
+| radius | tightest cape joint | share of skin | contents |
+|---|---|---|---|
+| 130 mm | 30.7 mm clear | 10.0% | belt, spine |
+| **150 mm** | **10.7 mm clear** | **19.0%** | **belt, spine** |
+| 160 mm | 0.7 mm clear | 26.2% | belt, spine |
+
+150 mm sits on the median of his own back surface. No arms, no head, no legs at any radius in
+that range, which is what a torso capsule should look like and what the three earlier ones never
+did.
+
+**APPLIED**, one collider in a new `CapeTorso` group referenced by **all eleven** cape chains,
+`--append` so his authored Body group is untouched. Round trip 150.00 mm asked, 150.00 written,
+both ends moved 0.000 mm against `--expect-world`. `UnityFS`, 5,601,396 bytes, md5 `5713b63b`,
+and all 65 installed characters still carry the AssetBundle header.
+
+> **The share gate refused this until it was told to allow 9 points, and that is worth recording
+> rather than hiding.** Its standard is the fattest collider the character's author drew, so a
+> capsule deliberately wider than the author's own torso one trips it by construction — 19.0%
+> against 10.8%. `--allow-contain 9` is the place where that has to be said out loud, and the
+> justification is the skin table above: 150 mm is where his back actually is. A gate that cannot
+> be overridden with a stated number would have been deleted the first time it was inconvenient.
+
+**Unverified in the game.** The previous two attempts both verified perfectly in the file and
+were both wrong, so the only check that counts is Jay reloading him.
