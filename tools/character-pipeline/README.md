@@ -10239,12 +10239,14 @@ around it, and a tie whose joints clear by 1.2 mm can still have its width burie
 | **Jessica Rabbit**, dress | 148 of 1133 — 13.1% | 19.6 mm, median 5.8 |
 | Miku, tie | **0 of 12** | all outside, nearest 3.3 mm clear |
 
-**Batman's cape is authored two-thirds buried in him.** No capsule, in any position, at any
-radius, will ever move it: a collider's whole job is to stop a joint going somewhere, and his
-cape is already there when the scene loads. The capsule placed this afternoon is not wrong, it
-is simply irrelevant to what was reported -- it constrains motion that was never the complaint.
-The same is true of Jessica at a third the severity, which retrospectively makes "nothing
-applied" the right call for a better reason than the one I had.
+> **THE BATMAN ROW IS RETRACTED, same afternoon, and the retraction is below.** 63.5% was
+> measured with `fml_un_C_cape` as the garment, which left his LEFT AND RIGHT panels and all
+> 157 `*cape*` bones in the "skin" set -- so cape resting against cape counted as cape buried
+> in body. With the whole cape excluded it is 39.8%, and **all of it is above y 1.27**.
+
+The same caveat does NOT apply to Jessica: her figure was taken with all four of her panels
+excluded, and re-running it with a wider match reproduces 13.1% exactly. Her dress is the one
+case here that is genuinely buried while standing still.
 
 **Miku is the exception and her sample is too small to lean on.** Her tie carries 20 vertices in
 total, 12 of them measurable, and none is inside her at rest. That is consistent with a fault of
@@ -10254,6 +10256,43 @@ honest statement is that her case is unresolved rather than confirmed either way
 What this does not touch: `place_collider.py` and the fitter are correct and stay, the container
 defect below was real and had to be fixed regardless, and the capsules on Batman and Miku are
 left in place because they are harmless and this project does not roll back.
+
+#### Batman RE-MEASURED: the visible cape is clean, and all the penetration is the collar
+
+With every `*cape*` bone excluded -- 157 of them, and the eleven spring chains own only a few --
+the rest-pose penetration is **229 of 576 sampled vertices, 39.8%, deepest 45.6 mm**. But the
+number that matters is not the fraction, it is the height:
+
+| cape bone | buried | median | y range | inside what |
+|---|---|---|---|---|
+| `R/L_capeTrap` | 24, 22 | 17.7, 17.6 mm | 1.45–1.58 | `uparmTwistUpr`, `clav` |
+| `R/L_capeClav_b` | 13, 13 | 13.0, 14.1 mm | 1.42–1.49 | `C_breast` |
+| `R/L_capeClav_a` | 9, 9 | 8.9, 10.8 mm | 1.44–1.48 | `C_neck_a` |
+| `R/L_capeEdge_d/e/f` | 5–7 | 1.6–6.2 mm | 1.27–1.39 | `uparmTwist` |
+| `C_cape_a`, `C_cape_b` | 4, 2 | 17.9, 7.5 mm | 1.29–1.54 | `clav` |
+
+**Not one row reaches below y 1.27.** His cape spans **0.146 to 1.579 m**, so the entire lower
+**1.1 metres of it — the whole visible drape — has zero rest-pose penetration.** Everything
+buried is collar, shoulder and upper arm: `capeTrap`, `capeClav`, `capeEdge`, sitting inside his
+clavicles, chest, neck and upper-arm twist bones. That is what the top of a cape does.
+
+So **"the cape is authored buried and no collider can fix it" was wrong**, and so was the
+measurement under it. What is true is narrower and more useful: the lower cape is clean at rest,
+and the only static penetration is in the collar, where a cape is supposed to pass under the
+costume — but where it is also 17.7 mm into his upper arms, which is a place a viewer can see.
+
+**That leaves two candidate faults and they need opposite fixes**, and nothing in the bundle can
+tell them apart:
+
+1. **The collar clipping through his shoulders and upper arms.** Static, authored, visible,
+   and no collider touches it -- it needs the collar geometry or its weights moved.
+2. **The lower cape swinging through his back in motion.** Nothing is buried there at rest, so
+   this is exactly the class a collider does fix -- and the capsule placed this afternoon is
+   aimed at it.
+
+Which one was reported is a question only the person who saw it can answer, and the answer picks
+the fix. Asked rather than guessed, because this file already records one cape fault that was
+built a mechanism for and did not exist.
 
 ### The rebuild landed, 2026-11-21: the nine mic-less characters are no longer invisible
 

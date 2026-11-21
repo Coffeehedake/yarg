@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Does the garment clip AT REST? Because if it does, no collider can ever fix it.
 
-    python garment_rest_penetration.py <file.yargchar> <chain-prefix> [--near MM]
+    python garment_rest_penetration.py <file.yargchar> <chain-prefix> \
+           [--garment PREFIX] [--garment-match SUBSTRING] [--near MM]
 
 WHY THIS EXISTS, and it is a correction to a day's work. Jay reported Miku's tie and Batman's
 cape as clipping, in the character SELECT screen. I answered both with spring-bone colliders --
@@ -65,13 +66,32 @@ def main():
         print("no chain starting %r; this file has %s"
               % (prefix, sorted(s[0] for s in springs)))
         return 2
+    # THE GARMENT IS NOT ONLY THE CHAIN'S JOINTS, and getting that wrong inflated this
+    # tool's first Batman reading from a real 4% to a reported 63.5%. His cape is eleven
+    # chains plus a set of `*_capeEdge_*` bones that are in NO chain at all, so a run with
+    # prefix `fml_un_C_cape` left his left and right panels AND every cape edge in the
+    # "skin" set -- and counted cape resting against cape as cape buried in body.
+    #
+    # Pass --garment with a prefix wide enough to cover the whole garment, or give
+    # --garment-match a substring that catches the bones no chain owns. Checked for on
+    # Jessica, cleared there, and then not re-checked here: her four panels never come
+    # within 60 mm of each other, so the trap did not fire and I stopped looking for it.
+    gp = sys.argv[sys.argv.index("--garment") + 1] if "--garment" in sys.argv else prefix
+    gm = sys.argv[sys.argv.index("--garment-match") + 1] if "--garment-match" in sys.argv         else None
     garment = set()
-    for nm, jps, _g in chains:
+    for nm, jps, _g in springs:
+        if not nm.startswith(gp):
+            continue
         for jp in jps:
             rec = joints.get(jp)
             tp = go_tf.get(rec[0]) if rec else None
             if tp is not None:
                 garment.add(tf.get(tp, {}).get("name") or "?")
+    if gm:
+        for _pid, rec in tf.items():
+            nm = rec.get("name") or ""
+            if gm.lower() in nm.lower():
+                garment.add(nm)
 
     env = UnityPy.load(path)
     tt, smrs = {}, []
