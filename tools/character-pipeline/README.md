@@ -9796,3 +9796,44 @@ The remaining three joints of that chain hang clear of her body entirely (no bod
 asked to have patched, and only one of her four `ClothSpring` chains has been measured -- the
 other three may want different radii or may share one. The number above is a result, not a
 recommendation to run.
+
+### The rebuild landed, 2026-11-21: the nine mic-less characters are no longer invisible
+
+Built from `dev` at `e2e1aba1`, clean tree, which contains `0d3d4e4f`. 582 MB, 51.8 minutes,
+`result Succeeded`, 111 warnings and **2 errors**, both `RenderTexture.Create failed` -- one in
+`Preprocess Player` and one building `Gameplay.unity`. Those are the `-nographics` artefact
+`BuildPlayerHeadless` already documents, which is why that file prints `PASS WITH 2 ERROR(S)`
+rather than a clean pass: it names them and leaves the judgement to the reader instead of
+swallowing them.
+
+`YARG_BUILD_DEVELOPMENT=1` was set and the log confirms `development build (plain http
+allowed)`. That is not cosmetic -- the fork sets `insecureHttpOption` to `DevelopmentOnly`, so a
+RELEASE build refuses plain `http://` and reports "Insecure connection not allowed" for the song
+server on the LAN, which reads as a network fault and is not one.
+
+**Verified in the binary, both directions, with an absent control:**
+
+| string | new build 2026-11-21 | old build 2026-11-04 |
+|---|---|---|
+| `"Vocalist came from "` (added by `0d3d4e4f`) | **PRESENT** | absent |
+| `"NOTHING -- no vocalist will appear"` (added by `0d3d4e4f`) | **PRESENT** | absent |
+| `RescanForBrowse` (added by `4fa71518`, 11-03) | PRESENT | PRESENT |
+| `MergeRemoteCatalog` | PRESENT | PRESENT |
+| `ZzzNotARealSymbolZzz` | absent | absent |
+
+Those literals are in the `#US` heap and so are **UTF-16**, while the symbol names in `#Strings`
+are **UTF-8** -- the probe tests both and prints both columns, because a UTF-16-only probe once
+reported every symbol in this same DLL as missing.
+
+That table does two things. It confirms the new build carries the fix, and it confirms the old
+one did not -- so the claim that those nine characters were invisible in gameplay on the build
+in use was correct, rather than merely plausible.
+
+**The old build is not overwritten and nothing was installed over anything.** The new tree is at
+`C:/Users/ENG2/yarg-test/fork-build-20261121/`. Settings and custom characters live under
+`LocalLow/FatalException/YARG-FE/`, keyed by company and product rather than by executable path,
+so both builds see the same 65 characters and the same song-server configuration. Launch
+whichever one is being tested; there is nothing to migrate.
+
+**Still unverified by use:** that the nine actually appear. The symbol table says the code is
+there; only the running game says they are drawn.
