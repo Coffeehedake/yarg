@@ -1500,6 +1500,57 @@ build**, zero occurrences of the new log lines, and the original `keeping a stat
 bones` intact. That is a stronger control than Alcina, because it is the subject rather than a
 bystander.
 
+#### FIXED IN A BUILD, 2026-11-20 — legs symmetric to 0.00%, not installed
+
+`VRM_DROP_LEG_POSE=1` now builds her, and the fault is gone from the output:
+
+| pair | default build | rehomed build |
+|---|---|---|
+| `thigh` rest dz | **−0.0924 m (−5.32%)** | **0.0000 (0.00%)** |
+| `shin` | −2.47% | **0.00%** |
+| `foot` posed | −5.32% | **0.00%** |
+| `upper_arm` | −1.67% | **0.00%** |
+| mirror deltas | 6–10 × 10⁻² | **4 × 10⁻⁴ – 2.7 × 10⁻³** |
+
+That **−0.0924 m is the recorded 92.4 mm**, read off a build rather than off the installed
+bundle. Every pair is now zero.
+
+**How, and it is not what the three previous attempts assumed.** Bone heat cannot weight her
+skirt or bodice at all — loose shells, and it puts both 100% on the glTF root whether the pose is
+applied or not, before and after re-weighting in place. So the orphans are rehomed from the
+**body** instead: for each orphan vertex, take the weights of the nearest vertex of a mesh that
+IS rigged, evaluated DEFORMED so the match happens in the posed world the garment was authored
+in, then store the vertex at `M⁻¹·v` for that blend. The skirt lands on **27 bones** and the
+bodice on **25**, against bone heat's one. The builder's own carried-mesh repair then never fires,
+because nothing is root-dumped any more.
+
+It has to happen at the pose decision and nowhere later: the pose is baked into the rest pose at
+line ~1128 and the carried-mesh repair does not run until ~4057, so by then there is no pose left
+to drop — and that repair succeeds on the default path only *because* the bake has made the
+skeleton's rest shape the posed shape its garments were cut around.
+
+**A check that can fail, and did.** The guard compares each garment's median distance to the body
+before and after, and aborts on the RATIO:
+
+```
+'Object_10': median distance to the body 352.69 mm before -> 286.17 mm after (ratio 0.81)
+'Object_9':  median distance to the body  57.10 mm before ->  56.33 mm after (ratio 0.99)
+```
+
+The bodice at **0.99** is the strong evidence: a garment that sits on the body stayed on it. The
+first version of this guard used an ABSOLUTE 50 mm and aborted at 286 mm — but her skirt's median
+standoff was already 352 mm untouched, because a skirt flares away from the legs. An absolute
+distance measures the garment's cut, not the rehoming; the ratio measures the rehoming.
+
+**Height holds: 1.8000 m verified, feet at z = 0.0000, in both builds.** Her WIDTH moves from
+0.5172 m to 1.0083 m, which reads as a consequence rather than a regression — with the lean no
+longer baked in she reaches a real T-pose, and this file records her failing the other way when
+things go wrong, *"implausibly narrow, 0.1397 m wide for 1.8000 m tall"*.
+
+**NOT INSTALLED, and not yet SEEN.** Numbers are not the project's standard for accepting a
+character — a podium render is, and none has been taken of this build. Her installed character is
+untouched and her backup discipline applies before anything replaces it.
+
 #### WHY the repair fails, settled — and the deferral point was simply in the wrong place
 
 The builder already contains the repair. Its **carried mesh** step detects a mesh that came out

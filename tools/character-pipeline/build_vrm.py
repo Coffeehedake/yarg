@@ -1016,8 +1016,150 @@ if _had_anim and not _keep_anim_pose:
     for pb in arm.pose.bones:
         pb.matrix_basis.identity()
 elif _drop_leg_pose and not _keep_anim_pose:
+    # REHOME THE ORPHANS FIRST, and it has to happen HERE rather than later. The pose is baked
+    # into the rest pose ~200 lines below, and the builder's own carried-mesh repair does not
+    # run for another 2,900 -- by which time there is no pose left to drop, and that repair
+    # SUCCEEDS on the default path only because the bake has made the skeleton's rest shape
+    # the posed shape its garments were authored around. So this is the last point at which
+    # the pose still exists, and anything not yet weighted has to be carried across now.
+    #
+    # BONE HEAT CANNOT DO IT -- measured: it puts Jessica's skirt (13,275 verts) and bodice
+    # (24,035) 100% on `GLTF_created_0_rootJoint`, both before and after re-weighting in
+    # place, because they are loose shells and heat gives up on those. So borrow from the
+    # BODY: for each orphan vertex take the weights of the nearest vertex of a mesh that IS
+    # rigged, evaluated DEFORMED so the comparison happens in the posed world the garment was
+    # authored in, then store the vertex at M^-1*v for that blend. The armature then draws it
+    # exactly where the author had it, and the rest pose is consistent with the body.
+    _donor = []
+    _dg = bpy.context.evaluated_depsgraph_get()
+    for _dm in meshes:
+        if not any(_md.type == "ARMATURE" for _md in _dm.modifiers) or not _dm.vertex_groups:
+            continue
+        _g2 = {_g.index: _g.name for _g in _dm.vertex_groups}
+        _ev = _dm.evaluated_get(_dg)
+        try:
+            _em = _ev.to_mesh()
+        except RuntimeError:
+            continue
+        # The evaluated mesh must correspond 1:1 to the original, or a generative modifier has
+        # renumbered the vertices and the weights would be read off the wrong ones.
+        if len(_em.vertices) == len(_dm.data.vertices):
+            _mw = _dm.matrix_world
+            for _i, _ov in enumerate(_dm.data.vertices):
+                _w = [(_ge.weight, _g2.get(_ge.group)) for _ge in _ov.groups
+                      if _ge.weight > 0.0 and _g2.get(_ge.group) in arm.pose.bones]
+                if _w:
+                    _donor.append(((_mw @ _em.vertices[_i].co).copy(), _w))
+        _ev.to_mesh_clear()
+    _orphans = [_o for _o in meshes
+                if (not any(_md.type == "ARMATURE" for _md in _o.modifiers)
+                    or not _o.vertex_groups)
+                and len(_o.data.vertices) >= 50]
+    if not _donor:
+        raise SystemExit("ABORT: dropping the static pose needs weights borrowed from a "
+                         "RIGGED mesh and this character has none to borrow from. Nothing "
+                         "was changed; re-run without VRM_DROP_LEG_POSE=1.")
+    if _orphans:
+        from mathutils.kdtree import KDTree as _KDT
+        _dkd = _KDT(len(_donor))
+        for _i, (_p, _) in enumerate(_donor):
+            _dkd.insert(_p, _i)
+        _dkd.balance()
+        print("  rehoming %d orphan mesh(es) from %d weighted donor vertices"
+              % (len(_orphans), len(_donor)))
+        _medbefore = {}
+        for _o in _orphans:
+            _Bo = _o.matrix_world.inverted() @ arm.matrix_world
+            _Boi = _Bo.inverted()
+            _bmo = {_pb.name: _Bo @ (_pb.matrix @ _pb.bone.matrix_local.inverted()) @ _Boi
+                    for _pb in arm.pose.bones}
+            # THE CHECK THAT CAN FAIL: how far the garment sits from the body, before and
+            # after. A wrong transform throws it off the figure and this number explodes.
+            # (The round-trip M @ (M^-1 @ v) == v is an IDENTITY and proves nothing -- that
+            # mistake was made here on 2026-11-20 and read 0.000000 over garbage weights.)
+            _before = sorted((_dkd.find(_o.matrix_world @ _v.co)[2]
+                              for _v in _o.data.vertices))
+            _med_before = _before[len(_before) // 2]
+            _medbefore[_o.name] = _med_before
+            _newco, _byb = {}, {}
+            for _vi, _v in enumerate(_o.data.vertices):
+                _, _ni, _ = _dkd.find(_o.matrix_world @ _v.co)
+                _w = _donor[_ni][1]
+                _tot = sum(_x for _x, _ in _w) or 1.0
+                _Mo = Matrix(((0.0,) * 4,) * 4)
+                for _x, _bn in _w:
+                    _Mo += _bmo[_bn] * (_x / _tot)
+                try:
+                    _newco[_vi] = _Mo.inverted() @ _v.co
+                except ValueError:
+                    continue
+                for _x, _bn in _w:
+                    _byb.setdefault(_bn, []).append((_vi, _x / _tot))
+            for _vi, _co in _newco.items():
+                _o.data.vertices[_vi].co = _co
+            for _bn, _vs in _byb.items():
+                _grp = _o.vertex_groups.get(_bn) or _o.vertex_groups.new(name=_bn)
+                for _vi, _wt in _vs:
+                    _grp.add([_vi], _wt, "REPLACE")
+            if not any(_md.type == "ARMATURE" for _md in _o.modifiers):
+                _md2 = _o.modifiers.new(name="Armature", type="ARMATURE")
+                _md2.object = arm
+            print("      '%s': %d of %d vertices rehomed onto %d bone(s), median distance "
+                  "to the body %.2f mm before"
+                  % (_o.name, len(_newco), len(_o.data.vertices), len(_byb),
+                     _med_before * 1000.0))
     for pb in arm.pose.bones:
         pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
+    # Now the body is at rest too, so the garment must STILL be on it. This is the assertion
+    # the identity-check could not make.
+    if _orphans and _donor:
+        _dg2 = bpy.context.evaluated_depsgraph_get()
+        _dpts = []
+        for _dm in meshes:
+            if not any(_md.type == "ARMATURE" for _md in _dm.modifiers) or _dm in _orphans:
+                continue
+            _ev = _dm.evaluated_get(_dg2)
+            try:
+                _em = _ev.to_mesh()
+            except RuntimeError:
+                continue
+            _dpts.extend((_dm.matrix_world @ _v.co).copy() for _v in _em.vertices)
+            _ev.to_mesh_clear()
+        if _dpts:
+            from mathutils.kdtree import KDTree as _KDT2
+            _k2 = _KDT2(len(_dpts))
+            for _i, _p in enumerate(_dpts):
+                _k2.insert(_p, _i)
+            _k2.balance()
+            for _o in _orphans:
+                _ev = _o.evaluated_get(_dg2)
+                try:
+                    _em = _ev.to_mesh()
+                except RuntimeError:
+                    continue
+                _ds = sorted(_k2.find(_o.matrix_world @ _v.co)[2] for _v in _em.vertices)
+                _ev.to_mesh_clear()
+                _med = _ds[len(_ds) // 2]
+                _b4 = _medbefore.get(_o.name, 0.0)
+                _ratio = (_med / _b4) if _b4 > 1e-9 else float("inf")
+                print("      '%s': median distance to the body %.2f mm before -> %.2f mm "
+                      "after (ratio %.2f)" % (_o.name, _b4 * 1000.0, _med * 1000.0, _ratio))
+                # THE CRITERION IS THE CHANGE, NOT THE DISTANCE. The first version of this
+                # compared the absolute figure against an invented 50 mm and aborted on
+                # Jessica's skirt at 286 mm -- but her skirt's median standoff was ALREADY
+                # 352 mm before anything was touched, because a skirt flares away from the
+                # legs. An absolute distance measures the garment's cut, not the rehoming.
+                # What the rehoming must preserve is the garment's position RELATIVE to a
+                # body that also moved, so the ratio is the quantity, and the bound is loose
+                # on purpose: it is here to catch a garment thrown off the figure, not to
+                # tune anything. Hers measures 0.81.
+                if _ratio > 1.5:
+                    raise SystemExit(
+                        "ABORT: '%s' went from %.1f mm to %.1f mm from the body (%.2fx) when "
+                        "the pose was dropped, so the rehoming moved it off the figure "
+                        "rather than with it."
+                        % (_o.name, _b4 * 1000.0, _med * 1000.0, _ratio))
 else:
     _static = sum(1 for pb in arm.pose.bones
                   if any(abs(pb.matrix_basis[i][j] - (1.0 if i == j else 0.0)) > 1e-5
