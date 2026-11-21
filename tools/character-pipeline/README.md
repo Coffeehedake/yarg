@@ -9503,3 +9503,91 @@ numbered, not named -- so the regex matched nothing on exactly the two character
 written to measure. It now takes the hand's descendants from the `m_TOS` hierarchy, by structure.
 The reason it was caught rather than believed is that the tool prints "unmeasured, NOT good"
 instead of a zero ([[verify-a-zero-with-a-control]]).
+
+### Report 7 ANSWERED: Alcina has no colour textures, and her eyelashes were already fixed
+
+Two separate things are bundled in "face, eyelashes etc are incorrect", and they have different
+answers. Both were partly on record already -- the standing row for her says *"her colour maps
+are all noise fields and she renders white; that is the archive, not the build"* -- so this
+checked the installed artefact rather than repeating the note.
+
+**The eyelashes are fixed and the fix is in the installed bundle.** `alpha_sweep_installed.py`
+reads her as `blend=1 cutout=1 opaque=11` with **0 UNUSED, 0 HARDCUT, 0 INVISIBLE, 0 NOALPHA**.
+The blend material is `Material.006` (`CILIOS`), moved there on 2026-11-12 precisely because it
+had shipped opaque and put a black slab over her eyes. Whatever is still wrong with her lashes,
+it is not an alpha mode, and no finding in that sweep supports changing one.
+
+**The face is the archive, and it now has a number instead of a word.** "Noise field" was the
+recorded description; measured against Jessica Rabbit as a control, with mean RGB and a
+structure figure (mean absolute difference between adjacent texels of the image downscaled to
+32x32 -- real detail survives downscaling, per-pixel noise averages flat):
+
+| character | base-colour map | mean RGB | sd | structure |
+|---|---|---|---|---|
+| Alcina | `(null)_Base_Color` | (184.4, 184.4, 184.4) | 2.3 | 0.96 |
+| Alcina | `None_Base_Color` | (189.7, 187.6, 187.2) | 14.3 | 2.77 |
+| Alcina | `Material.014_Base_Color` | (65.3, 65.3, 65.3) | 4.0 | 1.66 |
+| Jessica Rabbit | `Image_5` | (147.3, 98.0, 83.2) | 142.2 | **40.98** |
+| Jessica Rabbit | `Image_0` | (118.9, 0.0, 17.5) | 112.9 | 2.29 |
+
+**Every one of Alcina's base-colour maps is ACHROMATIC** -- R, G and B equal to a decimal place
+-- and flat. A face map is not grey. Jessica's skin map carries forty times the structure and a
+real skin hue; her `Image_0` is the red of the dress. The one textured thing Alcina has is
+`CABELOO_preto_1.png`, her hair, at 4.72, which is why the hair is the one part of her that
+reads as itself.
+
+Compare base colour against base colour only. The `.standard` and `.normal` maps are flat on
+purpose for everybody -- Jessica's five roughness maps are a uniform 205 with a structure of
+exactly 0.00 -- so a sweep that pooled all textures would have called her broken too.
+
+**So there is nothing to fix in the build.** She renders pale and featureless because her source
+textures are pale and featureless, and no material, shader or alpha change reaches that. It
+needs different source art, which is a different kind of task from the other eight reports.
+
+One thing worth knowing about how this gets looked at: her row records that **at 2.9 m her head
+is above the character-select camera**, so hers was accepted on numbers alone and a podium render
+cannot verify a change to her face. The image in the report is a head-and-shoulders view with no
+podium and no name banner, unlike the other eight, so it did not come from that screen. The
+texture measurement holds either way -- an achromatic map is achromatic under any light -- but
+if her face is being judged from a view this project has never used, it is worth saying which.
+
+### Reports 2 and 8 NARROWED by the existing record, and what each now needs
+
+Neither is new. Both have a measured entry above them already, and in both cases the report is
+evidence bearing on a decision this file had made deliberately -- which is more useful than a
+fresh investigation would have been, and is the reason to read the last mention before starting
+one.
+
+**Report 2, Miku's tie clipping through her clothes, is a KNOWN AND ACCEPTED consequence.** The
+tie's spring chain carries no collider group on purpose: all three of its bones start *inside*
+the `Bip01 Spine` capsule -- `Bone01` at **-44.4 mm**, `Bone02` at **-30.5 mm**, `Bone03` at
+**-7.4 mm** -- and a spring solver's first act is to push a joint out to the collider surface,
+so attaching the `Body` group would have thrown the knot 44 mm forward and reproduced the "tie
+sticking straight out" fault fixed the same morning. The entry says in terms that the tie "can
+in principle swing through her chest", and judged that the smaller of the two faults because
+gravity is 0 and it only sways about its 15 degree rest pose.
+
+**Jay's report is the first evidence that it is not only in principle.** That does not overturn
+the measurement -- the clearances are what they are -- but it does move which of the two faults
+is worse, and the entry's reason for not fixing it was that *shrinking the capsule is not
+available, because the twintail chains share it*. **A third option was never considered: give
+the tie its own collider group.** A chain does not have to share `Body`; a single narrower
+capsule sized to her chest, referenced only by the tie, breaks the dependency that made shrinking
+impossible. That is the thing to measure next -- what radius clears all three tie bones at rest
+while still sitting inside her chest silhouette -- and it is a build change, not a patch.
+
+**Report 8, Prix's right arm twisted and crushed, has a named mechanism waiting for it.** He is
+already the project's worst rest-pose case: a Mixamo rig whose T-pose step *prints nothing*, so
+the VRM add-on was the only thing ever T-posing him, and the rest-pose guard **fires on him at
+`forearm 21.2 deg` off X**. The entry above spells out why that matters: *"Unity builds the
+humanoid avatar on the bind pose, so shipping him bent would have mis-aimed every muscle axis he
+has -- the same fault as the hands, applied to the whole body."* A mis-aimed muscle axis is
+exactly what produces a limb that animates twisted and collapsed.
+
+So the question for Prix is not what the mechanism is, it is **whether the installed bundle
+predates the guard**. That is one measurement -- read the bind pose out of `Prix.yargchar` and
+check forearm and upper arm against X, joint to joint. Measure it **joint to joint, never by
+bone axis**: the first version of that guard asked which way each bone points and reported his
+arms as 90.0 degrees off and his legs as 180.0, both sides, to the decimal. Numbers that round
+are not a pose -- a bone's tail is synthesised wherever the rig does not pin one, so a bone axis
+is a fact about the importer and the head of the next joint down is a fact about the model.
