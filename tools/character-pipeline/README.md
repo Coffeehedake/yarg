@@ -1500,6 +1500,44 @@ build**, zero occurrences of the new log lines, and the original `keeping a stat
 bones` intact. That is a stronger control than Alcina, because it is the subject rather than a
 bystander.
 
+#### ANSWERED, 2026-11-20: leave her. Three corrections, three costs, all measured
+
+The re-opening was **justified** — the shoe is real, 92.4 mm, measured on geometry against two
+controls at 0.0 (below). And the answer is still the 2026-11-16 one, now with the cost of every
+available correction measured rather than argued:
+
+| correction | does it fix the shoe? | what it costs |
+|---|---|---|
+| patch the installed bundle | — | **impossible**: `Hips` is humanoid-mapped and the Animator retargets from the Avatar |
+| **drop the static pose** (`VRM_DROP_LEG_POSE=1`) | **yes — 0.0 mm** | her skirt stretches across the widening gap between her legs: **max edge stretch 30.35x**, and her stance, which is the character |
+| **level the hips** (`straighten_spine.py --level`) | **yes — 0.0 mm** | her skirt **swings sideways**, drift +24 mm → **−155 mm**, the garment 200–390 mm off |
+
+**The hips route is the surgical one and it still fails.** One bone rotated, 25.71° → 0.000°,
+thighs and torso keeping their orientation, `thigh.L vs thigh.R` −92.38 mm → **−0.00 mm**, and
+the shoe measured on the exported bundle at **0.0 mm** with no streaks anywhere. Then the skirt:
+
+| skirt centroid X, by height band | shipped | hips levelled |
+|---|---|---|
+| y 0.45–0.60 | +72.3 mm | **−143.0 mm** |
+| y 0.30–0.45 | +82.6 mm | **−204.5 mm** |
+| y 0.15–0.30 | +90.5 mm | **−269.3 mm** |
+| y 0.00–0.15 | +96.4 mm | **−298.3 mm** |
+
+The shipped skirt drifts **+24 mm** over its whole drop — it hangs straight. The levelled one
+drifts **−155 mm** and sits 200–390 mm across, fanning wider the lower it goes: a garment
+rotated with the pelvis. **Her skirt is weighted to `spine`, which IS her Hips**, so rotating
+that bone rotates her dress with it.
+
+**That is the 2026-11-16 sentence, measured: "every available correction trades the buried shoe
+for a twisted pelvis."** A skirt swinging 155 mm is what a twisted pelvis looks like from the
+outside. The closure was right, it was right for the stated reason, and three independent
+attempts now agree with it.
+
+**What is genuinely new, and worth keeping:** her 25.71° is a clearable pose rather than a rest
+pose; the skeleton CAN be levelled exactly, two ways; `--level` exists now for a roll, which the
+aim sweep cannot express and which Kronk and Mando never needed; and the cost is her dress rather
+than her pelvis. **Nothing is installed. She stays as she is.**
+
 #### THE BURIED SHOE IS REAL — measured on GEOMETRY, with controls, 2026-11-20
 
 I doubted it, on the grounds that the figure came from `YargFootProbe`, which reports

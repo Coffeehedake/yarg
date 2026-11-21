@@ -100,6 +100,10 @@ HIPS = opt("--hips")
 CHAIN = [b for b in (opt("--chain") or "").split(",") if b]
 HEAD = opt("--head")
 KEEP = [b for b in (opt("--keep") or "").split(",") if b]
+# --level rolls ONE bone until its sideways axis is horizontal. It is independent of the
+# aim sweep and either may be used alone: a lean needs --chain, a roll needs --level, and
+# nothing about a bone's segment pointing up constrains the roll about it.
+LEVEL = opt("--level")
 RECENTRE = [b for b in (opt("--recentre") or "").split(",") if b]
 CONTROL = "--control" in argv
 NOBAKE = "--no-bake" in argv
@@ -112,9 +116,16 @@ for o in meshes:
     if o.data.shape_keys:
         raise SystemExit("ABORT: %s carries shape keys; applying the armature "
                          "modifier would discard them" % o.name)
-for n in [HIPS, HEAD] + CHAIN + KEEP + RECENTRE:
+# None is a legitimate value here now: --level alone needs no chain, and a chain needs no
+# --level. Filter before the membership test, because `None in bones` raises a TypeError that
+# reads as a broken armature rather than as a missing argument.
+for n in [x for x in ([HIPS, HEAD, LEVEL] + CHAIN + KEEP + RECENTRE) if x]:
     if n not in arm.data.bones:
         raise SystemExit("ABORT: no bone %r in this armature" % n)
+if not LEVEL and not CHAIN:
+    raise SystemExit("ABORT: nothing to do -- pass --chain for a lean, --level for a roll, "
+                     "or both. (A lean and a roll are different faults: aiming a segment "
+                     "upward does not constrain the roll about it.)")
 
 # Everything below works in ARMATURE space, so the object's own transform
 # never has to be reasoned about; "up" is carried into that space once.
@@ -127,6 +138,22 @@ def head_of(name):
 
 
 def report(tag):
+    # A ROLL run reports a different quantity from a LEAN run, and reporting the wrong one is
+    # how a correction gets called a success: the sideways distance from hips to head barely
+    # moves when a hips ROLL is levelled, while the thing that does move -- the two leg roots'
+    # heights -- is not in the lean report at all.
+    if LEVEL and not (HIPS and HEAD):
+        pb = arm.pose.bones[LEVEL]
+        x = pb.matrix.to_3x3().col[0].normalized()
+        print("%s: %s sideways axis %.2f deg out of horizontal"
+              % (tag, LEVEL, math.degrees(math.asin(max(-1.0, min(1.0, abs(x.z)))))))
+        for a, b in (("thigh.L", "thigh.R"), ("foot.L", "foot.R")):
+            if a in arm.pose.bones and b in arm.pose.bones:
+                print("    %-7s vs %-7s  height difference %+8.2f mm"
+                      % (a, b, (head_of(a).z - head_of(b).z) * 1000.0))
+        for n in KEEP:
+            print("    %-10s height %8.4f" % (n, head_of(n).z))
+        return
     hips, head = head_of(HIPS), head_of(HEAD)
     d = head - hips
     off = (math.degrees(math.acos(max(-1.0, min(1.0, d.normalized().dot(UP)))))
@@ -147,6 +174,44 @@ else:
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.mode_set(mode="POSE")
     pre = {n: arm.pose.bones[n].matrix.to_3x3().copy() for n in KEEP}
+
+    # --level <bone>: ROLL a bone until its own sideways axis is horizontal.
+    #
+    # This is a different fault from the lean the sweep below corrects, and the sweep cannot
+    # touch it. Aiming works by `rotation_difference(UP)`, which points a SEGMENT upward and
+    # leaves the roll about that segment entirely free -- so a bone whose head-to-tail is
+    # already vertical while the bone is rolled 25 degrees about it reads as perfectly
+    # straight and is left alone.
+    #
+    # Jessica Rabbit is the case. Her Hips' local X points (+0.9009, +0.4339, +0.0142) in
+    # world: 25.71 degrees out of horizontal. Her thighs hang off it mirrored to SEVEN decimal
+    # places, so that roll maps a +-106 mm sideways offset into +-46 mm of HEIGHT and drops
+    # her whole left leg chain -- 92.4 mm at the shoe, measured on geometry against two
+    # controls at 0.0 mm. Nothing is wrong with either leg.
+    #
+    # So level the axis and put the thighs in `--keep`: they take the new, level positions
+    # their parent gives them while their own orientation is restored, which moves the legs
+    # without turning them.
+    if LEVEL:
+        pb = arm.pose.bones[LEVEL]
+        x = pb.matrix.to_3x3().col[0].normalized()
+        flat = Vector((x.x, x.y, 0.0))
+        if flat.length < 1e-6:
+            raise SystemExit("ABORT: --level %s has a sideways axis pointing straight up or "
+                             "down, so 'horizontal' does not name a rotation for it." % LEVEL)
+        flat.normalize()
+        deg = math.degrees(math.acos(max(-1.0, min(1.0, x.dot(flat)))))
+        q = x.rotation_difference(flat)
+        h = pb.matrix.translation.copy()
+        m = q.to_matrix().to_4x4() @ pb.matrix
+        m.translation = h
+        pb.matrix = m
+        bpy.context.view_layer.update()
+        x2 = arm.pose.bones[LEVEL].matrix.to_3x3().col[0].normalized()
+        print("  levelled %s: sideways axis was %.2f deg out of horizontal, now %.3f deg"
+              % (LEVEL, deg,
+                 math.degrees(math.asin(max(-1.0, min(1.0, abs(x2.z)))))))
+
     order = CHAIN + [HEAD]
     for sweep in range(10):
         worst = 0.0
