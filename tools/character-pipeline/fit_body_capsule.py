@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Find WHERE a collider capsule has to be, not just how big. Then say if no single one works.
 
-    python fit_body_capsule.py <file.yargchar> <chain-prefix> \n           [--garment PREFIX] [--host BONE] [--near MM]
+    python fit_body_capsule.py <file.yargchar> <chain-prefix> \n           [--garment PREFIX] [--garment-match SUBSTRING] [--host BONE] [--near MM]
 
 e.g.  python fit_body_capsule.py "Jessica Rabbit.yargchar" ClothSpring_1_
 
@@ -71,7 +71,7 @@ def seg_dist(p, a, b):
     return math.sqrt(sum((p[i] - c[i]) ** 2 for i in range(3)))
 
 
-def read_all(path, prefix, near_m, garment_prefix=None):
+def read_all(path, prefix, near_m, garment_prefix=None, garment_match=None):
     """`prefix` selects the chains to FIT. `garment_prefix` selects what counts as cloth.
 
     They are separate because a four-panel skirt is fitted one panel at a time -- each panel
@@ -94,6 +94,17 @@ def read_all(path, prefix, near_m, garment_prefix=None):
             tp = go_tf.get(rec[0]) if rec else None
             if tp is not None:
                 garment.add(tf.get(tp, {}).get("name") or "?")
+    # A PREFIX OVER CHAINS IS NOT THE GARMENT. Batman's cape is 157 `*cape*` bones and his
+    # eleven spring chains own only a handful of them -- capeClav, capeTrap and every
+    # capeEdge belong to no chain at all. Excluding only chain joints left the rest of his
+    # own cape in the "skin" set, so cape resting against cape read as cape buried in body
+    # and inflated a rest-penetration figure from 4% to 63.5%. --garment-match takes a
+    # substring over BONE NAMES, which is what actually delimits a garment.
+    if garment_match:
+        for _pid, rec in tf.items():
+            nm = rec.get("name") or ""
+            if garment_match.lower() in nm.lower():
+                garment.add(nm)
     jrows = []
     for nm, jps, _g in chains:
         for jp in jps:
@@ -219,7 +230,10 @@ def main():
     host = sys.argv[sys.argv.index("--host") + 1] if "--host" in sys.argv else None
     gp = sys.argv[sys.argv.index("--garment") + 1] if "--garment" in sys.argv else None
 
-    tf, go_tf, world, skin, jrows, garment, chains = read_all(path, prefix, near_m, gp)
+    gmatch = (sys.argv[sys.argv.index("--garment-match") + 1]
+              if "--garment-match" in sys.argv else None)
+    tf, go_tf, world, skin, jrows, garment, chains = read_all(
+        path, prefix, near_m, gp, gmatch)
     ys = [r[2][1] for r in jrows]
     y0, y1 = min(ys), max(ys)
     print("%d chain(s) matching %r, %d joint(s), height band %.3f to %.3f m"

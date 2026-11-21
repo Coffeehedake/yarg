@@ -10294,6 +10294,59 @@ Which one was reported is a question only the person who saw it can answer, and 
 the fix. Asked rather than guessed, because this file already records one cape fault that was
 built a mechanism for and did not exist.
 
+#### It is the LOWER DRAPE, and my first capsule was 8.4 mm too small on one chain of eleven
+
+Jay answered the question: the cape clips at the **lower drape**, not the collar. That is the
+class a collider does fix, which means the capsule placed this afternoon was aimed correctly and
+still did nothing. Two reasons, both mine, and the second was invisible until the first was
+found.
+
+**ONE: the radius was wrong, by the same contamination.** The fit that produced 136.6 mm ran
+with `--garment fml_un_`, which excludes only the bones the spring chains own -- so his own cape
+counted as skin, the surface read NEARER than it is, and the lower bound came out short. Re-fit
+with the whole cape excluded:
+
+| | lower bound | upper | suggested |
+|---|---|---|---|
+| applied this afternoon | 116.6 | — | **136.6 mm** |
+| correct | **141.4** | 148.7 | **145.0 mm** |
+
+His back skin is at **161.4 mm** from the fitted axis. At 136.6 the solver holds the cape at
+`136.6 + 20 = 156.6` mm -- **5 mm inside his own back**. The capsule was doing exactly what it
+was told and what it was told was to hold the cape inside him.
+
+**TWO: one chain of eleven.** His cape is eleven spring chains and I guarded `fml_un_C_cape_att`
+alone. The other ten were still guarded only by the original Body group, whose torso capsule is
+the 111.8 mm one on his pelvis axis that holds cloth 18 mm inside his silhouette -- the fault
+diagnosed on 11-21 and never actually addressed. The centre strip is a small part of what swings.
+
+##### What is now placed
+
+| chain | host bone | radius | interval |
+|---|---|---|---|
+| `fml_un_C_cape_att` | `fml_un_C_spine_d` | **145.0 mm** | [141.4, 148.7] |
+| `fml_un_L_cape_a_att` | `fml_un_L_clav` | **215.7 mm** | [211.2, 220.3] |
+| `fml_un_R_cape_a_att` | `fml_un_R_clav` | **231.9 mm** | [227.3, 236.5] |
+
+All three inside the body, all three no wider than he is, each in its own group referenced by its
+own chain. He was restored to `c60e0a61` first rather than left carrying the 136.6 mm capsule:
+replacing a wrong number is not a rollback. Now **13 colliders in 4 groups, all grouped and
+used, 0 unguarded chains, `UnityFS` intact**, md5 `58097723`.
+
+##### Eight chains still have no fitted capsule, and the reason is a real limit
+
+- **Six** -- `L/R_cape_att`, `L/R_cape_c_att`, `L/R_cape_d_att` -- have **no skin within 60 mm of
+  any joint at rest**. The fitter needs the body surface to set its lower bound, so with none
+  nearby it has nothing to fit against and refuses. That is correct for what it measures and
+  wrong for what is wanted: a panel hanging clear at rest is exactly a panel that can swing in
+  later. Guarding those needs a bound taken from somewhere other than the rest pose.
+- **`L_cape_e_att`** crosses by 6.9 mm.
+- **`R_cape_e_att`** fits at [106.9, 111.1] and passes the body-radius gate, but the tool could
+  not choose a host bone for it and printed no arguments.
+
+So three of eleven are guarded properly and the lower drape may still move through him on the
+other eight. **Unverified in the game.**
+
 ### The rebuild landed, 2026-11-21: the nine mic-less characters are no longer invisible
 
 Built from `dev` at `e2e1aba1`, clean tree, which contains `0d3d4e4f`. 582 MB, 51.8 minutes,
