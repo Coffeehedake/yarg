@@ -40,6 +40,7 @@ by exactly the amount that makes it look plausible.
 READ-ONLY. Nothing is written and no pose is cleared; that is a build step, not a probe.
 """
 import math
+import re
 import sys
 
 import bpy
@@ -65,7 +66,10 @@ def _import_if_asked():
     low = path.lower()
     if low.endswith((".usd", ".usdc", ".usda", ".usdz")):
         bpy.ops.wm.usd_import(filepath=path)
-    elif low.endswith((".glb", ".gltf")):
+    elif low.endswith((".glb", ".gltf", ".vrm")):
+        # A .vrm IS a glTF container, and this pipeline's every OUTPUT is one -- so without
+        # it here the tool can read what goes into a build and not what comes out, which is
+        # the comparison that localises a fault to the builder.
         bpy.ops.import_scene.gltf(filepath=path)
     elif low.endswith(".fbx"):
         bpy.ops.import_scene.fbx(filepath=path)
@@ -78,10 +82,19 @@ def _import_if_asked():
 
 
 def _side(name):
-    low = name.lower()
-    if low.endswith((".l", "_l")) or ".l." in low or "left" in low:
+    """L or R, tolerating glTF's NUMERIC SUFFIX -- and that suffix is not a detail.
+
+    `import_scene.gltf` renames every bone with a trailing `_<index>`: the .blend's `shin.L`
+    arrives as `shin.L_165`. A matcher testing the END of the string then finds no side on any
+    bone of any glTF-imported rig, so the pair table reports "no pair identified" on a rig that
+    is entirely regular -- which is a fact about the matcher wearing the shape of a fact about
+    the character. Measured on jessica_rabbit.glb 2026-11-20: 160 bones, 0 pairs found, and the
+    only reason it was caught is that this tool says WHY it found none instead of printing zeros.
+    """
+    low = re.sub(r"_\d+$", "", name.lower())
+    if low.endswith((".l", "_l", "-l")) or ".l." in low or "left" in low:
         return "L"
-    if low.endswith((".r", "_r")) or ".r." in low or "right" in low:
+    if low.endswith((".r", "_r", "-r")) or ".r." in low or "right" in low:
         return "R"
     return None
 
