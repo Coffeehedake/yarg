@@ -1500,7 +1500,42 @@ build**, zero occurrences of the new log lines, and the original `keeping a stat
 bones` intact. That is a stronger control than Alcina, because it is the subject rather than a
 bystander.
 
-#### FIXED IN A BUILD, 2026-11-20 — legs symmetric to 0.00%, not installed
+#### THE RENDER CAUGHT WHAT FIVE NUMERIC CHECKS MISSED — 2026-11-20
+
+**The section below is correct about the legs and WRONG that she is fixed.** Rendered on the
+podium — `measurements/jessica-posedrop-REHOMED-streaks-2026-11-20.png`, against
+`-CONTROL-` — her legs are straight and both feet are on the podium, **and a spray of red and
+blue streaks fans from her left hip across to her left hand.** Skirt vertices borrowed weights
+from her FOREARM, because her arm hangs by her hip in the posed source; drop the pose, the arm
+leaves, and the triangles reaching those vertices stretch across the figure.
+
+**Every numeric check passed.** That is the finding. In order:
+
+| check | reading | verdict |
+|---|---|---|
+| L/R pair asymmetry | 0.00% on all six | passed, and it was RIGHT — the legs are fixed |
+| height / feet | 1.8000 m, z = 0.0000 | passed |
+| median distance to body | 352.7 → 286.2 mm (0.81x) | passed, and it is BLIND here |
+| p99 distance to body | 1723.2 → 1723.2 mm (1.00x) | passed, and it is blind too |
+| **edge stretch (added after the render)** | **median 1.00x, p99 7.19x, max 118.69x** | **CAUGHT IT** |
+
+**Why distance-to-body could not see it, at either percentile.** The far end of a streak lands
+*on the body* — her hand IS the body — so the stray vertex is 0 mm away. What explodes is the
+EDGE between the skirt and the vertex, not any vertex's distance to anything. The metric has to
+be the artefact: stretched geometry means measure stretch.
+
+**And why the median was worthless.** Median edge stretch is **1.00x** — the bulk of the rehoming
+is exact — beside a max of **118.69x**. A median cannot see a tail, and a tail of a few hundred
+vertices is what a viewer sees first.
+
+`VRM_DROP_LEG_POSE=1` now **refuses to write the file**, naming the percentile and the max. The
+rehoming is right for 99% of the mesh and wrong for the rest, and the remaining work is to stop
+a garment borrowing from a limb that is merely passing by — a donor restricted to plausible
+bones, or agreement among the k nearest rather than the single nearest.
+
+**She is NOT fixed, nothing is installed, and the numbers below stand only for the skeleton.**
+
+#### The legs, which the render confirms: symmetric to 0.00%
 
 `VRM_DROP_LEG_POSE=1` now builds her, and the fault is gone from the output:
 

@@ -1080,7 +1080,14 @@ elif _drop_leg_pose and not _keep_anim_pose:
             _before = sorted((_dkd.find(_o.matrix_world @ _v.co)[2]
                               for _v in _o.data.vertices))
             _med_before = _before[len(_before) // 2]
-            _medbefore[_o.name] = _med_before
+            # A MEDIAN CANNOT SEE A TAIL, and the tail is the whole failure mode here. Measured
+            # 2026-11-20: a few hundred of Jessica's skirt vertices borrowed weights from her
+            # FOREARM -- her arm hangs by her hip in the posed source -- and when the pose went
+            # they streaked across the render to her hand. The median moved from 352.69 mm to
+            # 286.17 mm and read as a pass. The podium shot is what caught it. So keep a high
+            # percentile beside the median and fail on either.
+            _medbefore[_o.name] = (_med_before, _before[min(len(_before) - 1,
+                                                            int(len(_before) * 0.99))])
             _newco, _byb = {}, {}
             for _vi, _v in enumerate(_o.data.vertices):
                 _, _ni, _ = _dkd.find(_o.matrix_world @ _v.co)
@@ -1108,6 +1115,26 @@ elif _drop_leg_pose and not _keep_anim_pose:
                   "to the body %.2f mm before"
                   % (_o.name, len(_newco), len(_o.data.vertices), len(_byb),
                      _med_before * 1000.0))
+    # EDGE LENGTHS ON THE DEFORMED MESH, captured while the pose is still applied -- which,
+    # after the rehoming, is the author's own arrangement. This is the quantity that actually
+    # describes the failure: a vertex pulled onto the wrong limb STRETCHES the triangles that
+    # reach it. Distance-to-body cannot see that at all, because the vertex ends up ON the
+    # body (her hand IS the body) -- measured 2026-11-20, p99 distance 1723.2 -> 1723.2 mm,
+    # ratio 1.00, on a build the podium render showed streaked from hip to hand.
+    _edgebefore = {}
+    _dgE = bpy.context.evaluated_depsgraph_get()
+    for _o in _orphans:
+        _ev = _o.evaluated_get(_dgE)
+        try:
+            _em = _ev.to_mesh()
+        except RuntimeError:
+            continue
+        if len(_em.vertices) == len(_o.data.vertices):
+            _edgebefore[_o.name] = [
+                (_em.vertices[_e.vertices[0]].co - _em.vertices[_e.vertices[1]].co).length
+                for _e in _o.data.edges]
+        _ev.to_mesh_clear()
+
     for pb in arm.pose.bones:
         pb.matrix_basis.identity()
     bpy.context.view_layer.update()
@@ -1139,12 +1166,45 @@ elif _drop_leg_pose and not _keep_anim_pose:
                 except RuntimeError:
                     continue
                 _ds = sorted(_k2.find(_o.matrix_world @ _v.co)[2] for _v in _em.vertices)
+                # Read every edge length BEFORE releasing the evaluated mesh. Touching `_em`
+                # after `to_mesh_clear()` raises "StructRNA of type Mesh has been removed",
+                # which is a dangling reference rather than anything about the character.
+                _eafter = ([(_em.vertices[_e.vertices[0]].co
+                             - _em.vertices[_e.vertices[1]].co).length
+                            for _e in _o.data.edges]
+                           if len(_em.vertices) == len(_o.data.vertices) else None)
                 _ev.to_mesh_clear()
                 _med = _ds[len(_ds) // 2]
-                _b4 = _medbefore.get(_o.name, 0.0)
+                _b4 = _medbefore.get(_o.name, (0.0, 0.0))[0]
                 _ratio = (_med / _b4) if _b4 > 1e-9 else float("inf")
-                print("      '%s': median distance to the body %.2f mm before -> %.2f mm "
-                      "after (ratio %.2f)" % (_o.name, _b4 * 1000.0, _med * 1000.0, _ratio))
+                print("      '%s': median distance to the body %.1f -> %.1f mm (%.2fx) "
+                      "-- CONTEXT ONLY, see the stretch figure"
+                      % (_o.name, _b4 * 1000.0, _med * 1000.0, _ratio))
+                # THE CHECK. Edge stretch between the author's arrangement and the rest pose.
+                # Some change is legitimate -- the BODY changed shape -- so the bound is loose
+                # and is there to catch a triangle reaching across the figure, not to tune.
+                _eb = _edgebefore.get(_o.name)
+                if _eb and _eafter and len(_eb) == len(_eafter):
+                    _st = []
+                    for _i, _l0 in enumerate(_eb):
+                        if _l0 < 1e-6:
+                            continue
+                        _st.append(_eafter[_i] / _l0)
+                    if _st:
+                        _st.sort()
+                        _s99 = _st[min(len(_st) - 1, int(len(_st) * 0.99))]
+                        _smax = _st[-1]
+                        print("      '%s': edge stretch  median %.2fx  p99 %.2fx  max %.2fx"
+                              % (_o.name, _st[len(_st) // 2], _s99, _smax))
+                        if _s99 > 3.0:
+                            raise SystemExit(
+                                "ABORT: '%s' has edges stretched %.1fx at the 99th percentile "
+                                "(max %.1fx) after the pose was dropped. Vertices borrowed "
+                                "weights from the wrong limb and the triangles between them "
+                                "now reach across the figure. The median distance to the body "
+                                "stays innocent (%.2fx) because the far end of a streak lands "
+                                "ON the body -- do not trust that number for this."
+                                % (_o.name, _s99, _smax, _ratio))
                 # THE CRITERION IS THE CHANGE, NOT THE DISTANCE. The first version of this
                 # compared the absolute figure against an invented 50 mm and aborted on
                 # Jessica's skirt at 286 mm -- but her skirt's median standoff was ALREADY
