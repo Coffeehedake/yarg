@@ -11264,3 +11264,149 @@ and all 65 installed characters still carry the AssetBundle header.
 
 **Unverified in the game.** The previous two attempts both verified perfectly in the file and
 were both wrong, so the only check that counts is Jay reloading him.
+
+### THE REST POSE IS A T-POSE, and that invalidates every cape measurement above (2026-11-21)
+
+Third report on the same fault: **"the cape still cuts through his body and arms."** The 150 mm
+capsule changed nothing visible. Before proposing a fourth radius, the thing worth checking was
+what pose all these numbers describe. Batman's bundle rest pose, in world space:
+
+    fml_un_C_head        x  +0.000  y 1.640
+    fml_un_R_clav        x  +0.011  y 1.450
+    fml_un_R_uparm       x  +0.240  y 1.395
+    fml_un_R_loarm       x  +0.518  y 1.395      <- 518 mm out, at shoulder height
+    fml_un_C_pelvis      x  +0.000  y 0.933
+
+**His forearm is at the same height as his shoulder, half a metre out to the side. He is in a
+T-POSE.** The character select screen shows him with his arms down, because the game poses him.
+So every "at rest" number on this page was measured with his arms held clear of everything, and
+the pose the player is looking at is one I have never measured.
+
+That is why the three fixes failed, and it is the same error three times in different clothing:
+
+- *"At rest the only cape inside him is the collar yoke"* — true, in a T-pose. His arms were
+  nowhere near the cape when I said it.
+- *"The lower drape is 0–2% inside him and what little there is sits behind him"* — true, in a
+  T-pose.
+- The fitted lower bound that produced the arm-swallowing tubes took its "nearest skin" from
+  arms held out horizontally at cape height. In the posed state they are not there at all.
+
+**AND THE COLLIDERS HE NEEDS WERE ALREADY THERE.** Every one of the eleven cape chains
+references both arm capsules and has all along:
+
+    group 210173: C_head(56), C_pelvis_att(112), L_uparm(96), L_loarm(102), R_uparm(96),
+                  R_loarm(102), L_upleg(84), L_loleg(70), R_upleg(84), R_loleg(69)
+
+So the cape is not passing through his arm for want of a collider on his arm. Whatever is
+happening, it is not the absence of a guard, and adding more capsules was never going to find
+it. Note too that `L/R_loarm` sit at y 1.395 at both ends — they are positioned for the T-pose,
+like everything else in the file, and they travel with the bones when the game poses him.
+
+**WHAT I AM NOT DOING: proposing a fourth radius.** Three fixes derived from this pose have
+failed in the game, and the common factor is the pose, not the arithmetic. The next measurement
+has to be taken in the pose the player sees — the scratch Unity project at
+`C:\dev\_unity-scratch\yarg` can load the bundle, apply the idle and render it, and that is the
+only surface where the question "does the cape intersect his forearm" can be asked honestly.
+
+A cheaper control exists too and should come first: **another caped character on the roster that
+behaves.** If one exists, the difference between its cape and Batman's is a shorter road than
+simulating his.
+
+**The 150 mm torso capsule is left in place**, because the measurement behind it — his torso
+capsule sitting 34–70 mm inside his own waist — is about the torso, which a T-pose does not
+move. It is a better torso guard than 111.8 mm whether or not it is the fault. It is unproven,
+and it is one `--write` away from being removed if that is preferred.
+
+### What the solver can actually collide with, read out of the shipped runtime (2026-11-21)
+
+Jay asked the right question after the third failure: *"can't the character's model also be the
+collision model, and both are linked to the bones?"* The answer is in this repo rather than in
+anyone's recollection — `Library/PackageCache/com.vrmc.gltf@39e860e10eeb/Runtime/SpringBoneJobs/`:
+
+```csharp
+public enum BlittableColliderType { Sphere, Capsule, Plane, SphereInside, CapsuleInside }
+```
+
+`SpringBoneCollision.TryCollide` switches on exactly those five and throws
+`NotImplementedException` on anything else. **There is no mesh collider.** The skinned body
+cannot be its own collision surface; a character is approximated by primitives and that is the
+whole of it. The second half of the question is right, though, and worth stating because it
+rules out a theory of mine: the colliders ARE bone-parented and are evaluated per frame
+(`colliderTransform`, `colliderWorldPosition`, `colliderWorldTail`), so a capsule fitted around
+the forearm in the T-pose is still around the forearm once the game poses the arm down.
+
+**Two things in that file matter more than the enum.**
+
+First, collision moves a JOINT, not a surface:
+
+```csharp
+newNextTail = headTransform.position
+            + math.normalize(posFromCollider - headTransform.position) * logic.length;
+```
+
+The solver pushes the joint's tail out and then forces it back to the bone's own length. The
+cape's vertices follow those joints by skin weights. So the sheet spread between and beyond the
+joint lines is not constrained by anything — every joint of a panel can be legally outside a
+capsule while the panel itself passes through an arm. This was written down on this page in
+February about Miku's tie ("a tie whose joints clear the chest by 1.2 mm can still have half its
+width buried") and then never applied to a garment eleven chains wide.
+
+Second, **two of the five types are `Inside` variants**, which keep cloth *within* a volume
+rather than outside it. Nothing in this pipeline has ever written one, and `CapsuleInside` is
+the standard way to keep a skirt around a pair of legs — which is the shape of Jessica's problem,
+not Batman's.
+
+**And a third of Batman's cape cannot be collided with at all.** Of his 160 cape bones, **124
+are driven by a spring chain and 36 are not**, and those 36 carry 605 of his 1,895 cape vertices
+— 32%, the `capeClav`, `capeTrap` and `capeEdge` bones. Rigid geometry is not simulated, so no
+collider in any group can move it. Whatever that third does when the game poses him, it does
+because of where it is bolted, and no radius anywhere will change it.
+
+### Jessica's dress has the same shape of fault, and it is her HIPS that are unguarded (2026-11-21)
+
+Measured while Batman reloaded, read-only, and not acted on: whether the lens that found
+Batman's fault — compare the character's own collider against the character's own skin — says
+anything about her dress. It does, and it is not what the old fitter said.
+
+**Her four skirt chains are `ClothSpring_1_0_0` to `_1_3_0`, four joints each, spanning
+y 0.179–0.788** — hip to floor. Her torso capsule `spine` is **41.4 mm and stops at y 0.752**,
+so the skirt begins exactly where the torso guard ends. From that same axis her body reads:
+
+| band | median | p90 |
+|---|---|---|
+| y 0.75–0.80 | 160.9 mm | 252.5 |
+| y 0.80–0.85 | 163.9 mm | 207.7 |
+| y 0.85–0.90 | 145.5 mm | 187.2 |
+
+**There is no pelvis or hip collider in her file at all** — her ten are two thighs, two shins,
+two upper arms, two forearms, a head sphere and that 41.4 mm spine rod. So across y 0.75–0.90,
+where her hips are 145–164 mm out and her skirt attaches, nothing guards her.
+
+**Her legs, by contrast, are mostly fine**, and this is the measurement that stops the hips
+being fixed by a sweep over everything:
+
+| capsule | radius | its own skin: median / p90 / max |
+|---|---|---|
+| `thigh.L` | 93.9 mm | 80.2 / 94.4 / 113.9 |
+| `thigh.R` | **67.4 mm** | 75.3 / **91.2** / 109.9 |
+| `shin.L` | 70.7 mm | 45.6 / 70.4 / 85.8 |
+| `shin.R` | 70.7 mm | 45.5 / 70.7 / 85.8 |
+
+Both shins sit on their own p90. `thigh.L` sits on its own p90. **`thigh.R` is 67.4 mm against a
+p90 of 91.2** — 24 mm inside its own leg, and 26 mm narrower than the left thigh, whose span is
+different too (0.920–0.475 against 1.012–0.568). Her legs are symmetric and their capsules are
+not, which is a defect in one of them rather than a property of her.
+
+**A skirt is not a cape and the Batman fix does not port.** His cape hangs around one torso, so
+one capsule on one axis is the right primitive. Her skirt hangs around two legs that move
+independently, and `ClothSpring_1_3_0`'s lowest joint sits 21.3 mm from the central axis — in
+the gap between her legs, where a central capsule would shove it sideways into a thigh. What she
+needs is a hip capsule she does not have, plus a right thigh brought level with her left.
+
+**Nothing applied, deliberately** — and by the time this paragraph was written the reason had
+hardened. Batman's 150 mm capsule was reported in the game as *"the cape still cuts through his
+body and arms"*, so the method that produced it has now failed three times, and it is the method
+that would have produced hers. Her numbers above are still worth having: they are measurements
+of her file, not of a fix. But the `CapsuleInside` type found in the runtime the same afternoon
+is a better starting point for a skirt than anything here, and none of this should be acted on
+until a cape or a skirt has been measured in the pose the player actually sees.
