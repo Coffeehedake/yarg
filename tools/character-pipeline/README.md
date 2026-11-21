@@ -10214,3 +10214,77 @@ finger. What it gives him is the hand his author posed.
 **Not verified in the game.** Every number above is the bundle's rest pose. Whether the hand
 reads as fixed on screen is a question for a running YARG, and the character-select podium does
 not exercise the venue path.
+
+### The flat-hand survey, 2026-11-21: 12 candidates, and three reasons not to act on them yet
+
+42 of 65 installed characters read 0.0 degrees of knuckle bend. That is the roster norm and says
+nothing on its own, because a hand is flat either because the author posed it flat or because
+the build flattened it. **Only the SOURCE separates those**, so `flat_hand_survey.py` reads the
+original download archives — not the ~25 `.vrm` under `Documents/YARG-Characters`, which are
+this pipeline's own build outputs and would confirm the damage as though it were the source.
+
+| character | src R | src L | source file |
+|---|---|---|---|
+| Sayuri | **120.1** | 120.1 | `Sayuri dans.fbx` |
+| Chibi Rem | 26.6 | 26.6 | `Rem - Sketchfab Test.fbx` |
+| Skeleton Mage | 22.9 | 23.9 | `Standing 2H Magic Attack 04.fbx` |
+| Vegeta | 22.2 | 20.6 | `Martelo 2.fbx` |
+| Spider-Man PS | 20.3 | 21.8 | `spider man playstation realistic.blend` |
+| **Spartan Mark V** | 20.6 | 20.6 | `MkVSKETCHFAB.blend` |
+| Gwen Stacy | 15.4 | 18.4 | `Happy Idle.fbx` |
+| Sophia | 16.8 | 15.1 | `rp_sophia_animated_003_idling.fbx` |
+| Spider-Man | 15.2 | 14.8 | `Amazing Spider Man 2 Rigged.fbx` |
+| Iron Man Mark 85 | 14.8 | 13.9 | `Og.fbx` |
+| Link | 13.2 | 13.2 | `Link.fbx` |
+| Alastor | 7.6 | 9.5 | `alastor.fbx` |
+| Killer Clown | 0.0 | 0.0 | `Catwalk Walking.fbx` — authored flat, nothing lost |
+
+**Coverage, stated rather than implied: 16 measured, 10 ambiguous, 10 unreadable, 6 with no
+candidate archive — 42 of 42 accounted for.** A survey that does not say what it skipped reads
+as a clean sweep, and this one measured 38% of its subject.
+
+#### Three things that stop this being a work list
+
+**1. Most of these sources are ANIMATION EXPORTS, and that changes which knob applies.**
+`Happy Idle.fbx`, `Catwalk Walking.fbx`, `Martelo 2.fbx`, `Standing 2H Magic Attack 04.fbx`,
+`Sayuri dans.fbx` — each archive holds exactly one model file, so nothing was mis-selected, but
+these are clip downloads rather than base models. **Elite needed BOTH switches because his file
+carried a Mixamo T-POSE clip that the builder deliberately bakes as the bind.** A dance, a walk
+or an idle is not a T-pose, so the builder's own test correctly declines it and no bake happens
+— which means for these characters the only flattener left is the add-on's `autoPose`, and
+`VRM_EXPORT_POSE=rest` alone is the likely fix. That is the knob this file has documented since
+Gadget Hackwrench. **Do not reach for `VRM_KEEP_REST_FINGERS` here without reading each build
+log** and seeing whether a pose was baked.
+
+**2. A large source bend is not evidence of authored intent — Sayuri is the counter-example.**
+120.1 degrees is a clenched fist, and her file is `Sayuri dans.fbx`: a frozen frame of a dance.
+Her rest pose is a posed hand, not a relaxed one. **Flattening her was probably CORRECT**, and
+`VRM_KEEP_REST_FINGERS=1` is exactly the switch whose opt-in note names this case. For scale,
+Gadget Hackwrench carries 45.3 in her installed bundle and is right; Elite's recovered figure is
+28.6. The `SOURCE HAS BEND` flag in that tool is a CANDIDATE marker and nothing more.
+
+**3. The ten "unreadable" are NESTED ARCHIVES, not missing sources.** `the-rock.zip` contains
+`source/The_Rock.7z`; `peach-ssb4.zip` contains `source/model.zip`; `mario-n64-era.zip` contains
+`source/Custom Edited - Mario Customs - Mario N64 Era.zip`. The extractor does not recurse, so
+The Rock, Peach, Mario, Shrek, Tenna, Jinx, Pepsiman and both Clone Troopers are **unmeasured
+rather than clean**. Yoda is a separate failure — his `source/yoda.fbx` extracted fine and
+Blender produced no `WORST` line, which needs looking at rather than assuming.
+
+#### Worth singling out
+
+**Spartan Mark V is this project's standing control and his source carries 20.6 degrees his
+bundle has lost.** He was rebuilt and installed on 2026-11-16 from his documented recipe, so
+that rebuild flattened him. A character used as the reference for other measurements being
+quietly damaged in one of them is worth knowing, and it does not invalidate the left/right
+symmetry work he is the control FOR — that measures sides against each other, and both of his
+hands are equally flat.
+
+**Ambiguous and deliberately not measured**, because this project has picked a wrong source by
+name and date before, and recorded that Iron Man had four candidates separable only by texture
+size: Baby Groot, Batman, Harley Quinn (three), Jessica Rabbit, Judy Hopps, Lola Bunny, Power
+Girl, Prix (three), Sonic, The Mandalorian. Several of those are exactly the characters with
+other open reports, so resolving their sources has value beyond hands.
+
+**No archive at all in Downloads**: Aiko, Kronk, Mickey Mouse, Peacemaker, Vigilante, Yui
+Suzukaze. Kronk's and Judy's hands are separately a limitation of their rigs, which no source
+work reaches.
