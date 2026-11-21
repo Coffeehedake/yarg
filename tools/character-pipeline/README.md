@@ -52,7 +52,7 @@ needed for the job-object breakaway.
 |---|---|
 | ~~**Prix**~~ | **DONE 2026-11-16.** All four reported faults closed, three confirmed by eye on the podium; chest chains restored (5c/15j). What remains is a **31.9 mm arm depth asymmetry** that is her authored pose and hair that reads auburn under the podium light — neither reported, neither a fault |
 | ~~**The Mandalorian**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Reported as armour off-centre; it was a **3.3° spine lean**, not the "two half-skeletons" this file first recorded, and the lean was inherited. Skeleton **37.2 → 6.0 mm** read back off the installed file with Spartan at 0.0 as the control, geometry untouched (armour planes −8.00→−7.70, −8.60→−8.80), load test identical, renders indistinguishable. It does not SHOW — the fault was the rig, not the look. Baking the body with the bones, the other sense of "straighten", throws his helmet 50 mm off; that build is kept beside the installed one in `character-backups/mando-straighten-2026-11-17/` |
-| **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. ~~**DECIDED: leave her** — do not re-open~~ **RE-OPENED 2026-11-18 by Jay**, on new evidence: the interior-fault probe ranks her WORST on the roster (z=8.5). The closure assumed the only symptom was a buried shoe. **The probe's own result is since DOWNGRADED — see below; it is not evidence of a fault.** The re-opening stands on the 92.4 mm leg, which is measured and open |
+| **Jessica Rabbit** | Hips rolled 25.71°, left shoe 67 mm below her own hem. ~~**DECIDED: leave her** — do not re-open~~ **RE-OPENED 2026-11-18 by Jay** (on the interior-fault probe ranking her worst, a result **since DOWNGRADED** and not evidence of a fault). The re-opening stands on the 92.4 mm leg, which is measured. **2026-11-20: the closure's premise is now DISPROVED.** Her 25.71° is a **pose** in the author's `.blend` — rest pose level and symmetric to 1e-8 — not her rest pose, so "every correction trades the buried shoe for a twisted pelvis" does not apply to a rebuild from that file. **Next: clear the pose, exclude the five microphone props, rebuild.** Nothing built, nothing installed — see "Her 25.71° is a POSE in the author's .blend" |
 | ~~**Kronk**~~ | **DONE — STRAIGHTENED AND INSTALLED 2026-11-17.** Not a half-body step: a **57.0 mm lean**, and unlike The Mandalorian his GEOMETRY leans with it (37.2 mm of it), because his source is `Kronk_Doing_the_Hokey_Pokey.usdz` and the T-pose step squares the limbs but never touches the spine. Rebuilt from source, straightened BAKED and re-centred: skeleton **57.0 → 13.4 mm**, geometry **37.2 → 9.6 mm**, and the podium render is visibly straighter. Never reported by anyone |
 | ~~**Aiko**~~ | **DONE — INSTALLED 2026-11-18.** Not a lean but a **YAW**; the sheet over her face was an **alphaMode draw-order artefact**, a builder regression (e921bf62) against her 2026-11-07 intermediate, NOT a recipe gap. Installed `aiko-RECIPE-OPAQUE-v2-colliders`: **yaw −29.95° → +0.03°** (spread 0.15), height 1.700 m, **10 colliders, 0 of 4 chains unguarded** (was 9), face clear in all 10 frames. Backup `character-backups/aiko-2026-11-18/`. A latent chain inversion remains — real in the file, invisible in this idle |
 | ~~**Limb capsules**~~ | **DONE — SWEPT AND INSTALLED 2026-11-17**, and the scope was far smaller than this line implied: of 65 bundles **35 have no spring chains at all**, so their capsules are inert, and 9 more were already right. **194 resizes across 21 characters**, median +11.7 mm; **20 installed, Alcina held** because p90 on her legs is her gown. Still run: 0 worse, 1 better (Inforder Trogen 33.15 → 8.34 mm), 20 unchanged. Load test identical on every pair. (That run measures instantiate-pose to settled-pose, NOT ejection — see "Miku's 1748 mm") |
@@ -1216,6 +1216,83 @@ either way.
 
 Nothing has been installed. Her bundle is untouched and the rebuilt file is a
 scratch artefact.
+
+### Her 25.71° is a POSE in the author's .blend, not her rest pose — 2026-11-20
+
+**The section below concludes "leave her, every correction trades the buried shoe for a twisted
+pelvis". That was true of every source then in play and it is FALSE of the author's own
+`.blend`, which was sitting in `~\Downloads\jessica-rabbit.zip` the whole time** as
+`source/JR - Copy.blend`, 28.71 MB. Put at the head of the old claim rather than after it,
+because a reader who stops at the first relevant section is the reason she was closed twice.
+
+**Her REST pose is level and symmetric.** Measured in the `metarig` (Rigify, 159 bones):
+
+**Every L/R pair is EXACTLY zero at rest**, from `source_pose_check.py`:
+
+| pair | rest dz | posed dz | local mirror delta |
+|---|---|---|---|
+| `thigh` | **0.00** | −597.41 | 1.49e-08 |
+| `shin` | **0.00** | −277.56 | 0.00e+00 |
+| `foot` | **−0.00** | +5.31 | 0.00e+00 |
+| `toe` | **−0.00** | +79.03 | 0.00e+00 |
+| `shoulder` | **0.00** | −0.87 | 1.86e-09 |
+| `upper_arm` | **0.00** | −187.78 | 1.49e-08 |
+
+> **Those dz figures are in the SCENE'S OWN UNITS, not metres** — this armature carries a
+> `matrix_world` scale of about 5.58 and her spine sits at Z ≈ 6.9, so a 1.7 m character does not
+> read in metres here. The load-bearing numbers are the ones that do not depend on the unit: the
+> rest column is **exactly zero** on all six pairs, and the mirror deltas are 1e-8. Do not quote
+> −597 as millimetres of anything.
+
+And the limb angles, which are unit-free:
+
+| | rest L / R | posed L / R |
+|---|---|---|
+| thigh off vertical | **6.2° / 6.2°** | 28.0° / 6.2° |
+| shin off vertical | **0.7° / 0.7°** | 28.4° / 0.7° |
+| upper arm off vertical | **16.3° / 16.3°** | 31.2° / 36.5° |
+
+**The 25.71° lives in `spine`'s `matrix_basis`** — a pose, on top of that rest pose, one of 41
+posed bones — and it is the *same number* this file records as her installed Hips roll.
+
+**And the source is SELF-CONSISTENT, which is the part that reframes the fault.** Under the
+author's pose only her LEFT leg moves (thigh 28.0° against the right's 6.2°), and her feet come
+out level: posed `dz` is +0.0010. So the author rolled the hips and compensated down the leg.
+**Our build kept the roll and lost the compensation** — that is where the buried foot comes from.
+It is not "a fault inherited from a posed source"; it is a self-consistent pose, half-applied.
+
+**Clearing the pose is safe, and the unbound geometry says why.** Of 16 meshes, 10 are bound and
+100% weighted (`Jessica` 28,860 verts, `hair1.001` 50,440, `gloves`, `shoes`, both eyes, three
+`NurbsPath` hair strands, `BezierCurve`). Six do not follow the rig, and none of them is her:
+
+| mesh | verts | weighted | modifier | centre (x, y, z) |
+|---|---|---|---|---|
+| `Body_resculpt1.001` | 9,308 | 9,308 | **NO** | +0.002 +0.222 +6.275 |
+| `Cube` | 2,426 | 0 | NO | −0.207 **+3.080** +10.191 |
+| `Cube.004` | 12 | 0 | NO | −0.207 **+3.100** +9.746 |
+| `Cylinder` | 64 | 0 | NO | −0.206 **+3.098** +9.579 |
+| `Cylinder.002` | 64 | 0 | NO | −0.209 **+3.440** +5.141 |
+| `Cylinder.003` | 160 | 0 | NO | −0.211 **+3.790** +0.610 |
+
+Those five props sit a metre in front of a body centred at y ≈ +0.3, and descend 10.19 → 9.75 →
+9.58 → 5.14 → 0.61. **That is the microphone and its stand** — the thing this file has described
+her as leaning on since 2026-11-16, present as geometry. They must be excluded from a build, not
+carried. `Body_resculpt1.001` is fully weighted with its armature modifier missing, so it is a
+sculpt duplicate rather than her body.
+
+**This is NOT a deliberate exclusion being re-opened.** The builder's machinery around her —
+facing cross-checked against shoulder roots because her feet are posed, `VRM_STRAIGHTEN_LEGS`
+opt-in because "straightening a leg is a DEFORMATION… it is the deformation that tears" — is
+correct reasoning about **the GLB**, where the pose IS the rest shape. The `.blend` is a
+different artefact layer. This file already knew it existed: the viseme table says *"a DIFFERENT
+source blend has keys; the GLB she was built from has none — not attempted"*. It was passed over
+for its shape keys, and nobody checked its rest pose.
+
+**The route, not yet run:** `build_vrm.py` already imports `.blend` directly (line 26) and
+already knows Rigify metarigs keep the metarig beside the generated rig, so clearing the pose and
+excluding the five props is a change of INPUT, not of builder. `Jessica` also carries 2 shape
+keys, which is the viseme item above, so the same rebuild may close both. Nothing is built,
+nothing is installed, and her backup discipline applies when it is.
 
 ### Jessica Rabbit's right leg is 92 mm higher than her left, 2026-11-16
 
