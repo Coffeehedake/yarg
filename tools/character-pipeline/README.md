@@ -1500,7 +1500,34 @@ build**, zero occurrences of the new log lines, and the original `keeping a stat
 bones` intact. That is a stronger control than Alcina, because it is the subject rather than a
 bystander.
 
-#### The deferred reset: implemented, self-verified, and it does NOT unblock her
+#### WHY the repair fails, settled — and the deferral point was simply in the wrong place
+
+The builder already contains the repair. Its **carried mesh** step detects a mesh that came out
+of weighting on an undrivable bone — *"it was weighted while it stood away from the skeleton"* —
+strips the weights and re-runs `ARMATURE_AUTO`. The same step, the same mesh, two paths:
+
+| | default (pose kept) | `VRM_DROP_LEG_POSE=1` |
+|---|---|---|
+| after bone heat | 100% on `GLTF_created_0_rootJoint` | 100% on `GLTF_created_0_rootJoint` |
+| after re-weighting in place | **`Object_10` → 13 bones, `Object_9` → 10 bones** | **1 bone** → ABORT |
+| geometry moved | 0.0000 mm | 0.0000 mm |
+
+Ruled out on the way: the *"put 2 deformed mesh(es) into the armature's own space"* step runs on
+**both** paths, so it is not the difference.
+
+**The difference is that on the default path the body is still in the pose her skirt was authored
+for.** Bone heat always dumps these loose shells on the root — it does so identically on both
+paths — and the recovery works only because, when it re-weights, there is a body under the
+garment. Clear the pose first and the skirt is stranded in mid-air, so the re-weight finds
+nothing near it and returns the root again.
+
+**So the pose must be dropped AFTER the carried-mesh step (~line 4100), not before it.** My
+deferral moved it to ~1948, which is past bone heat but still 2,000 lines short of the step that
+actually produces usable weights. With that step's 13 and 10 bones in hand, `M` is meaningful and
+the `M⁻¹·v` move is the correct final act; with bone heat's root dump it was meaningless, which
+is exactly what went wrong below.
+
+#### The deferred reset: implemented, self-verified, REMOVED — and the check could not fail
 
 The reset is now **deferred** until after automatic weighting, because resetting at line 905
 strands anything not yet weighted — `UNRIGGED` is not even built until ~1724 and bone heat does
@@ -1520,13 +1547,22 @@ DROPPING the static pose: ... the reset is DEFERRED until after automatic weight
 **37,310 vertices moved and the round-trip is 0.000000**, so the arithmetic inverts the deform
 exactly — the self-check is in the code and it is the thing that would catch a wrong `M`.
 
-**And the build still ABORTS at the same guard**, `re-weighting 'Object_10' left it on 1 bone(s)`.
-So the ordering was not the whole story and **she is not fixed**. The next suspect, untested: the
-bind itself. Blender's automatic weights solve over the armature's REST positions, so binding
-"while the pose is applied" may not do what deferring assumed, in which case the weights must be
-borrowed from the nearest vertex of a mesh that IS rigged — evaluated deformed — rather than
-taken from bone heat at all. That is the stray-vertex pass's own method, across meshes instead of
-within one.
+**And the build still ABORTED**, so the code was **REMOVED on the same day**. Two things were
+wrong with it, and the second is the one worth carrying:
+
+**It inverted a matrix that meant nothing.** Bone heat had put both meshes 100% on
+`GLTF_created_0_rootJoint`, so the `M` being inverted was the root's, and the move relocated
+37,310 vertices by a transform with no relation to the body. It corrupted the input to the very
+step that was about to repair them.
+
+**And the self-check COULD NOT FAIL.** It asserted that `M @ (M⁻¹ @ v) == v` — true for *any*
+invertible matrix. It verified the algebra and never the premise, so it printed `0.000000` on
+weights that were garbage and read as a pass. **A check that holds for every possible input is
+not a check**, and this one was written by someone (me) who had recorded that same lesson twice
+in this repo the previous week.
+
+What the move needs is the weights from the carried-mesh step above — 13 bones and 10, not one
+root — which means the drop belongs after that step, as the section above now says.
 
 #### A BYTE-IDENTICAL REBUILD IS NOT A SOUND CONTROL HERE — this builder is non-deterministic
 
