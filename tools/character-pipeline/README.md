@@ -7987,7 +7987,7 @@ code -- the other 57 were written and correct.
 | Yui Suzukaze | mixamo | 1.60 | recovered from her own .yargchar, re-rigged; needs the VRM_TEX map from the submesh headers |
 | Lola Bunny | multiversus | 1.75 | exclude `^Icosphere` |
 | Mickey Mouse | mixamo | 1.10 | archive is called `talking.zip` |
-| Elite Terrorist | mixamo | 1.83 | |
+| Elite Terrorist | mixamo | 1.83 | **As installed 2026-11-21:** build with `VRM_KEEP_REST_FINGERS=1 VRM_EXPORT_POSE=rest` -- BOTH, each is a no-op without the other. Source is `Downloads/elite-terrorist-csgo.zip` (`source/harold_cameron.fbx`), texmax 1024. Recovers 28.6/23.9 deg of knuckle bend his earlier build flattened. His rig has NO ring finger and never did (12/15 slots); the little finger is a weightless `*_fused` stand-in. md5 `0a304565` |
 | Jessica Rabbit | rigify_plain | 1.80 | **Corrected 2026-11-12 — the values that were here described a build that was never installed.** Source is `jessica_rabbit.glb`, proven by the installed bundle's own node names (`GLTF_created_0_rootJoint` and sixteen `Object_NN` meshes, which exist only in the GLB). Exclude `^(Icosphere|Object_12|Object_13|Object_15|Object_17|Object_19|Object_21)$` — the stray sphere and the six `metal` mic-stand parts, the same seven objects the old blend-era `^(BezierCurve|Cylinder|Cube)` dropped under `.blend` names. **Without it the build refuses to run**: those unrigged meshes inflate the scene's Z by 3.33x and it aborts *implausibly narrow, 0.1397 m wide for 1.8000 m tall*. **Pass NO `VRM_TEX` and an EMPTY texture directory** — the recorded `rskin=Skin_makup_0003_Body_multires_sculpt.001_m.jpg` is an atlas for the `.blend`'s UV layout on a black background, and on the GLB's UVs it paints half her face and the inside of her mouth solid black; the installed bundle carries the GLB's own `Image_5` and none of the zip's `Body_resculpt1*` maps. Keep `VRM_RIG_MORE='^glitter-transprnt$@spine#4,4,0.2'` for the skirt, hairrig `^hair`, then **round-trip through `add_colliders.py` with `VRM_RECOLLIDE=1`** — that is where her colliders come from and it normalises bone rolls; without it 31 bones disagree on rotation, with it zero. Result against the original bundle: 178 of 178 names, 0 rotation mismatches, 177 of 178 lengths within 0.5 mm, 15,706,041 bytes against 15,590,635. The one residual is `GLTF_created_0_rootJoint`, 13.4 mm longer in the original. Her 1.867 m is NOT a height: her REST mesh data spans 1.8672 m while her POSED model measures 1.8000 m, and the sweep reads rest bounds. The same 1.8672 is in the `.vrm` behind the original build. She is the only one of 52 characters with a documented target that misses it, so it is hers alone and not an exporter fault |
 | Alice Ivy | cc_base | 1.70 | exclude `^COLLIDER`. **As installed 2026-11-12:** `VRM_BREASTRIG=1 VRM_VISEME_GAIN=2.2 VRM_VALUE_ALPHA=1` and `VRM_BLEND_MATERIALS="Std_Eyelash"`. **`VRM_VALUE_ALPHA=1` is not optional for her**: her `Custom_Eye` mesh carries `EyeMoisture_Left`/`_Right`, a wet-film shell in front of the eyeballs that is black at **alpha 0.051, `blend_method=HASHED`, no texture**, and without the switch it ships `baseColorFactor [0,0,0,1]` — **a solid black disc over each eye**, with her correctly-textured eyes intact underneath. Checked before turning it on: on her it changes those two materials and nothing else (every other material either has an image in Alpha or sits at 1.0) — the lash only. **Her four hair materials stay cutouts on purpose**: they lose 1% of their ink to the 0.5 threshold, so a blend recovers nothing and gives up a cutout's sorting. Built both ways and compared on the podium before deciding. **Updated 2026-11-12:** add hairrig `Hair` (positional 10). She shipped with two chest chains and no hair chain; `Hair` matches her mesh `HS_SBH_Hair_G9_Shape`, 30,717 verts hanging to z=1.394 under a head bone at 1.533, and gives her four 4-joint `HairSpring` chains with 25,713 vertices weighted onto them. Adding it changes nothing else: `identify_build.py` compares 149 bones with **0 length and 0 rotation mismatches**, the names falling to 89.2% purely because of the 18 new bones |
 | Ariel | daz | 1.70 | hairrig `Hair`. The ARGV was recovered from her own `.yargchar` — `lPectoral` and `abdomenUpper` are DAZ names, and the mesh bounds give the height — but **she is not sourceless, and this row was read that way twice**: her model is `base-female-character.zip`, `source/Ariel For Sketchfab.fbx`. **As installed 2026-11-12:** `VRM_BREASTRIG=1` and `VRM_BLEND_MATERIALS="Eyelashes;Hair Cap"`. `EyeMoisture` and `Cornea` are deliberately left as cutouts and are the only `HARDCUT` and `INVISIBLE` left in the installed set: at a lowered cutoff `EyeMoisture` drew an opaque white film and erased her irises, and a blend is a different operation on the same suspect alpha |
@@ -10147,3 +10147,70 @@ does, is that the curl survives to the `.yargchar` -- it does not.
 **Three instruments, and only the one with the strongest reason to be doubted was right.** The
 Blender reading was correct; the hand-rolled glTF reader was not. Doubt is not evidence, and a
 second opinion is only worth having if it is a sound one.
+
+#### INSTALLED 2026-11-21: it takes BOTH knobs, and I had only ever run them separately
+
+**The answer is `VRM_KEEP_REST_FINGERS=1` AND `VRM_EXPORT_POSE=rest` together.** Each is a no-op
+without the other, which is exactly why two earlier passes concluded the opposite things:
+
+- `VRM_EXPORT_POSE=rest` alone does nothing, because the Mixamo clip bake has already flattened
+  the hand before the add-on is reached. Control and treatment came out identical to the decimal.
+- `VRM_KEEP_REST_FINGERS=1` alone puts the curl into the Blender scene and into the `.vrm`'s
+  node tree -- and then the add-on's `autoPose` re-straightens every humanoid chain on the way
+  out, so the `.yargchar` reads 0.0 again.
+
+That is also what reconciles the reading that looked impossible: Blender reported 28.6 degrees
+from a `.vrm` whose exported bundle read 0.0. **Both were right.** Blender's glTF import reads
+the NODE HIERARCHY, which carried the curl; UniVRM builds its humanoid from the VRM extension's
+own pose, which `autoPose` had straightened. Two readers, two different parts of one file. I had
+written that Unity was re-flattening the hand -- it was, but the cause was ours and upstream of
+Unity, not a limitation of the importer.
+
+**Ruled out before installing, so the size change is not mistaken for a content change.** The
+new bundle is 3,613,844 bytes against 2,351,699 -- 54% larger -- and the build log carries a
+texture-packing error, so this was checked rather than assumed:
+
+| | textures | format | materials | meshes | verts |
+|---|---|---|---|---|---|
+| old | 2 x 1024x1024 | ARGB32, 5,592,404 B, 11 mips | 2 | 1 | 3,132 |
+| new | 2 x 1024x1024 | ARGB32, 5,592,404 B, 11 mips | 2 | 1 | 3,132 |
+
+Identical content, identical texture format. The difference is bundle compression, not anything
+that reaches the screen.
+
+**Verified on the INSTALLED file, not the copy source**, with two controls that must not move:
+
+```
+character                     R max    L max    |R-L|   R map   L map
+Elite Terrorist                28.6     23.9      4.8     4/5     4/5
+Gadget Hackwrench              45.3     45.3      0.0     5/5     5/5     <- control, unchanged
+Batman                          0.0      0.0      0.0     5/5     5/5     <- control, unchanged
+
+limb rest pose   upperarm.R 0.0  forearm.R 0.0  upperarm.L 0.0  forearm.L 0.0
+                 thigh.R 0.8  shin.R 3.5  thigh.L 0.8  shin.L 4.6
+mic-grip bones   6/6 (no NO-MIC flag); 12/15 right-finger slots, Ring absent from his SOURCE rig
+mic placement    16.4 mm, 0.90% of his height   <- control band: median 0.24%, worst 1.45%
+```
+
+The 28.6 and 23.9 match his source FBX exactly, and the 4.8 degree left-right asymmetry is his
+own rather than the manufactured 0.0 a flattened hand reports.
+
+**One thing genuinely changed that was not the target, and it is within the population.** His
+legs read 0.8 / 3.5 / 0.8 / 4.6 where the old bundle read 0.0 across the board -- `VRM_EXPORT_POSE
+=rest` keeps his source's slight knee bend instead of the add-on's perfectly straight legs. The
+roster's worst-segment angle runs median 0.0, p75 2.6, p90 5.4, max 17.5, so 4.6 sits around p85,
+and Thanos at 17.5 and Gadget at 15.5 are both fine. **His arms, which were the real risk of this
+knob, read 0.0 on all four segments** -- the builder's own T-pose step straightens them and the
+knob never touched it.
+
+Installed md5 `0a304565`, 3,613,844 bytes. Backup `character-backups/Elite Terrorist.prerebuild-
+2026-11-21.cae4a287.yargchar`, verified byte-identical before the copy. `Assets/__TempExport`
+removed.
+
+**Still true and unchanged:** his rig has no ring finger and never did, so he remains 12/15, and
+his little finger is still a weightless `*_fused` stand-in. Nothing here gives him a fifth
+finger. What it gives him is the hand his author posed.
+
+**Not verified in the game.** Every number above is the bundle's rest pose. Whether the hand
+reads as fixed on screen is a question for a running YARG, and the character-select podium does
+not exercise the venue path.
