@@ -9837,3 +9837,64 @@ whichever one is being tested; there is nothing to migrate.
 
 **Still unverified by use:** that the nine actually appear. The symbol table says the code is
 there; only the running game says they are drawn.
+
+### Report 1, Elite Terrorist: what his hand is NOT, and why that is worth having
+
+`knuckle_bend_installed.py` brings the 2026-11-14 flattening measurement to the artefact the
+game actually loads. That earlier work rebuilt 35 characters from source and found the add-on
+replacing authored bend with exactly 0.0 degrees; this asks the installed bundles the same
+question, joint to joint, and distinguishes a finger that reads 0.0 from one whose slots are
+not mapped at all -- printed as `-`, never as 0.0, because a blank and a zero mean opposite
+things and averaging them hides every mitten hand on the roster.
+
+**Elite Terrorist reads 0.0 on all four of his mapped fingers. So do 43 of 65 characters.**
+
+| | Thumb | Index | Middle | Ring | Little | mapped |
+|---|---|---|---|---|---|---|
+| Gadget Hackwrench | 28.3 | 29.9 | 45.3 | 29.0 | 29.0 | 5/5 |
+| Thanos | 32.3 | 22.0 | 44.1 | 28.7 | 32.6 | 5/5 |
+| Doom Slayer | 35.3 | 34.3 | 21.8 | 30.5 | 20.9 | 5/5 |
+| **Elite Terrorist** | **0.0** | **0.0** | **0.0** | **-** | **0.0** | **4/5** |
+| Batman | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 5/5 |
+| Jessica Rabbit | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 5/5 |
+| Spartan Mark V | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 5/5 |
+| The Rock | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 5/5 |
+
+19 carry bend, **43 read flat**, 3 have no mapped finger at all. **Flatness is the population
+norm and therefore cannot be what singles Elite out** -- Batman, Jessica Rabbit, The Rock and
+the roster's own control all read exactly the same and nobody has reported their hands. This is
+the shape of mistake this file already records once: a reported shine that turned out to be a
+shader default 63 of 65 characters shared. Fix the reported one, report the population, do not
+sweep.
+
+**That is a useful negative.** The obvious reading of "his hand is crumpled" plus "the add-on
+flattens hands" is that he needs rebuilding with `VRM_EXPORT_POSE=rest`, and acting on it would
+have meant touching 43 characters to chase a default.
+
+#### What IS unusual about him, and why it still does not close the report
+
+- **His rig has three real fingers.** `RightHandThumb1-4`, `Index1-4`, `Middle1-4`, and
+  **no ring bone anywhere**. His little finger is `right_little_*_fused` -- one of ours, from
+  `VRM_FILL_FINGERS`, weightless by design.
+- **270 vertices on the whole right hand across 9 bones**, against Batman's ~600 across 20.
+- `RightHandIndex1` carries no geometry at all, while `Index2` and `Index3` carry 20 and 16.
+
+None of that distinguishes him from characters nobody has complained about. Kronk and Judy Hopps
+have fewer finger bones than he does; Vigilante, Peacemaker, Xenomorph and Pomni are all 4 of 5
+mapped. **So no measurement in this repo currently separates Elite's hand from hands that are
+reported as fine**, and saying so is the honest end of this pass rather than picking the most
+alarming number on his row and calling it the cause.
+
+#### What would actually answer it
+
+"Crumpled" is a claim about SHAPE, and every number above is about pose or topology. The
+instrument this file already prescribes for that is `HandIsolate` -- keep only the triangles all
+of whose vertices are weighted to that hand, switch every other renderer off, frame on the
+hand's own axes, and bound the kept triangles by hand rather than trusting
+`RecalculateBounds`, which measures the whole vertex array and once framed an "isolated hand"
+inside a 1049 x 1200 x 492 mm box.
+
+**It cannot be pointed at him as things stand:** `YargCharHandRender` takes `-vrmList`, and
+Elite Terrorist has no surviving `.vrm` -- 25 exist under `Documents/YARG-Characters` and he is
+not among them. Either the renderer needs to accept a `.yargchar`, or his source has to be
+found. That is the next step and it is a build task, not a measurement.
