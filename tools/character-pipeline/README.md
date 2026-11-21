@@ -9996,6 +9996,127 @@ vertices on all sixteen joints**, because her four panels are never within 60 mm
 The exclusion is widened to the whole garment anyway, since a measurement that happens to be
 safe is not the same as one that is.*
 
+
+### The collider PLACER, built 2026-11-21 — and it says neither report is a placement problem
+
+Both open penetration reports ended at the same missing capability: `patch_chain_collider.py`
+clones an existing capsule and changes its radius, which fixes a collider that is in the right
+place and the wrong size (Miku's tie), and cannot help a collider that is in the wrong place
+(Jessica's `spine` running up her back, Batman's cape held off his pelvis axis). So: build the
+thing that places one. Two tools, `fit_body_capsule.py` and `place_collider.py`.
+
+**Placing a collider needs no new GameObject.** `Offset` and `Tail` are stored in the host
+BONE's frame, so a capsule is positioned by choosing a bone and writing two vectors in that
+bone's coordinates. Nothing is created, parented or added to the hierarchy. That is the fact the
+whole writer rests on, and it is why this was a day's work rather than a week's.
+
+#### The fit is two inequalities, and the axis is the unknown
+
+    the solver holds a joint CENTRE at  r + j  from the axis, j = the joint radius
+    not pulled nearer the axis than the SKIN is   ->  r + j >= s
+    not starting INSIDE the capsule on frame one  ->  r + j <= d
+
+A capsule exists iff `max(s) <= min(d)`, so the axis is whatever position makes that true, and
+the quantity to maximise is `min(d) - max(s)`. Four parameters — the horizontal position of each
+end — by coordinate descent, with two constraints that are not arithmetic: the axis must stay
+**inside the body** (per-height skin centroid and median radius), and the radius must be **no
+wider than the body is over that height**.
+
+#### Four of my own errors, each caught by the control, and one that the control could not catch
+
+Miku's tie is the control throughout: her answer is derived, applied and confirmed in her bundle.
+
+1. **The axis is not vertical.** The first version searched horizontal position only, on the
+   stated grounds that every body axis in this roster is vertical. Her verified capsule runs
+   (0, 0.8885, **+0.0651**) → (0, 1.3220, **−0.0026**), leaning forward 65 mm as her torso does.
+   At her real axis the slack is **+2.3 mm**; the best vertical axis anywhere scores **−33.8**,
+   and the search ran 280 mm out to her side chasing a shallow maximum rather than reporting
+   failure. A restriction asserted from the roster, refuted by the one character with a known
+   answer. *(Her tie also has ONE chain, so nothing about CHOOSING an axis was ever tested
+   by it either -- a heuristic that picks something cannot be validated on a case with a
+   single candidate.)*
+2. **The search started outside the body.** Seeded at the whole-body centroid, which for a
+   skirt spanning hip to ankle is 150 mm behind her ankles, so the inside constraint rejected
+   the starting point and the search died on its first evaluation — reporting "nothing to fit
+   against", which reads as a fact about the character. It now starts on the body's own axis:
+   the per-slice centroid at each end.
+3. **The plausibility gate rejected the control.** First written as a p10–p90 band over all skin
+   projecting onto the axis, which for a torso-length axis pulls in arms and twintails at
+   675 mm; her 86.6 mm read as "below p10" of a band whose median was mostly her arms. The test
+   that survives is simpler and says what it means: **a stand-in for the body is not wider than
+   the body.** Her 86.6 against a body radius of 103–160 mm under-approximates, which only means
+   it catches less; Jessica's front panel wants 206.9 against 86–163, which would hold her skirt
+   on a cylinder 40–120 mm off her all the way round.
+4. **The control had to be asked the right question.** The search is an optimiser and there are
+   many feasible axes — it finds one at 76.9 mm where her bundle carries 86.6, and both are
+   correct for their own axis. So the control is not "does it rediscover her capsule" but **does
+   it read the installed, verified capsule as feasible**. `--at` scores a given axis, and on hers
+   it returns **[85.4, 87.8], midpoint 86.6 mm** — the applied figure, to the tenth.
+
+**THE FIFTH WAS NOT CAUGHT BY ANY OF THAT, and it is the one worth remembering.** `cci.qrot`
+unpacks `w, x, y, z = q`, so a conjugate negates the last three. Mine negated the first three.
+The fitter handed over a position **467 mm behind her**, and `place_collider.py` wrote it,
+verified it, and reported success — because its round-trip check compares what it WROTE against
+what it was TOLD, and cannot see that what it was told was wrong. Four honest clearance numbers
+for a capsule in the wrong place. This is the same failure this file records
+under the 21 orphaned components on 11-15: a check that follows the links a patch wrote can
+only confirm it wrote them.
+
+Two checks now exist that would each have caught it, and they are in different tools on purpose:
+the fitter asserts its own frame conversion round-trips to the world axis it fitted, and it
+prints that world axis as `--expect-world` for the writer to check independently. Fed the old bad
+vectors, the writer now refuses: *"end A lands at 0.0112 0.3314 −0.6506 but was expected at
+0.0639 0.2089 −0.2029, 467.2 mm out."*
+
+#### What the writer refuses, and what it proved
+
+| | |
+|---|---|
+| a joint that would START inside the new capsule | unless `--allow-displace MM` states the displacement accepted |
+| a chain that already has a collider group | unless `--append`, which keeps the existing guard |
+| a host bone with non-uniform world scale | a capsule radius is one number; a non-uniform scale makes it a fiction |
+| a position that is not where the fitter meant | `--expect-world`, above |
+| an orphan | both sides of the component link, verified in the direction that can fail |
+| a bad round trip | re-reads its own output in WORLD space and compares radius and both ends |
+
+Proven end to end on a **copy** of Jessica's bundle, not the installed one: her right dress panel
+got a placed capsule at 116.6 mm, clearances 5.7 / 6.7 / 14.6 / 20.1 mm, round trip exact to
+0.000 mm, 9 other chains verified unchanged. `collider_group_check_installed.py`, which knows
+nothing about any of this, reads the copy independently: **10 colliders in 1 group → 11 in 2,
+all grouped and used.** The installed character is untouched.
+
+#### The answer, which is not the one the tool was built for
+
+**Jessica Rabbit — 1 of 4 panels.** With a body-constrained tilted axis per panel:
+
+| panel | interval | verdict |
+|---|---|---|
+| `ClothSpring_1_1_0` right | [111.0, 122.3] → **116.6 mm** | **feasible and plausible** |
+| `ClothSpring_1_0_0` front | [196.4, 217.4] → 206.9 mm | wider than her body anywhere (max 163.2) |
+| `ClothSpring_1_2_0` back | [83.8, 81.1] | crosses by **2.7 mm** |
+| `ClothSpring_1_3_0` back-right | [192.5, 190.7] | crosses by **1.8 mm** |
+
+The two crossings are small and they are the cape failure in miniature: those panels' top joints
+are authored **behind their own skin**, by 2.7 and 1.8 mm, which is what a waistband sewn into a
+body looks like in a rest pose. A collider cannot hold a joint outside a surface the joint starts
+inside, and a VRM collider group attaches to a SPRING and not to a joint, so excluding them means
+splitting the chain — a rig change, not a placement.
+
+**Batman — 3 of 11 cape chains** pass the arithmetic (centre 136.6 mm, left and right `cape_a`
+243.6 and 232.2 mm), 3 come out 400–530 mm and are refused as wider than his body, 3 cross, and 2
+cannot be fitted at all. **But the gate is LOOSE ON HIM and I am not going to tune it to hide
+that:** it compares the radius against the body's widest cross-section, and over his band — which
+reaches his shoulders — that includes his arms at 693 mm. His centre cape capsule would span
+ankle to shoulder at 136.6 mm, holding the cape on a cylinder that engulfs his legs. It passes
+the test as written and I do not believe it, which is a statement about the test.
+
+**So nothing is applied to either character, and the placer is why that is now a conclusion
+rather than a gap.** Before today "a new capsule, placed" was the unbuilt thing both reports
+pointed at. It is built, it is validated against the one case with a known answer, and it says
+the remaining obstacle is not where the colliders are: it is that one capsule per chain cannot
+describe a tapering body, and that cloth authored under the skin cannot be pushed out of it. Both
+of those are rig work on characters nobody has asked to have re-rigged.
+
 ### The rebuild landed, 2026-11-21: the nine mic-less characters are no longer invisible
 
 Built from `dev` at `e2e1aba1`, clean tree, which contains `0d3d4e4f`. 582 MB, 51.8 minutes,
