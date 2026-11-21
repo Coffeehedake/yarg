@@ -76,10 +76,11 @@ def measure(path):
         return world(by_name[bone])[0]
 
     out = {}
-    for f in FINGERS:
-        pts = [pos("Right %s %s" % (f, j))
-               for j in ("Proximal", "Intermediate", "Distal")]
-        out[f] = None if any(p is None for p in pts) else bend(*pts)
+    for side in ("Right", "Left"):
+        for f in FINGERS:
+            pts = [pos("%s %s %s" % (side, f, j))
+                   for j in ("Proximal", "Intermediate", "Distal")]
+            out[(side, f)] = None if any(p is None for p in pts) else bend(*pts)
     return out, None
 
 
@@ -109,42 +110,64 @@ def main():
             continue
         rows.append((name, vals))
 
-    def best(v):
-        got = [x for x in v.values() if x is not None]
-        return max(got) if got else -1.0
+    def side_max(v, side):
+        got = [v[(side, f)] for f in FINGERS if v[(side, f)] is not None]
+        return max(got) if got else None
 
-    rows.sort(key=lambda t: -best(t[1]))
-    print("Knuckle bend in degrees, right hand, measured joint to joint in the INSTALLED")
-    print("bundle. 0.0 is a straight finger. '-' means the slots are not mapped -- nothing")
-    print("to measure, which is NOT the same as a zero.")
+    def side_n(v, side):
+        return sum(1 for f in FINGERS if v[(side, f)] is not None)
+
+    # Sorted by ASYMMETRY, because that is the recorded diagnosis for Elite Terrorist:
+    # "one hand posed, the other not". A character flat on BOTH hands is the roster norm
+    # and says nothing; a character bent on one hand and flat on the other is the finding.
+    def asym(v):
+        r, l = side_max(v, "Right"), side_max(v, "Left")
+        return abs(r - l) if (r is not None and l is not None) else -1.0
+
+    rows.sort(key=lambda t: -asym(t[1]))
+    print("Knuckle bend in degrees, measured joint to joint in the INSTALLED bundle, BOTH")
+    print("hands. 0.0 is a straight finger. '-' means the slots are not mapped -- nothing to")
+    print("measure, which is NOT the same as a zero.")
     print()
-    print("%-26s %s %8s %6s" % ("character", " ".join("%8s" % f for f in FINGERS),
-                                "max", "mapped"))
-    print("-" * 94)
-    flat, bent, mitten = [], [], []
+    print("%-26s %8s %8s %9s %8s %8s" % ("character", "R max", "L max", "|R-L|",
+                                         "R map", "L map"))
+    print("-" * 76)
+    flat, bent, mitten, asyms = [], [], [], []
     for name, v in rows:
-        cells = " ".join(("%8.1f" % v[f]) if v[f] is not None else "%8s" % "-"
-                         for f in FINGERS)
-        n = sum(1 for f in FINGERS if v[f] is not None)
-        m = best(v)
-        print("%-26s %s %8s %4d/5" % (name[:26], cells,
-                                      ("%.1f" % m) if m >= 0 else "-", n))
-        if n == 0:
+        r, l = side_max(v, "Right"), side_max(v, "Left")
+        a = asym(v)
+        print("%-26s %8s %8s %9s %6d/5 %6d/5"
+              % (name[:26],
+                 ("%.1f" % r) if r is not None else "-",
+                 ("%.1f" % l) if l is not None else "-",
+                 ("%.1f" % a) if a >= 0 else "-",
+                 side_n(v, "Right"), side_n(v, "Left")))
+        if r is None and l is None:
             mitten.append(name)
-        elif m < 0.05:
+        elif (r or 0.0) < 0.05 and (l or 0.0) < 0.05:
             flat.append(name)
         else:
             bent.append(name)
+        if a >= 0:
+            asyms.append((a, name))
 
     print()
-    print("%d characters: %d carry bend, %d read FLAT (every mapped finger 0.0), %d have no"
+    print("%d characters: %d carry bend on at least one hand, %d read FLAT on both, %d have"
           % (len(rows), len(bent), len(flat), len(mitten)))
-    print("mapped finger at all.")
-    print()
-    print("A FLAT row is the add-on's T-pose estimate having replaced authored bend, and is in")
-    print("principle recoverable by rebuilding with VRM_EXPORT_POSE=rest -- but only if the")
-    print("source and recipe still exist. A row with few mapped fingers is a mitten hand and")
-    print("has nothing to recover: no knob reaches a bone the rig does not have.")
+    print("no mapped finger at all.")
+    if asyms:
+        asyms.sort()
+        vals = [a for a, _n in asyms]
+        def q(f):
+            return vals[min(len(vals) - 1, int(len(vals) * f))]
+        print()
+        print("LEFT-RIGHT ASYMMETRY over %d measurable characters: median %.1f, p90 %.1f, "
+              "max %.1f" % (len(vals), q(0.5), q(0.9), vals[-1]))
+        print("Worst five: %s" % ", ".join("%s %.1f" % (n, a) for a, n in asyms[-5:][::-1]))
+        print()
+        print("A character FLAT ON BOTH HANDS is the roster norm and is not evidence of")
+        print("anything. 'One hand posed, the other not' is an ASYMMETRY, so it is this")
+        print("column that would show it, not the absolute bend.")
     if errs:
         print()
         for name, why in errs:

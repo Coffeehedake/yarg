@@ -9898,3 +9898,53 @@ inside a 1049 x 1200 x 492 mm box.
 Elite Terrorist has no surviving `.vrm` -- 25 exist under `Documents/YARG-Characters` and he is
 not among them. Either the renderer needs to accept a `.yargchar`, or his source has to be
 found. That is the next step and it is a build task, not a measurement.
+
+#### His source WAS in Downloads, and it settles it: the build flattened his hand
+
+Jay pointed at `Downloads/elite-terrorist-csgo.zip` -- 2 entries, no traversal, no absolute
+paths, extracted to its own empty directory. It holds `source/harold_cameron.fbx` and one
+texture. So the "no surviving source" above was wrong about where to look, not about the roster:
+his `.vrm` is still gone, but the FBX it was built from is not.
+
+`knuckle_bend_source.py` measures the same quantity in the source that
+`knuckle_bend_installed.py` measures in the bundle, joint to joint, printing the three bones it
+used for each finger so a wrong name match is visible rather than averaged in.
+
+| | thumb | index | middle | ring | little |
+|---|---|---|---|---|---|
+| `harold_cameron.fbx` RIGHT | 11.5 | 5.5 | **28.6** | missing | missing |
+| `harold_cameron.fbx` LEFT | 12.0 | 6.4 | **23.9** | missing | missing |
+| **installed bundle, both hands** | **0.0** | **0.0** | **0.0** | - | 0.0 |
+
+**The source carries up to 28.6 degrees of authored knuckle bend and the installed bundle carries
+none.** That is the add-on's T-pose estimate having replaced it, exactly as the 2026-11-14 roster
+work describes, and it is recoverable: his recipe is `rig=mixamo`, height 1.83, no special
+arguments, so a rebuild with `VRM_EXPORT_POSE=rest` is the whole fix.
+
+Two things the source also settles:
+
+- **The three-finger rig is the MODEL's, not ours.** `mixamorig:` thumb, index and middle, 49
+  bones, and **no ring or little bone anywhere in the source**. So his missing Ring slot is not
+  a mapping we failed to make, and the weightless `right_little_*_fused` chain in his bundle is
+  `VRM_FILL_FINGERS` doing its job rather than a defect.
+- **"One hand posed, the other not" is not what is wrong with him.** That is the cause recorded
+  against his name in the runlist, and the source asymmetry is **4.8 degrees** -- both hands are
+  posed, similarly. In the installed bundle the asymmetry is **0.0**, and the worst on the whole
+  roster is Scott Hall at 2.6. No character on this roster has one posed hand and one flat one.
+
+#### A correction to the section above this one
+
+That section says flatness "cannot be what singles Elite out" and that is still literally true --
+43 of 65 share it. But the sentence invites the wrong conclusion, and this one is worth being
+exact about: **flatness IS his defect. It simply is not unique to him.**
+
+The rule that applies is the one this file already records for Sophia's shine: *fix the reported
+one, report the population, do not sweep*. Flat-on-both-hands is uninformative as a DISCRIMINATOR
+and is still a real fault wherever the source had bend to lose. Which of the other 42 are also
+defective is a question about each of their sources, not about the bundles -- and that is why the
+source measurement is the one that decides, for every one of them.
+
+**Not rebuilt here.** The fix is one build and one install, both of which replace a working
+character, so it is put rather than taken: `VRM_EXPORT_POSE=rest`, back up to
+`character-backups/` first, and verify by re-running `knuckle_bend_installed.py` against the
+source figures above, which now exist to be compared with.
