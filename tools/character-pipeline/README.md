@@ -10092,3 +10092,58 @@ whichever character is holding one.
 **Which of the other 42 flat-handed characters this applies to is not established.** It is a
 question about each of their SOURCES, not their bundles, and `knuckle_bend_source.py` is the
 tool for asking it one at a time.
+
+#### NOT INSTALLED: the curl reaches the .vrm and UNITY FLATTENS IT AGAIN
+
+The export ran clean -- `exit=0`, `ALL DONE, failures=0`, `avatar human=True valid=True`,
+`renderers skinned=1 static=0`, **`mic-grip bones 6/6`** -- and produced a 3,603,745-byte
+`Elite Terrorist.yargchar`. **It was still not installed**, because a clean exit is a statement
+about the exporter and not about the artefact. Measured on the exported bundle:
+
+| | thumb | index | middle | arms |
+|---|---|---|---|---|
+| source FBX | 11.5 | 5.5 | **28.6** | 51.6 (A-pose) |
+| `elite-keepfingers.vrm` | 11.5 | 5.5 | **28.6** | 0.1 |
+| **exported `.yargchar`** | **0.0** | **0.0** | **0.0** | 0.0 |
+
+So there is a **THIRD** flattening step, after the two already recorded, and it is in Unity. The
+exporter does not build the avatar -- it reads `animator.avatar` and only logs whether it is
+human and valid -- so the re-flattening happens inside the VRM import that creates that avatar,
+which is where `Avatar` generation enforces its own humanoid pose. This is the same class as
+"the Animator does not read what we patch" recorded for Spartan Mark V: the rest structures in
+the file are not what Unity's humanoid machinery takes as authoritative.
+
+Installing would have replaced a 2,351,699-byte bundle with a 3,603,745-byte one -- **53%
+larger** -- that measures identically on the reported fault. The backup
+(`character-backups/Elite Terrorist.prerebuild-2026-11-21.cae4a287.yargchar`, verified
+byte-identical) was taken and is unused; the installed file still reads md5 `cae4a287`.
+
+#### A second instrument of mine was unsound, and the first one was right
+
+Doubting the Blender reading of the `.vrm` -- this file warns that a `.vrm` read back into
+Blender invents half of what you measure -- I wrote a reader that parses the glTF chunk
+directly. It reported the control and the fixed build as **identical**, which would have meant
+the committed fix was a no-op.
+
+**That reader was wrong.** It accumulated node TRANSLATIONS up the tree and ignored rotations,
+and in a glTF a child's translation is an offset in its parent's frame: the bend lives in the
+ROTATIONS. 44 of its 56 nodes carry a non-identity rotation and it discarded every one. The
+"identical" result was two wrong numbers agreeing.
+
+Comparing the node data exactly, the two builds differ where they should -- at the DISTAL
+joints, which is where zeroing a finger's pose basis has most effect:
+
+| node | control rotation | `VRM_KEEP_REST_FINGERS=1` |
+|---|---|---|
+| `RightHandMiddle3` | 0.0011, 0.0096, 0.0333 | **0.0884, -6e-06, -2e-07** |
+| `RightHandIndex3` | -3e-06, 1e-04, -0.0315 | **-0.0809, -7e-09, 1e-08** |
+| `LeftHandMiddle3` | 0.0005, -0.0074, -0.0304 | **0.1091, 1e-05, 1e-06** |
+
+The proximal and intermediate joints differ only at the 1e-7 level, which is this builder's
+known run-to-run noise and not a change. So the committed switch does what its commit says: it
+puts the author's curl into the `.vrm`. What that commit does NOT establish, and this entry
+does, is that the curl survives to the `.yargchar` -- it does not.
+
+**Three instruments, and only the one with the strongest reason to be doubted was right.** The
+Blender reading was correct; the hand-rolled glTF reader was not. Doubt is not evidence, and a
+second opinion is only worth having if it is a sound one.
