@@ -10215,6 +10215,46 @@ characters have been through several of them — springs, alpha, yaw, shine, wei
 carry the `UnityFS` header**. That is a population-wide test of ten writers against the real
 artefacts, and it passes. The grep only explains why.
 
+### "None of them are fixed" — 2026-11-21, and the colliders were the wrong CLASS of fix
+
+Jay looked at the roster in the game after the day's work and reported: **"none of them are
+fixed."** He is right, and the reason is in how a collider radius is derived, not in how it was
+written.
+
+**The upper bound on a collider radius is "no joint starts inside it at rest",** because a joint
+that starts inside is shoved out on frame one -- the exact fault that made the shared capsule
+unusable for Miku's tie to begin with. Her radius leaves every joint 1.2 mm or more clear;
+Batman's leaves every joint 3.5 mm or more clear. **So both fixes are no-ops in the rest pose by
+construction.** They govern what the cloth may do while it MOVES. I chose numbers whose defining
+property was that they would move nothing, and then expected to see something move.
+
+`garment_rest_penetration.py` asks the question I never asked -- is the garment inside the body
+BEFORE any simulation -- and on the garment's VERTICES rather than its joints, which is the
+distinction that matters: a joint is a point on the chain's spine, the cloth is a surface spread
+around it, and a tie whose joints clear by 1.2 mm can still have its width buried.
+
+| character | sampled vertices inside the body AT REST | deepest |
+|---|---|---|
+| **Batman**, centre cape | **47 of 74 — 63.5%** | **42.6 mm**, median of the buried 10.9 |
+| **Jessica Rabbit**, dress | 148 of 1133 — 13.1% | 19.6 mm, median 5.8 |
+| Miku, tie | **0 of 12** | all outside, nearest 3.3 mm clear |
+
+**Batman's cape is authored two-thirds buried in him.** No capsule, in any position, at any
+radius, will ever move it: a collider's whole job is to stop a joint going somewhere, and his
+cape is already there when the scene loads. The capsule placed this afternoon is not wrong, it
+is simply irrelevant to what was reported -- it constrains motion that was never the complaint.
+The same is true of Jessica at a third the severity, which retrospectively makes "nothing
+applied" the right call for a better reason than the one I had.
+
+**Miku is the exception and her sample is too small to lean on.** Her tie carries 20 vertices in
+total, 12 of them measurable, and none is inside her at rest. That is consistent with a fault of
+motion, which is the class a collider does fix -- but 12 vertices is not a population, and the
+honest statement is that her case is unresolved rather than confirmed either way.
+
+What this does not touch: `place_collider.py` and the fitter are correct and stay, the container
+defect below was real and had to be fixed regardless, and the capsules on Batman and Miku are
+left in place because they are harmless and this project does not roll back.
+
 ### The rebuild landed, 2026-11-21: the nine mic-less characters are no longer invisible
 
 Built from `dev` at `e2e1aba1`, clean tree, which contains `0d3d4e4f`. 582 MB, 51.8 minutes,
