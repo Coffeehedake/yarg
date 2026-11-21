@@ -9948,3 +9948,53 @@ source measurement is the one that decides, for every one of them.
 character, so it is put rather than taken: `VRM_EXPORT_POSE=rest`, back up to
 `character-backups/` first, and verify by re-running `knuckle_bend_installed.py` against the
 source figures above, which now exist to be compared with.
+
+#### STOP: `VRM_EXPORT_POSE=rest` alone would make Elite WORSE, and the gate caught it
+
+The section above says his recipe plus that knob "is the whole fix". **That is wrong, and it was
+wrong before anything was built.** `rest_pose_source.py` asks the question the knob's own
+documentation says to ask first -- *it is opt-in on purpose, because on a rig whose own T-pose
+step never ran the add-on's estimate is the only thing T-posing the character*:
+
+```
+rig axes: up = hips->head (0.000, 0.031, 1.000)
+          across = R hand->L hand (1.000, -0.000, 0.000)
+
+upperarm.R   51.6    mixamorig:RightArm -> mixamorig:RightForeArm
+forearm.R    49.1    mixamorig:RightForeArm -> mixamorig:RightHand
+upperarm.L   51.6    mixamorig:LeftArm -> mixamorig:LeftForeArm
+forearm.L    49.1    mixamorig:LeftForeArm -> mixamorig:LeftHand
+thigh.R       2.3    thigh.L  2.0    shin.R  5.8    shin.L  6.9
+```
+
+**His source is an A-POSE**, arms ~50 degrees down, symmetric to a tenth of a degree. Legs
+straight. So declining the add-on's T-pose would preserve his 28.6 degrees of knuckle bend and
+ship an A-pose into the bind -- and Unity builds every muscle axis from the bind. That is
+precisely the fault recorded against Prix, traded for a worse one: a flat hand is cosmetic, a
+mis-aimed arm axis is every animation he plays.
+
+**So the rebuild was not done.** The trade as it stands:
+
+| | arms | fingers |
+|---|---|---|
+| as installed (add-on T-pose) | correct | flattened, 28.6 deg lost |
+| `VRM_EXPORT_POSE=rest` alone | **A-pose bind, all axes mis-aimed** | preserved |
+
+The real fix needs both: straighten his arms to a T-pose first -- the joint-by-joint arm
+straightening this file documents -- and only then export with the knob, so the add-on is not
+the thing doing the straightening and has no reason to re-aim the fingers. That is a new
+combination for this pipeline and it is a build change, not a knob.
+
+#### The axes had to come from the rig, and the first reading was nonsense
+
+The first version of `rest_pose_source.py` assumed Blender's Z-up and reported the **legs at
+89.5 degrees off vertical** -- impossible for a standing figure. The file is imported without
+the rotation that assumption expects. On that reading it printed "NOT a T-pose, this is the Prix
+case", which is the conclusion it reaches now, **for entirely the wrong reason**, and an arm
+figure of 51.6 would have been quoted as evidence while the legs quietly said the instrument was
+broken.
+
+It now takes `up` as hips->head and `across` as right-hand->left-hand in world space, from this
+rig's own bones, so the answer does not depend on which convention the file was written in. The
+legs reading 2.0-6.9 degrees is the control that says the axes are right -- **a limb whose
+answer you already know is what makes the limb you are asking about readable.**
