@@ -35,6 +35,12 @@ WHAT IT REFUSES, because each of these has cost this project a bundle or a day:
     local scale, so the tool re-reads its own output in WORLD space and compares the capsule it
     actually wrote against the one it was told to write. A local number that round-trips to the
     wrong world radius looks exactly like a correct one in the file.
+  * a capsule that swallows MORE SKIN than the fattest collider the character's own author
+    drew. Both the bounds above are distances between a joint and a surface, and on 2026-11-21
+    both were satisfied by a 231.9 mm capsule on Batman's clavicle that contained 41.8% of his
+    skin, his arms included -- it passed the displacement gate with 4.60 mm to spare and put
+    his cape out through his forearms. A capsule is a VOLUME and nothing here was looking at
+    what the volume held. Refused above --allow-contain, stated in percentage points.
   * an orphan. A collider and a group that are not listed in their host GameObject's
     `m_Component` deserialise perfectly and are components of nothing -- 21 of them passed
     every check this project had on 2026-11-15. Verified in the direction that can fail.
@@ -51,6 +57,7 @@ import os
 import shutil
 import sys
 
+import capsule_contains as cc
 import cloth_collide_installed as cci
 import UnityPy
 
@@ -81,7 +88,7 @@ def vec(s):
 def parse(argv):
     k = {"host": None, "radius": None, "offset": None, "tail": None, "group": None,
          "chain": [], "write": False, "append": False, "allow-displace": 0.0,
-         "expect-world": None}
+         "expect-world": None, "allow-contain": 0.0, "garment-match": None}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -95,7 +102,7 @@ def parse(argv):
         elif a.startswith("--") and a[2:] in k and i + 1 < len(argv):
             key = a[2:]
             i += 1
-            if key in ("radius", "allow-displace"):
+            if key in ("radius", "allow-displace", "allow-contain"):
                 k[key] = float(argv[i])
             elif key in ("offset", "tail"):
                 k[key] = vec(argv[i])
@@ -227,6 +234,27 @@ def main():
     else:
         print("every joint of every named chain clears it, the tightest by %.2f mm."
               % (worst * 1000))
+
+    # ---------------------------------------------------------------- the SHARE gate
+    # Both bounds above are DISTANCES, and on 2026-11-21 both were satisfied by a 231.9 mm
+    # capsule on Batman's clavicle that contained 41.8% of his skin -- his arms included. Jay:
+    # "It's clipping through batman's arms now." A capsule is a volume and nothing here looked
+    # at what the volume swallowed, so this asks, against the one standard that is not a number
+    # I would have to invent: the fattest collider the character's own author drew.
+    # test_share_gate.py shows it refusing all three of Batman's and accepting Miku's.
+    print()
+    garment = cc.cloth_bones(tf, go_tf, springs, joints, k["garment-match"])
+    gskin = cc.skin_vertices(path, tf, world, garment)
+    if not gskin:
+        die("no skin decoded, so the share gate cannot run and this capsule is UNMEASURED "
+            "against the character's own colliders. Refusing to write on an unrun check.")
+    gstep = max(1, len(gskin) // 12000)
+    ok, msg = cc.share_gate(gskin[::gstep],
+                            cc.collider_shapes(tf, go_tf, colliders, world),
+                            A, B, want_r_world, k["allow-contain"] / 100.0)
+    if not ok:
+        die(msg)
+    print("SHARE GATE: %s" % msg)
 
     if not k["write"]:
         print()

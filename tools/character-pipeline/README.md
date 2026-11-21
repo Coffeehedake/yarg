@@ -11122,3 +11122,79 @@ there is nothing to rebuild FROM. Recovering a recipe for Doom Slayer or Spartan
 means measuring it back out of the installed bundle — height and rig family are readable, which
 is what the 2026-11-15 cross-check did for twelve characters and got right to the centimetre on
 all of them. That is a real route and it is not archaeology on logs.
+
+### The three cape capsules ENGULFED HIS ARMS, 2026-11-21 — restored, and the fitter's lower bound is unsound
+
+Jay looked at Batman after the three capsules went in and sent a picture: **"It's clipping
+through batman's arms now."** The cape is splayed out sideways, nearly horizontal, passing
+through both forearms. It is worse than what he reported in the morning, and the cause is the
+capsules I placed.
+
+`capsule_contains.py` asks what each collider actually contains, by SKIN BONE and by count,
+which is the question none of the fit tools ask:
+
+| collider | radius | y span | share of skin inside | biggest contributors |
+|---|---|---|---|---|
+| `fml_un_R_clav` (mine) | **231.9 mm** | 0.149–1.341 | **41.8%** | belt, heel |
+| `fml_un_L_clav` (mine) | **215.7 mm** | 0.149–1.341 | **42.6%** | belt |
+| `fml_un_C_spine_d` (mine) | **145.0 mm** | 0.149–1.460 | **23.2%** | belt, lower-leg twists |
+| `fml_un_C_pelvis_att` (his, authored) | 111.8 mm | 1.038–1.614 | 10.8% | belt, neck, head |
+| `fml_un_R_uparm` (his, authored) | 96.0 mm | — | 1.5% | upper-arm twists |
+
+Mine are not torso capsules. They are **tubes running from ankle height to the chest, 145 to
+232 mm wide, holding between a quarter and nearly half of his entire skin**. A cape kept outside
+a cylinder that contains his arms is a cape held out past his arms, which is exactly the picture.
+
+**THE DEFECT IS IN THE LOWER BOUND, and it is the same shape as the 63.5%.** The fitter's lower
+bound is *the median axis distance of the skin NEAR each joint* — "do not hold the cloth nearer
+the axis than the body surface is". For a cape joint at shoulder height the nearest skin is **the
+arm**, and the arm sits 200+ mm from a central vertical axis. So the rule silently became *do not
+hold the cape nearer the axis than his arms are*, and the fitter obeyed it perfectly.
+
+The upper bound did not catch it because it cannot: the side panels' joints already hang outside
+the arms at rest, so "no joint starts inside" was satisfied at 216 mm. **Both bounds were met and
+the result was still absurd.** A feasible interval is not a sanity check.
+
+The second half is the axis's EXTENT. `fit_body_capsule` solves four parameters — both ends'
+horizontal positions — and takes the vertical span from the garment's own y range. Batman's cape
+hangs to his calves, so the axis spans 0.149–1.341 m and the capsule is a tube through his legs
+as well. Even the 145.0 mm centre one contains his lower-leg twists.
+
+**THE CONTROL SAYS THE TOOL IS NOT ALWAYS WRONG.** The same probe on Miku's fitted 86.6 mm tie
+capsule: **10.6% of skin, and it is head, spine and spine1 — no limb at all.** Her tie hangs on
+her chest, so the skin near its joints belongs to the part the capsule is meant to be. That is
+the condition, and nothing in the fitter checks it.
+
+> **"Skin" is not a body part, for the third time today.** It inflated a 4% rest penetration to
+> 63.5%, it made three of Jessica's panels ask for a thigh capsule, and now it has put a cape
+> around a man's arms. Each time the fix was to name the exclusion more carefully. The real
+> lesson is the other one: a measurement over "everything that is not the garment" answers a
+> question nobody asked.
+
+**RESTORED.** Batman is back at `c60e0a61`, 5,690,429 bytes, `UnityFS`, verified by md5. The
+broken version is kept as `character-backups/Batman.yargchar.58097723-capsules-engulf-arms.bak`
+rather than deleted, because it is the only artefact that reproduces this. He is once again the
+character Jay reported in the morning — lower drape passing through his back — which is a smaller
+fault than the one I gave him.
+
+**What a correct fix needs**, and it is not a radius: the lower bound has to come from the TORSO
+only, and the capsule's vertical span has to be the torso's, not the garment's. That means naming
+the body part a capsule represents before fitting it — which is what the authored colliders do
+(`C_pelvis_att` spans 1.038–1.614 and stops at the neck) and what mine never did.
+
+**A GATE, AND IT WAS SEEN TO FIRE FIRST.** `place_collider.py` now refuses a capsule that holds
+more skin than the fattest collider the character's own author drew, above a stated
+`--allow-contain`. The standard is the character's own authoring rather than a threshold I
+would have had to invent, which is this project's own repeated lesson about reinventing the
+client's rule. Replaying the exact capsule that broke him, against the restored file:
+
+    every joint of every named chain clears it, the tightest by 4.60 mm.
+    REFUSED: this capsule holds 41.8% of the skin -- MORE than the 10.8% of the fattest
+    collider the character's own author drew (fml_un_C_pelvis_att) ...
+
+Note the two lines together: **the displacement gate passed it with 4.60 mm to spare on the
+same run.** `test_share_gate.py` runs the gate over all three of Batman's capsules out of the
+kept backup (refused) and Miku's verified 86.6 mm tie capsule against her authored colliders
+with itself excluded (accepted, 12.2% against her author's 32.0%). A gate with only the refusals
+would be indistinguishable from one that refuses everything, which is why the control is in the
+test and why the test names the backup it needs rather than passing when it is gone.
