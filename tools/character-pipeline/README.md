@@ -9863,10 +9863,138 @@ rig, not a radius. Seven of his eleven cape chains were not measured individuall
 The remaining three joints of that chain hang clear of her body entirely (no body vertex within
 60 mm), so they constrain nothing, and their rest clearances are +68.0, +97.7 and +202.8 mm.
 
+> **RETRACTED 2026-11-21.** The 175.7 mm above was measured from the `thigh.L` axis against
+> `spine` skin -- two bounds on two body parts. The sound figure for this same panel is
+> 256.3 mm, and it fails a gate 175.7 never faced. See **"Report 9 RE-MEASURED"** below. The
+> paragraph is left standing because the retraction, and what hid it, are the finding.
+
 **This is NOT applied.** It is the same class of change as Miku's tie, on a character nobody has
 asked to have patched, and only one of her four `ClothSpring` chains has been measured -- the
 other three may want different radii or may share one. The number above is a result, not a
 recommendation to run.
+
+
+### Report 9 RE-MEASURED 2026-11-21: the 175.7 mm is RETRACTED, and her dress needs a capsule that does not exist
+
+Jay asked for the other three `ClothSpring` chains. Measuring them did not extend the answer
+above — **it withdrew it.** The 175.7 mm figure was derived against the wrong axis, and the
+sound figure for the same panel is 256.3 mm, which fails a gate that 175.7 never faced.
+
+#### What was wrong with it, and why one chain could never have shown it
+
+`tie_collider_fit.py` chooses the axis to measure both bounds against by asking **which capsule
+the chain is deepest inside.** For a necktie that is right and is verifiable: run
+`chain_surface_owners.py` on Miku's `Tie` and every nearby skin vertex is owned by `Bip01 Spine`
+or `Bip01 Spine1` — the bone the chosen capsule sits on. One axis, one body part, both bounds in
+the same frame.
+
+Jessica's skirt is four panels at the four quadrants of her waist, all four rooted at y = 0.788:
+
+| chain | root (x, y, z) | where it hangs | capsule it is deepest inside | owns the skin beside it? |
+|---|---|---|---|---|
+| `ClothSpring_1_0_0` | −0.063, 0.788, **+0.006** | front-left | `thigh.L` r 93.9 | **no** — `spine` x82 |
+| `ClothSpring_1_1_0` | +0.104, 0.788, −0.053 | right | `thigh.R` r 67.4 | **no** — `spine` x237 |
+| `ClothSpring_1_2_0` | +0.028, 0.788, **−0.329** | back | `spine` r 41.4 | yes — `spine` x171 |
+| `ClothSpring_1_3_0` | +0.191, 0.788, −0.259 | back-right | `thigh.R` r 67.4 | mixed — `spine` x106, `thigh.R` x95 |
+
+So three of the four had their **lower bound measured from a thigh axis against pelvis skin**. A
+hem beside her thigh is deepest inside the thigh capsule, but the skin it would sink into is her
+hip, 185 mm from that thigh's axis — so the tool asked for a thigh capsule of 165 mm radius,
+wider than her pelvis and wide enough to swallow her other leg. The three "crossings" the
+first sweep reported (0.3, 13.8 and 109.1 mm) were artefacts of two bounds living on two body
+parts, not facts about her dress.
+
+**The one-chain measurement could not have caught this, and not because it was careless.** With
+one chain there is one axis and no disagreement to see. The error only becomes visible when four
+chains pick three different axes and return radii 160 mm apart for what is one garment at one
+height. This is `trace-relative-not-absolute` and `a-number-in-local-space-is-not-a-measurement`
+in a new place, and it is one level out from `put-both-bounds-in-the-same-quantity`: that rule
+fixed two bounds in different QUANTITIES; these two are the same quantity from different
+ORIGINS, which the earlier fix cannot detect.
+
+#### `garment_collider_fit.py`, and the two bugs its control caught before it was believed
+
+New tool. It inverts the question — not "what radius for this chain" but **for each capsule,
+what interval do the garment's joints jointly admit**, with the lower bound taken only from
+joints whose nearby skin is owned by that capsule's own bone. **Miku's tie is the control**,
+because her answer is known, applied and verified in the bundle.
+
+The control earned its keep twice, and both times by failing:
+
+1. **Upper and lower bound do not have the same membership.** The first version let only the
+   skin-owning joints constrain a capsule and returned `[85.5, 101.7]` against Miku's recorded
+   `[85.5, 87.8]`. The lower bound reproduced exactly; the upper was 13.9 mm too generous, and
+   its midpoint would have displaced her knot on frame one — the exact fault the fit tool exists
+   to prevent. The asymmetry: *big enough to reach the skin* belongs only to joints whose skin
+   this bone owns; *small enough not to swallow a joint* belongs to **every** joint of the
+   garment, because a capsule does not consult the weighting before pushing out what is inside
+   it. Her `Bone01` proves it — its skin is owned by `Bip01 Spine1`, which carries no collider
+   at all, and it is still what holds her spine capsule to 87.8 mm.
+2. **A per-chain clone must use that chain's own lower bound.** Using the maximum across all
+   four chains reported `ClothSpring_1_1_0` and `_1_3_0` as crossing when both are feasible: a
+   capsule cloned into one chain's group is never asked to reach another chain's skin.
+
+With both fixed, the control returns **`[85.5, 87.8]`, suggested 86.6 mm** — the figure derived
+by the older tool, applied to Miku this morning, and confirmed in her bundle. Two tools built on
+different principles agreeing on the one case with a known answer is the only reason anything
+below is worth reading.
+
+#### The gate that matters, and it rejected the control first
+
+A capsule is a swept **sphere**: radius *r* reaches *r* in every direction at every height along
+the axis. So one radius stands in for a body only where that body is at roughly one distance
+from the axis all the way round. Jessica's `spine` collider is a **41.4 mm capsule running from
+(0.080, 0.752, −0.251) up to (−0.023, 1.316, −0.196)** — up her back, 250 mm behind her front
+panel. A radius big enough to reach her front projects the same distance out of her back.
+
+So the tool now measures the band her own skin occupies around each axis and refuses a radius
+outside it. **The first version of that gate used `min(skin distance)` and rejected Miku's
+verified fix**, reporting that her working 86.6 mm capsule protruded 79.9 mm out of her: one
+vertex weighted to `Bip01 Spine` sits 6.7 mm from her spine axis, near where the segment ends.
+One vertex, and a confirmed control came back refused — `a-threshold-discards-data-silently`.
+The statistic is now a p10–p90 spread over skin whose projection falls *within* the segment, and
+the band is the data's own, not a tolerance chosen to make the control pass.
+
+| capsule | her skin around that axis | |
+|---|---|---|
+| Miku `Bip01 Spine` | p10 **86.3** · median 134.9 · p90 **201.7** mm | 86.6 is inside — PASSES |
+| Jessica `spine` | p10 **83.6** · median 121.6 · p90 **169.6** mm | |
+| Jessica `shin.R` | p10 24.6 · median 45.8 · p90 70.9 mm | |
+
+#### The answer: one panel of four, which is not a fix
+
+| panel | interval on a cloned `spine` capsule | verdict |
+|---|---|---|
+| `ClothSpring_1_0_0` front | [248.3, 264.3] → 256.3 mm | **ARITHMETIC ONLY** — 86.7 mm above p90 |
+| `ClothSpring_1_1_0` right | [170.9, 176.5] → 173.7 mm | **ARITHMETIC ONLY** — 4.1 mm above p90 |
+| `ClothSpring_1_2_0` back | [86.3, **72.5**] | **BOUNDS CROSS by 13.8 mm** |
+| `ClothSpring_1_3_0` back-right | [92.7, 96.4] → **94.5 mm** | **FEASIBLE**, width 3.7 mm |
+
+Her `shin.R` capsule separately admits 67.1 mm (from 70.7) for that same chain's lower joints,
+inside its band.
+
+**NOTHING IS APPLIED, and this time that is a conclusion rather than a deferral.** One of four
+panels can be guarded. Fixing a quarter of a skirt does not fix a skirt — it makes one panel
+hang differently from its three neighbours, which is a new fault rather than a smaller one, and
+it would be reported as such by the person who reported the original.
+
+What her dress actually wants is a **new capsule, placed**: vertical, centred on her body axis
+rather than her back, sized to her hips, in a group all four panels reference. That is the same
+shape of answer already recorded for Batman's cape — *"the capsule would have to follow the back
+rather than the pelvis axis"* — and the two reports are now the same unbuilt capability seen
+from two characters. `patch_chain_collider.py` clones an existing capsule and changes its
+radius; it cannot place a new one, and that is the gap between these two reports and a fix.
+
+Ten of her sixteen dress joints have no skin within 60 mm at all. That is a hem hanging in free
+air, which is the expected and harmless case, and the tool now says so rather than printing ten
+rows of UNMEASURED for a reader to distrust.
+
+*One hypothesis of mine died on the way and is recorded because it was the obvious one: that the
+fit tool's lower bound was contaminated by the other three panels, since it excludes only the
+measured chain's own bones. `chain_surface_owners.py` says it is not — **zero sibling-panel
+vertices on all sixteen joints**, because her four panels are never within 60 mm of each other.
+The exclusion is widened to the whole garment anyway, since a measurement that happens to be
+safe is not the same as one that is.*
 
 ### The rebuild landed, 2026-11-21: the nine mic-less characters are no longer invisible
 
