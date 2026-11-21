@@ -9591,3 +9591,87 @@ bone axis**: the first version of that guard asked which way each bone points an
 arms as 90.0 degrees off and his legs as 180.0, both sides, to the decimal. Numbers that round
 are not a pose -- a bone's tail is synthesised wherever the rig does not pin one, so a bone axis
 is a fact about the importer and the head of the next joint down is a fact about the model.
+
+### Report 2 FIXED: Miku's tie has a collider group of its own, 2026-11-21
+
+The recorded decision was that the tie could carry no colliders, because its three bones start
+44.4, 30.5 and 7.4 mm inside the `Body` group's 132.2 mm spine capsule and the solver would
+displace the knot on frame one. The reason given for not shrinking that capsule was that *the
+twintail chains share it* -- which rules out shrinking the SHARED capsule and not much else. A
+chain references a list of groups; nothing says two groups may not sit on the same bone.
+
+**`tie_collider_fit.py` derives the radius from her geometry rather than picking one.** Two
+bounds, both expressed as a capsule radius:
+
+- **below** each joint's rest distance to the axis, or the joint starts inside and gets shoved;
+- **above** the body surface beside each joint, or the tie sinks into her chest anyway.
+
+Both bounds are on the same quantity and **the joint's own 20 mm radius belongs in both**,
+because the solver holds the joint CENTRE at `r_capsule + r_joint`.
+
+| joint | rest d | body surface beside it | min r | max r |
+|---|---|---|---|---|
+| `Bone01` | 107.8 mm | 105.3 mm | 85.3 | **87.8** |
+| `Bone02` | 121.7 mm | 98.3 mm | 78.3 | 101.7 |
+| `Bone03` | 144.7 mm | **105.5** mm | 85.5 | 124.7 |
+
+**Feasible interval r in [85.5, 87.8] mm. Applied at the midpoint, 86.6 mm.** The interval is
+2.3 mm wide because a tie knot physically RESTS on the chest -- there is almost no room between
+"outside the body" and "where it already is". That tightness is the honest answer, not a weak
+one.
+
+Measured on the patched bundle, clearance against its own new capsule:
+
+```
+Bone01   rest 107.8 mm   clear +1.2 mm    held at 106.6 mm vs body surface 105.3  (+1.3 outside)
+Bone02   rest 121.7 mm   clear +15.1 mm   held at 106.6 mm vs body surface  98.3  (+8.3 outside)
+Bone03   rest 144.7 mm   clear +38.1 mm   held at 106.6 mm vs body surface 105.5  (+1.2 outside)
+```
+
+**THE FIRST VERDICT THAT TOOL PRINTED WAS WRONG, AND IT WAS WRONG TOWARDS GIVING UP.** It
+compared the capsule radius bound (87.8) directly against the body surface distance (98.3),
+concluded the bounds crossed, and said the fix was not available. Those are not the same
+quantity: one is a radius, the other is a distance to a joint centre, and the 20 mm joint radius
+sits between them. Subtracting it from both turns an apparent 10.5 mm contradiction into a
+2.3 mm feasible interval. A tool written to be able to say "impossible" said it, convincingly,
+on arithmetic that had dropped a term.
+
+#### What was written, and how it was checked
+
+`patch_chain_collider.py` clones the capsule the chain is stuck inside, gives the clone the
+derived radius on the same axis, puts it in a new group (`TieChest`), and points only that chain
+at it. The shared `Body` group is untouched. It refuses a chain that already has a group, and it
+refuses a radius that would leave any joint inside at rest.
+
+**Both sides of the component link are written and the one that can fail is the one verified.**
+A MonoBehaviour names its GameObject in `m_GameObject` and the GameObject must list it back in
+`m_Component`; writing only the first makes an orphan that deserialises fine and is a component
+of nothing. Miku shipped exactly that way on 2026-11-15 with 21 orphaned joints. So the check
+walks the bone GameObject's component list -- the direction that can come back empty -- rather
+than following the group pointer, which works whether or not the attachment exists.
+
+Verified on the bytes before they were written, and then independently afterwards by a tool that
+did not do the writing: `collider_group_check_installed.py` reads **11 colliders in 2 groups,
+all grouped and used, clean** (it was 10 in 1), the `Tie` chain references only the new group,
+and all eight other chains still reference the original one.
+
+Backed up first to `character-backups/Miku.yargchar.2bb66a80.bak`.
+
+#### What this does NOT fix, stated rather than left to be discovered
+
+**A capsule is rotationally symmetric and a torso is not.** The surface figures above were
+measured in front of each tie joint, which is where the tie is, and the standoff is right there
+to within 1.3 mm. The LATERAL surface was not characterised: a band sweep around the spine axis
+came back contaminated by arm geometry (p90 of 607 mm is an arm, not a torso), so it is not
+reported here as a number. If the tie swings sideways it may stand a little off her side. With
+gravity 0 and a 15 degree rest pose it sways rather than swings, so the excursion is small --
+but "small" is an argument, not a measurement, and this paragraph is the honest extent of it.
+
+**This is a patch to the installed bundle, not to her recipe.** Her installed file is already a
+patched artefact -- `patch_add_springs.py` put 7 chains on her own bones on 2026-11-15 -- so a
+rebuild from her recorded row loses both those chains and this collider. Anyone rebuilding her
+must re-apply both.
+
+**And it is not verified in motion.** Every number here is the rest pose. Whether the tie
+visibly stops clipping is a question for the running game, and the spring runtime is the only
+thing that can answer it.
