@@ -9665,6 +9665,13 @@ is a fact about the importer and the head of the next joint down is a fact about
 
 ### Report 2 FIXED: Miku's tie has a collider group of its own, 2026-11-21
 
+> **CORRECTION, 2026-11-21 14:20.** The 86.6 mm figure and every clearance below are right, and
+> re-verified. What was wrong is that the tool WROTE HER AS A BARE SerializedFile instead of a
+> UnityFS AssetBundle, so from 10:09 to 14:20 the file on disk was one the game could not load at
+> all -- and every check in this folder passed on it. Restored from backup and re-applied with a
+> fixed writer; she is now 1,348,143 bytes, md5 `9209709d`, `UnityFS`, 11 colliders in 2 groups.
+> See "APPLIED to Batman's centre cape chain" below for the defect and the sweep.
+
 The recorded decision was that the tie could carry no colliders, because its three bones start
 44.4, 30.5 and 7.4 mm inside the `Body` group's 132.2 mm spine capsule and the solver would
 displace the knot on frame one. The reason given for not shrinking that capsule was that *the
@@ -10110,12 +10117,83 @@ reaches his shoulders — that includes his arms at 693 mm. His centre cape caps
 ankle to shoulder at 136.6 mm, holding the cape on a cylinder that engulfs his legs. It passes
 the test as written and I do not believe it, which is a statement about the test.
 
-**So nothing is applied to either character, and the placer is why that is now a conclusion
-rather than a gap.** Before today "a new capsule, placed" was the unbuilt thing both reports
+**Jessica gets nothing; Batman's centre cape chain WAS applied, and the subsection below says
+what that write exposed. The placer is why the rest is now a conclusion rather than a gap.** Before today "a new capsule, placed" was the unbuilt thing both reports
 pointed at. It is built, it is validated against the one case with a known answer, and it says
 the remaining obstacle is not where the colliders are: it is that one capsule per chain cannot
 describe a tapering body, and that cloth authored under the skin cannot be pushed out of it. Both
 of those are rig work on characters nobody has asked to have re-rigged.
+
+#### APPLIED to Batman's centre cape chain, 2026-11-21 — and the write exposed a four-hour defect
+
+The sceptical note above about Batman's centre capsule was mine, and the per-joint table refutes
+it. All eleven joints of `fml_un_C_cape_att` sit at **160–183 mm** from the fitted axis, top to
+bottom: his cape already hangs as a near-cylinder, so a cylinder is the right shape for it. The
+capsule holds every joint at 156.6 mm, which displaces none of them (tightest clearance 3.5 mm)
+and puts the cape **3.6 mm outside his skin** where it was previously held **18 mm inside**.
+
+Applied with `--append`, so his existing 10-collider group is untouched: 11 colliders in 2 groups,
+11 other chains verified unchanged.
+
+##### THE WRITE PUT THE FILE ON DISK AS SOMETHING THE GAME CANNOT LOAD
+
+Batman went from **5,690,429 to 37,636,392 bytes**, 6.6x. The cause is one line, and it was in
+`patch_chain_collider.py` first:
+
+```python
+data = af.save(packer="original")      # af is the SerializedFile INSIDE the bundle
+data = env.file.save(packer="original")  # the fix: the BUNDLE
+```
+
+A `.yargchar` is a `UnityFS` AssetBundle containing one SerializedFile. `af.save()` returns that
+serialized file alone, so writing it as the `.yargchar` **replaces the AssetBundle with a bare
+SerializedFile** — no `UnityFS` header, nothing for `AssetBundle.LoadFromFile` to open.
+
+**Miku had been in that state since 10:09 the same day**, from 1,350,684 bytes to 3,804,432, and
+her tie fix was reported finished and verified in it. A sweep of the first seven bytes of all 65
+installed characters found exactly two faults, both mine: Batman and Miku. Every other bundle is
+intact, and so is every backup.
+
+**Every checker in this project passed on both of them.** `cloth_collide_installed.py`,
+`collider_group_check_installed.py`, `tie_collider_fit.py`, `garment_collider_fit.py`,
+`fit_body_capsule.py`, and `place_collider.py`'s own round-trip verification — which re-reads its
+output in world space and compares radius and both endpoints, and reported 0.000 mm. They all go
+through UnityPy, and **UnityPy opens a bare SerializedFile quite happily**: it is a container it
+supports. The game's loader does not. So the fault was invisible to the entire verification chain
+while being fatal to the one thing the chain exists to protect, and its only visible symptom was
+a number nobody was looking at — the file size.
+
+This is `present-is-not-working` again at the container level, and it is worse than the 11-15
+orphan case in one specific way: there, a check existed that could have seen the fault and was
+pointed the wrong way. Here **no check in the folder could see it at all**, because they share a
+library with the artefact and inherit its tolerance.
+
+##### What was done about it
+
+1. **Both restored from backup** before anything else — `Miku.yargchar.2bb66a80.bak` and
+   `Batman.yargchar.c60e0a61.bak`, md5-verified on the way back in. That un-applied Miku's tie
+   fix with it, which is correct: a fix in an unloadable container is not a fix.
+2. **Both writers now save `env.file`**, and both refuse to write bytes that do not start with
+   `UnityFS`, or whose length is outside 0.5–2.0x the input — a collider and a group are a few
+   hundred bytes, so a factor means the container moved. Both now print the delta: Batman
+   −101,585 bytes, Miku −2,541, which is recompression and not a container change.
+3. **`container_check_installed.py`** sweeps the roster by reading the first seven bytes and
+   **does not import UnityPy at all**, because a check implemented with the same library as the
+   thing it checks cannot see that library's tolerance. Verified by failing: given one good
+   bundle and a copy with its first byte zeroed, it reports exactly the broken one.
+4. **Both fixes re-applied and re-verified.** Batman 5,588,844 bytes md5 `beb888a6`, Miku
+   1,348,143 bytes md5 `9209709d`, both `UnityFS`, both reading 11 colliders in 2 groups, and
+   **all 65 installed characters carry the AssetBundle header.**
+
+Backups now in `character-backups/`: `Batman.yargchar.c60e0a61.bak`,
+`Miku.yargchar.2bb66a80.bak`, `Jessica Rabbit.yargchar.b260d8e4.bak`.
+
+##### Still unverified in the game
+
+Neither Batman's cape nor Miku's tie has been looked at in the running game, and the four hours
+above are the reason that matters more than usual: **the only check that could have caught this
+was launching the game**, and a bundle that fails to load shows up there as a character who is
+simply absent. Everything else here is read out of files.
 
 ### The rebuild landed, 2026-11-21: the nine mic-less characters are no longer invisible
 

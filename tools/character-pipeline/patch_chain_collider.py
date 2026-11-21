@@ -264,7 +264,28 @@ def main():
         die("expected exactly one chain called %r, found %d" % (k["chain"], touched))
     inst_obj.save_typetree(inst_tree)
 
-    data = af.save(packer="original")
+    # SAVE THE BUNDLE, NOT THE ASSETS FILE. `af` is the SerializedFile INSIDE the UnityFS
+    # bundle, so `af.save()` hands back that serialized file alone -- and writing it as the
+    # .yargchar replaces an AssetBundle with a bare SerializedFile. This line used to read
+    # `af.save(...)`, and it put Miku on disk without a `UnityFS` header from 10:09 to 14:20
+    # on 2026-11-21, 1,350,684 bytes grown to 3,804,432. Her tie fix was reported as clean
+    # and verified in that state.
+    #
+    # NOTHING IN THIS PROJECT COULD SEE IT: every checker goes through UnityPy, which reads a
+    # bare SerializedFile perfectly well, while `AssetBundle.LoadFromFile` would not read it
+    # at all. The container is invisible to the entire verification chain, so it is checked
+    # here on the bytes, which is the only place it shows.
+    data = env.file.save(packer="original")
+    if not data.startswith(b"UnityFS"):
+        die("the written bytes do not start with 'UnityFS', so this is no longer an "
+            "AssetBundle and the game cannot load it. Nothing written.")
+    if not (0.5 * len(src_bytes) <= len(data) <= 2.0 * len(src_bytes)):
+        die("the written bytes are %d against %d in -- a factor of %.1f. A collider and a "
+            "group are a few hundred bytes, so a change of that size means the container or "
+            "its compression changed. Nothing written."
+            % (len(data), len(src_bytes), float(len(data)) / max(1, len(src_bytes))))
+    print("container: UnityFS kept, %d bytes against %d in (%+d)"
+          % (len(data), len(src_bytes), len(data) - len(src_bytes)))
 
     # ------------------------------------------------------- verify BEFORE writing out
     # On the bytes in hand, because a file written and THEN found wrong is a file somebody

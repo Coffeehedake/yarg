@@ -145,10 +145,19 @@ def main():
     if htp is None:
         die("no bone called %r in this file" % k["host"])
     hwp, hwq, hws = world(htp)
-    if not (abs(hws[0] - hws[1]) < 1e-6 and abs(hws[1] - hws[2]) < 1e-6):
-        die("bone %r has non-uniform world scale %s. A capsule radius is one number, so a "
-            "non-uniform scale makes the written shape an ellipsoid and the radius below a "
-            "fiction. Pick a different host bone." % (k["host"], hws))
+    # The radius is ONE number scaled by ONE axis, so a genuinely non-uniform host scale makes
+    # the written shape an ellipsoid and the quoted radius a fiction. But the test has to be on
+    # the ERROR THAT CAUSES, not on an epsilon: Batman's `fml_un_C_spine_d` reads
+    # (1.0000523, 0.9999995, 1.0) -- accumulated float noise down a long bone chain, 5e-5
+    # relative -- and an absolute 1e-6 tolerance refused a perfectly good host bone over
+    # 0.007 mm on a 136.6 mm radius. Judge it in millimetres of radius, the units the answer
+    # is quoted in.
+    skew = (max(hws) - min(hws)) * want_r_world
+    if skew > 0.0001:
+        die("bone %r has non-uniform world scale %s, which on a %.1f mm radius makes the "
+            "written shape an ellipsoid differing by %.3f mm between axes. The radius this "
+            "tool would report is then a fiction. Pick a different host bone."
+            % (k["host"], hws, want_r_world * 1000, skew * 1000))
 
     def to_world(v):
         sc = (v[0] * hws[0], v[1] * hws[1], v[2] * hws[2])
@@ -322,7 +331,28 @@ def main():
         die("expected to touch %d chain(s), touched %d" % (len(k["chain"]), touched))
     inst_obj.save_typetree(inst_tree)
 
-    data = af.save(packer="original")
+    # SAVE THE BUNDLE, NOT THE ASSETS FILE, and this is the defect that cost two installed
+    # characters. `af` is the SerializedFile INSIDE the UnityFS bundle; `af.save()` returns
+    # that serialized file on its own, so writing it as the .yargchar replaces an AssetBundle
+    # with a bare SerializedFile. Measured 2026-11-21: Batman went 5,690,429 -> 37,636,392
+    # bytes and lost his `UnityFS` header entirely, and Miku had been sitting in that state
+    # since her tie was patched at 10:09 the same day.
+    #
+    # EVERY CHECK IN THIS PROJECT PASSED ON BOTH, because every check goes through UnityPy,
+    # which reads a bare SerializedFile quite happily. `AssetBundle.LoadFromFile` does not.
+    # So the container is invisible to the whole verification chain, and the only thing that
+    # can see it is the bytes.
+    data = env.file.save(packer="original")
+    if not data.startswith(b"UnityFS"):
+        die("the written bytes do not start with 'UnityFS', so this is no longer an "
+            "AssetBundle and the game cannot load it. Nothing written.")
+    if not (0.5 * len(src) <= len(data) <= 2.0 * len(src)):
+        die("the written bytes are %d against %d in -- a factor of %.1f. A collider and a "
+            "group are a few hundred bytes, so a change of that size means the container or "
+            "its compression changed. Nothing written."
+            % (len(data), len(src), float(len(data)) / max(1, len(src))))
+    print("container: UnityFS kept, %d bytes against %d in (%+d)"
+          % (len(data), len(src), len(data) - len(src)))
 
     # ------------------------------------------------- verify on the bytes, in WORLD space
     env2 = UnityPy.load(_io.BytesIO(data))
