@@ -8014,6 +8014,68 @@ code -- the other 57 were written and correct.
 | Skibidi Toilet | valvebiped | 1.60 | exclude `^(Icosphere\|Object_2$)` — the toilet shell swamps the model |
 | Xenomorph | xeno | 2.40 | `xeno/source/Xenomorph Default.fbx`, 51,548 triangles, 1 mesh, humanoid 46/46. The spring argument must be the DEFAULT regex with `\|BackTube` appended — the default alone finds only his tail and loses his four dorsal tubes, and `(BackTube\|TailRoot)` loses the tail, because the regex has to match a chain's whole run of bones rather than just its root. No `rollout/out` reference exists for him, so verify a rebuild with `identify_build.py` against the installed bundle instead: expect 171 bones, 0 length and 0 rotation mismatches. **Rebuilt and reinstalled 2026-11-12 for the collider-group fix alone** (item 0a) — four of his nine capsules were guarding nothing; no alpha change, backup `.precolgroup` |
 
+### RECOVERED rows, 2026-11-21 — measured back out of the bundle, NOT recorded
+
+**These are inferences, not records.** Every row above this block was written down when the
+character was built; every row below was measured out of the installed `.yargchar` today,
+because the build logs recipes were harvested from are gone from this machine. They are kept in
+their own block, and italicised, so the two can never be confused — and so they can be deleted
+cleanly if a real recipe turns up in a backup or on the other machine.
+
+**Method and its validation.** `recover_recipe.py` learns each rig family's bundle-side
+signature from the **50 characters that have BOTH a recipe and a bundle**, then classifies those
+50 back and measures their heights against the recorded figures:
+
+```
+rig family recovered correctly   48 of 50 (96%)
+    wrong: B1 Battle Droid (recorded b1), The Mandalorian (recorded mixamo) -- both scored
+           0.00, i.e. it declined to guess rather than guessing wrong
+height error over 50              median 0.004 m, p90 0.057 m, max 0.114 m
+```
+
+The tool refuses to print anything at all unless it clears 90% on rig and 5 cm median on height.
+
+| Character | rig | height | notes |
+|---|---|---|---|
+| Baby Groot | *mixamo* | *0.37* | **RECOVERED, confidence 1.00.** Source, exclude, hairrig and all `VRM_*` switches UNKNOWN |
+| Clone Trooper 501st | *mixamo* | *1.84* | **RECOVERED, confidence 1.00.** Source `clone-trooper-phase2-501st.zip` is present but its build arguments are UNKNOWN |
+| Clone Trooper Shiny | *mixamo* | *1.85* | **RECOVERED, confidence 1.00.** Source `clone-trooper-phase1-shiny-updated.zip` present; arguments UNKNOWN |
+| Iron Man Mark 85 | *mixamo* | *1.71* | **RECOVERED, confidence 1.00.** His installed materials are named `Arc Reactor_urp`, `Glass_urp` — an older exporter, so this bundle predates the `<Character>_<n>` rename. Arguments UNKNOWN |
+| Skeleton Mage | *mixamo* | *1.80* | **RECOVERED, confidence 1.00.** Recorded elsewhere: a rebuild makes a material transparent that ships opaque, and only one source exists. Arguments UNKNOWN |
+| Spartan Mark V | *rigify_plain* | *2.16* | **RECOVERED height only, confidence 1.00.** His row above already records `rigify_plain` with no height; this recovery reproduces the rig independently and supplies the missing figure. Source `halo-mk-v-model.zip` → `source/MkVSKETCHFAB.blend` IS recorded |
+| Spider-Man | *mixamo* | *1.79* | **RECOVERED, confidence 1.00.** Arguments UNKNOWN |
+
+#### Read the height as slightly HIGH
+
+Every one of the five worst validation errors is in the same direction — measured exceeds
+recorded: Steve +114 mm, Peacemaker +70, Jessica Rabbit +67, B1 Battle Droid +64, Yoda +57. That
+is systematic rather than noise. The recorded height is the TARGET passed to `build_vrm.py` for
+the body; the recovered figure is the height of everything skinned in the finished bundle,
+including hair, crests and antennae. Peacemaker is the documented case — his USDZ carried a
+second figure's helmet floating above his head.
+
+So a recovered height is an upper bound in practice, and a rebuild using one would produce a
+character up to about a centimetre too tall in the median case and ten too tall at worst. Prefer
+the recorded figure wherever one exists; these are for the characters where none does.
+
+#### Deliberately NOT given rows
+
+**Five were never built here, so there is no recipe to recover** — this file names them as
+downloaded bundles: **Adachi Rei, Harq Alkahana, Inforder Trogen, and both Hatsune Mikus**.
+Adachi Rei classified at 1.00 confidence as `steve`, which is a statement about whose bone
+naming her third-party bundle uses and not about any build of ours. Writing that into a recipe
+table would invent a provenance.
+
+**Three were low confidence and are left blank rather than filled:**
+
+| character | recovered | why it was refused |
+|---|---|---|
+| **Doom Slayer** | `simple` (0.50) | `simple` is the Mannequin's rig. He is recorded as one of eight that rebuilt cleanly and SHIPPED on 2026-11-14, so his recipe existed a week ago and is now gone — he is the sharpest gap on the list and this method does not close it |
+| K-2SO | `mariojnt` (0.07) | noise |
+| Kaiser Aufhänger | `maxbiped` (0.33) | below the bar |
+
+A blank row is recoverable later. A wrong row in the only surviving record is not.
+
 ### Recovering a character from its own .yargchar
 
 A `.yargchar` is a Unity AssetBundle, so a character whose source archive is

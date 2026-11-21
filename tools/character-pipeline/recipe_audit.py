@@ -54,12 +54,20 @@ def keys(cell):
 
 def main():
     installed = sorted(f[:-9] for f in os.listdir(CHARS) if f.endswith(".yargchar"))
-    found, unparsed = {}, []
+    found, unparsed, recovered = {}, [], {}
     for ln, line in enumerate(io.open(README, encoding="utf-8"), 1):
         if not line.startswith("|"):
             continue
         c = [x.strip() for x in line.strip().strip("|").split("|")]
         if len(c) < 3:
+            continue
+        # A RECOVERED row is an inference measured out of a bundle, not a record. It is
+        # counted separately and ON PURPOSE -- it happened to be excluded anyway, because
+        # its values are italicised and float('*1.84*') raises, but relying on that would
+        # mean un-italicising a row silently changed what this audit reports.
+        if len(c) > 3 and "RECOVERED" in c[3]:
+            for n in keys(c[0]):
+                recovered.setdefault(n, (c[1].strip("*` "), c[2].strip("*` "), ln))
             continue
         names, rigs, h = keys(c[0]), [r.strip("*` ") for r in re.split(r"\s*/\s*", c[1])], c[2]
         if not names or not all(RIG.match(r or "") for r in rigs):
@@ -75,13 +83,22 @@ def main():
             found.setdefault(n, []).append((ln, rigs[min(i, len(rigs) - 1)], h))
 
     missing = [n for n in installed if n not in found]
-    print("installed characters : %d" % len(installed))
-    print("with a recipe row    : %d" % (len(installed) - len(missing)))
-    print("WITHOUT one          : %d" % len(missing))
-    if missing:
+    rec_only = [n for n in missing if n in recovered]
+    none_at_all = [n for n in missing if n not in recovered]
+    print("installed characters      : %d" % len(installed))
+    print("with a RECORDED recipe    : %d" % (len(installed) - len(missing)))
+    print("with a RECOVERED row only : %d  (inferred from the bundle, not a record)"
+          % len(rec_only))
+    print("with NOTHING              : %d" % len(none_at_all))
+    if rec_only:
         print()
-        for n in missing:
-            print("  NO RECIPE  %s" % n)
+        for n in rec_only:
+            r, h, ln = recovered[n]
+            print("  RECOVERED  %-28s %-14s %-6s  (line %d)" % (n, r, h, ln))
+    if none_at_all:
+        print()
+        for n in none_at_all:
+            print("  NOTHING    %s" % n)
     if unparsed:
         print()
         print("rows that look like a recipe but whose height would not parse (UNPARSED, which")
