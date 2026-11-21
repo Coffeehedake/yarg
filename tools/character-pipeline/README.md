@@ -1500,6 +1500,40 @@ build**, zero occurrences of the new log lines, and the original `keeping a stat
 bones` intact. That is a stronger control than Alcina, because it is the subject rather than a
 bystander.
 
+#### THE BURIED SHOE IS REAL — measured on GEOMETRY, with controls, 2026-11-20
+
+I doubted it, on the grounds that the figure came from `YargFootProbe`, which reports
+**upper-leg bone** heights under the label *"foot height difference"*, and that in a build of her
+the foot BONES differ by only 0.82 mm. **That doubt was wrong.** `foot_plane_check_installed.py`
+(new) skins the installed bundle and reads the lowest vertex of the geometry each foot actually
+dominates:
+
+| character | L min | L p1 | R min | R p1 | **L − R** | foot verts |
+|---|---|---|---|---|---|---|
+| **Jessica Rabbit** | −0.0917 | −0.0915 | +0.0007 | +0.0009 | **−92.4 mm** | 2,770 / 2,778 |
+| Spartan Mark V | −0.0240 | −0.0204 | −0.0240 | −0.0204 | **−0.0 mm** | 695 / 695 |
+| Jinx | −0.0003 | +0.0003 | −0.0003 | +0.0004 | **−0.0 mm** | 4,345 / 4,312 |
+
+**Her whole left shoe is 92.4 mm below her right**, and the 1st percentile sits within 0.2 mm of
+the minimum, so it is the shoe and not one stray vertex. Two controls read **0.0 mm**, which is
+what makes the reading mean anything.
+
+**Why my build disagreed with the installed bundle, which is the part worth keeping.** In the
+build I made today the thigh ROOTS differ by 92.38 mm while the foot BONES differ by 0.82 — the
+pose compensates down the leg. In the SHIPPED bundle the whole left leg chain is low, so the
+compensation is absent and the shoe goes through the floor. Those are two different artefacts and
+I compared across them; the bundle is the one a player sees.
+
+**One sub-claim does NOT reproduce.** *"67 mm below her own hem"* measures **7.7 mm** here. Her
+dress is weighted to the leg, so the hem follows the sunken foot down and the shoe barely clears
+it. (The hem column is not comparable between characters — Spartan's and Jinx's lowest non-foot
+geometry is armour that never reaches the floor, which is why theirs read −97.4 and −19.5 mm.)
+
+**So the 2026-11-18 re-opening was justified on the measurement**, even though the probe result
+that triggered it was separately downgraded, and even though the stance itself is the character.
+A stylised silhouette is not the same claim as a shoe through the floor, and the controls are
+what separate them.
+
 #### THE RENDER CAUGHT WHAT FIVE NUMERIC CHECKS MISSED — 2026-11-20
 
 **The section below is correct about the legs and WRONG that she is fixed.** Rendered on the
