@@ -1456,6 +1456,55 @@ cutoff would not be doing the work, which is the property this project asks of a
 > order that the shader-default sweep got wrong, where a "defect" turned out to be shared by 63
 > of 65 characters.
 
+#### The population, swept over the 26 sources on disk
+
+| outcome | count | who |
+|---|---|---|
+| **the rule would fire** | **1** | `jessica_rabbit.glb`, **1.38%** |
+| keeps a static pose, legs **0.00%** | **18** | Alastor, Alice Ivy, Doom Slayer, Fortnite Mando/Baby Yoda, `Jessica_Rabbit.usdz`, Judy Hopps, Killer Clown, **Kronk** (86 posed bones, legs clean — his lean was spinal), Peacemaker, Pomni, Rebecca, Shaggy, **T-800_Run**, Thanos, Heels, Vigilante, Xenomorph, Harley Quinn |
+| already reset — an action is attached | 6 | Baby Groot, Mando-for-mixamo, Batman, Lola Bunny, Prix, Heavy Metal girl |
+| **unreadable — UNKNOWN, not clean** | 1 | `Yoda.usdz` (no armature found) |
+
+**So Alcina is not an exotic control: 18 of 18 characters on that branch read exactly 0.00%**,
+including two whose filenames promise a pose (`Kronk_Doing_the_Hokey_Pokey`, `T-800_Run`). And
+the zeros are trustworthy because the same instrument reads **2.14% on Prix**, 0.23% and 0.22% on
+two others — all in the already-reset branch, so a non-zero sits beside the zeros.
+
+Not a census: 107 zips may hold further `source/*.blend` files, and the roster's downloaded
+bundles have no source here at all.
+
+#### Implemented as `VRM_DROP_LEG_POSE=1` — opt-in, and the build then ABORTS
+
+`build_vrm.py` now measures what the static pose ADDS to the leg roots' height difference
+(posed minus rest, so an authored rest asymmetry is left alone) as a % of the rig's own span.
+Its own reading agrees with the tool's: **1.38%, `thigh.L` / `thigh.R`, limit 0.50%.**
+
+**It is opt-in because on its own it does not produce a shippable character.** With the flag set,
+the pose is correctly dropped and the build then refuses:
+
+```
+ABORT: re-weighting 'Object_10' left it on 1 bone(s) with 0 unweighted vertices.
+  That is no better than what it had, and shipping it would hide the fault rather than fix it.
+```
+
+`Object_10` is her **skirt** — 13,275 vertices, unweighted in the GLB, authored around the POSED
+body. Drop the pose and bone heat binds it to whatever is now near, so the whole garment lands
+on one bone. **The guard caught it instead of shipping it**, which is the guard working. Turning
+the rule on by default would convert a build that produces a wrong character into one that
+produces no character, which nobody asked for — the same reasoning that made `YARG_KEEP_MTOON`
+opt-in.
+
+**THE DEFAULT PATH IS PROVEN INERT, on the one character the rule targets.** Rebuilt with the
+flag off: **14,798,080 bytes, sha256 `86767e6ff48531f3`, byte-identical to the pre-change
+build**, zero occurrences of the new log lines, and the original `keeping a static pose on 41
+bones` intact. That is a stronger control than Alcina, because it is the subject rather than a
+bystander.
+
+**What is left, and it is well localised:** carry her unweighted skirt and bodice into the rest
+pose at `M⁻¹·v` — the machinery this file already describes for Gadget Hackwrench's 188 unweighted
+teeth vertices — and then the pose can be dropped and the build will complete. Nothing installed,
+and her installed character is untouched.
+
 Not built, not installed, and the proposed change is to the BUILDER rather than to a recipe —
 which is a correction to the first version of this section, where I called it "a change of INPUT,
 not of builder". Her backup discipline applies when anything is installed.

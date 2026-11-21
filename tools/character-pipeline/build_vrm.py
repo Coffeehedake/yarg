@@ -908,7 +908,82 @@ if _had_anim and not _keep_anim_pose:
 # attached at all; resetting her to rest compressed her head and torso to 59%
 # and left her hat and hair floating above them. The pose that survives here is
 # baked into the rest pose further down, before anything is scaled.
-if _had_anim and not _keep_anim_pose:
+# ...EXCEPT when that static pose poses the LEG ROOTS. A pose can carry a character's
+# shape -- Alcina's height, above -- but it cannot carry a STANCE: a figure whose two leg
+# roots sit at different heights is not standing, and every animation in the game then
+# deforms from that. Jessica Rabbit is the measured case. Her source's rest pose is level and
+# symmetric (all six L/R pairs 0.00) and her 25.71 degree hips roll is a 43-bone pose; kept
+# and baked here, it ships her left foot 92 mm below the plane her right stands on. Measured
+# 2026-11-20: source rest dz 0.00 -> built rest dz -92.38 mm against the 92.4 recorded off the
+# installed bundle four days earlier.
+#
+# THE TEST IS ON THE LEGS, and that is not arbitrary -- the other candidates were measured and
+# they INVERT. Alcina's arms are posed about four times harder than Jessica's (1.67% of rig
+# span against 0.43%), so a threshold on overall pose magnitude, or on the arms, drops the
+# pose of the one character who needs it kept. Props do not work either: Alcina holds an
+# EXCLUDEd cigarette holder, so "posed against geometry this build removes" fires on her too.
+#
+# POPULATION, swept over the 26 character sources on disk before this was written, because a
+# rule that fires widely is a sweep and not a fix: 18 sources take this keep-the-static-pose
+# branch and read EXACTLY 0.00% leg asymmetry -- Alastor, Alice Ivy, Doom Slayer, Judy Hopps,
+# Killer Clown, Kronk (86 posed bones and clean legs; his lean was spinal), Peacemaker, Pomni,
+# Shaggy, T-800, Thanos, Xenomorph, Vigilante and the rest. 6 more have an action attached and
+# are reset above, never reaching here. Jessica is the ONLY source it fires on. The threshold
+# is therefore not doing the work, and the zeros are trustworthy because the same instrument
+# reads 2.14% on Prix, 0.23% and 0.22% on two others -- all in the reset branch.
+#
+# Yoda.usdz could not be read at all and is UNKNOWN, not clean.
+#
+# It measures what the POSE adds (posed minus rest), so a character whose rest pose is
+# genuinely asymmetric keeps that asymmetry and only a pose-induced one is refused.
+# VRM_KEEP_POSE=1 still forces the pose to be kept, which is the escape hatch for a character
+# whose stance really is its shape.
+#
+# OPT-IN, VRM_DROP_LEG_POSE=1, and opt-in for a measured reason rather than caution. The rule
+# is correct and correctly scoped -- swept over 26 sources it fires on Jessica alone -- but on
+# its own it does not produce a shippable character. Her skirt `Object_10` is 13,275 vertices
+# UNWEIGHTED in the GLB, authored around the POSED body; drop the pose and bone heat binds it
+# to whatever is now near, which lands the whole garment on one bone and the re-weighting
+# guard below correctly ABORTS ("no better than what it had, and shipping it would hide the
+# fault"). Default-on would therefore turn a build that produces a wrong character into one
+# that produces no character, which is not an improvement anybody asked for.
+#
+# The companion step is the one this file already describes for Gadget Hackwrench's 188
+# unweighted teeth vertices: carry stray geometry into the rest pose at M^-1*v instead of
+# leaving it in the posed one. Until that runs for her skirt and bodice, this flag is how you
+# ask for the pose to be dropped and see the abort that says what is left to do.
+_LEGPOSE_PCT = float(os.environ.get("VRM_LEGPOSE_MAX_PCT", "0.5"))
+_drop_leg_pose = False
+if (os.environ.get("VRM_DROP_LEG_POSE") == "1"
+        and not _keep_anim_pose and not _had_anim):
+    _lp = _early_legs()
+    if len(_lp) == 2:
+        _hsl = [(arm.matrix_world @ _b.head_local).z for _b in arm.data.bones]
+        _spanl = (max(_hsl) - min(_hsl)) or 1.0
+        (_thL, _ftL), (_thR, _ftR) = _lp[0], _lp[1]
+
+        def _dz(nl, nr, posed):
+            if posed:
+                _a = arm.matrix_world @ arm.pose.bones[nl].head
+                _b2 = arm.matrix_world @ arm.pose.bones[nr].head
+            else:
+                _a = arm.matrix_world @ arm.data.bones[nl].head_local
+                _b2 = arm.matrix_world @ arm.data.bones[nr].head_local
+            return _a.z - _b2.z
+
+        _added = abs(_dz(_thL, _thR, True) - _dz(_thL, _thR, False))
+        _pct = 100.0 * _added / _spanl
+        print("  leg roots: the static pose adds %.2f%% of rig span to their height "
+              "difference (%s / %s, limit %.2f%%)"
+              % (_pct, _thL, _thR, _LEGPOSE_PCT))
+        if _pct > _LEGPOSE_PCT:
+            _drop_leg_pose = True
+
+if (_had_anim or _drop_leg_pose) and not _keep_anim_pose:
+    if _drop_leg_pose and not _had_anim:
+        print("DROPPING the static pose: it poses the LEG ROOTS, so it is a stance rather "
+              "than the model's shape. 18 of the 26 swept sources keep a static pose with "
+              "0.00%% here; set VRM_KEEP_POSE=1 if this character's stance really is its shape.")
     for pb in arm.pose.bones:
         pb.matrix_basis.identity()
 else:
