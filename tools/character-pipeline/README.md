@@ -190,6 +190,15 @@ purpose: on a rig whose own T-pose step never ran the add-on's estimate is the o
 T-posing the character, so the build measures the rest pose and warns when it is not a T-pose.
 See "The VRM add-on applies a T-pose of its OWN" below.
 
+**`VRM_KEEP_REST_FINGERS=1`** exempts the FINGER bones from the rest-pose bake, for the OTHER
+way a hand gets flattened. When a Mixamo download's "T-Pose" clip is kept as the bind — which
+the build does on purpose, because the clip carries limb roll a synthesized T cannot recover —
+that clip is a whole-body T-pose and **its fingers are straight**, so baking it also discards
+whatever curl the author gave the hand. That happens before the add-on is reached, which is why
+`VRM_EXPORT_POSE=rest` measures as a complete no-op on such a character. Opt-in because a rig
+whose rest-pose hand is a clenched fist wants the opposite, and nothing here can tell a relaxed
+hand from a gripping one. See "Elite Terrorist's flat hand, 2026-11-21" below.
+
 **2. VRM → .yargchar** (Unity 6000.3.5f2). Copy `YargCharExporter.cs` **and
 `YargCharHandRender.cs`** from this folder into `<fork>/Assets/__TempExport/Editor/`, run it,
 then delete that folder. Both: the exporter calls into the hand renderer, and copying only the
@@ -9998,3 +10007,88 @@ It now takes `up` as hips->head and `across` as right-hand->left-hand in world s
 rig's own bones, so the answer does not depend on which convention the file was written in. The
 legs reading 2.0-6.9 degrees is the control that says the axes are right -- **a limb whose
 answer you already know is what makes the limb you are asking about readable.**
+
+### Elite Terrorist's flat hand, 2026-11-21: a SECOND flattening mechanism, and a check blind to it
+
+Two things above this are wrong and are corrected here. I wrote that
+`VRM_EXPORT_POSE=rest` is "the whole fix", then that it "would make him worse". **It is neither.
+It is a no-op on him**, and a control build is what said so.
+
+#### The control is the whole finding
+
+Built twice from `harold_cameron.fbx`, same recipe (`mixamo`, 1.83, texmax 1024), one variable:
+
+| | upper arm / forearm | thumb | index | middle |
+|---|---|---|---|---|
+| SOURCE `harold_cameron.fbx` | 51.6 / 49.1 (A-pose) | 11.5 | 5.5 | **28.6** |
+| control, no knob | **0.1 / 0.1** | 0.1 | 0.0 | **0.0** |
+| `VRM_EXPORT_POSE=rest` | **0.1 / 0.1** | 0.1 | 0.0 | **0.0** |
+
+Identical to the decimal, 168 bytes apart on disk. The knob *did* take effect -- the logs differ
+exactly where they should, `export pose: the add-on's default autoPose` against `export pose:
+restPositionPose - the add-on's own T-pose estimate is OFF` -- and it changed no measurement.
+
+**That also kills the worry that stopped the rebuild.** His source is an A-pose, so declining the
+add-on's T-pose looked certain to ship an A-pose bind. It does not: the arms come out at 0.1
+degrees either way, because the BUILDER's own step straightens them and the knob never touched
+that. The reasoning was sound and the premise was wrong -- `VRM_EXPORT_POSE` governs the ADD-ON,
+and I had read it as governing all T-posing.
+
+#### What actually flattens his hand, named by the log rather than by me
+
+```
+clearing animation: Armature|mixamo.com|Layer0
+  animated pose: arms 0.0 deg off X, legs 2.1 deg off -Z; rest pose arms 50.2 deg off X
+  KEEPING the animated pose: it is a T-pose and the rest pose is not, so it is the authored
+  bind the model wants. Synthesizing a T from the rest pose instead would lose the limb roll.
+keeping a static pose on 34 bones (this pose is the bind, per the reason above)
+  baked a non-identity rest pose (34 bones) into the rest pose
+```
+
+His FBX carries a **Mixamo "T-Pose" clip**, and the build keeps it deliberately and correctly --
+that clip has the limb ROLL a synthesized T cannot recover, which is exactly what Sonic's
+squiggly arms cost. But a Mixamo T-pose is a WHOLE-BODY pose and **its fingers are straight**, so
+`armature_apply()` writes those straight fingers into the rest pose along with the arms. The
+authored curl is gone before the add-on is reached, which is the entire reason the export-pose
+knob measures as nothing.
+
+**So there are two flattening mechanisms, not one.** This file documented the add-on's
+export-time estimate (Gadget Hackwrench, 29.9/45.3/29.0/28.3 in, 0.0 out) and `VRM_EXPORT_POSE`
+answers that one. This is a different one, earlier in the build, and it needs its own switch.
+
+#### The existing finger check cannot see it, by construction
+
+`_finger_offset` compares each hand's POSE curl against its REST curl, and the relax rule fires
+when one hand is posed and the other is not. It runs **after** the bake. After the bake pose IS
+rest, so it reported `left hand curls 0.0 deg away from rest (3 chains), right hand 0.0 deg` --
+a true statement about a hand whose curl had just been destroyed, printed four lines below the
+line that destroyed it.
+
+A check downstream of the step that does the damage can only ever confirm the damage is
+consistent. This is the same shape as a patch verifier that follows the links the patch wrote.
+
+#### The fix, and what it measured
+
+`VRM_KEEP_REST_FINGERS=1` zeroes the finger bones' pose basis immediately before
+`armature_apply()`, so they keep their authored rest orientation while their PARENTS still take
+the clip's pose -- the hand arrives with the clip's roll and the author's curl. It exempted **24
+bones** on him.
+
+| | upper arm / forearm | thumb | index | middle | L-R asymmetry |
+|---|---|---|---|---|---|
+| source | 51.6 / 49.1 | 11.5 / 12.0 | 5.5 / 6.4 | **28.6 / 23.9** | 4.8 |
+| control | 0.1 / 0.1 | 0.1 / 0.0 | 0.0 / 0.0 | 0.0 / 0.0 | 0.0 |
+| **`VRM_KEEP_REST_FINGERS=1`** | **0.1 / 0.1** | **11.5 / 12.0** | **5.5 / 6.5** | **28.6 / 23.9** | **4.8** |
+
+The source figures recovered to a tenth of a degree, the arms unmoved, and the left-right
+asymmetry back to the source's own 4.8 rather than a manufactured 0.0.
+
+**It is opt-in and should stay opt-in.** A rig whose rest-pose hand is a clenched fist wants the
+clip's straight fingers, and nothing in the build can tell a relaxed hand from a gripping one --
+which is precisely the distinction the existing relax rule exists to make, and it needs both
+poses to make it. Turning this on by default would re-flatten nothing but would ship a fist on
+whichever character is holding one.
+
+**Which of the other 42 flat-handed characters this applies to is not established.** It is a
+question about each of their SOURCES, not their bundles, and `knuckle_bend_source.py` is the
+tool for asking it one at a time.

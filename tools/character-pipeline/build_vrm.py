@@ -1391,6 +1391,39 @@ def bake_pose_to_rest(why):
         bpy.context.view_layer.update()
         print("  settled and removed constraints on %d pose bones first, so the "
               "bake is not undone the moment it lands" % len(_cons))
+    # VRM_KEEP_REST_FINGERS=1 exempts the FINGER bones from this bake.
+    #
+    # WHY, measured on Elite Terrorist 2026-11-21. A Mixamo auto-rig download carries a
+    # "T-Pose" clip, and the branch above keeps it deliberately -- the clip has the limb ROLL
+    # that a synthesized T cannot recover, which is what Sonic's squiggly arms cost. But that
+    # clip is a WHOLE-BODY T-pose and its fingers are STRAIGHT, so baking it as the rest pose
+    # also replaces whatever curl the author gave the hand. His source carries 28.6 degrees of
+    # knuckle bend on the right middle finger and his shipped bundle carries 0.0.
+    #
+    # This is a SECOND flattening mechanism, distinct from the one this file documents. That
+    # one is the VRM add-on's export-time estimate and `VRM_EXPORT_POSE=rest` stops it. This
+    # one happens here, before the add-on is reached, which is exactly why that knob measured
+    # as a NO-OP on him: control and treatment came out identical to the decimal.
+    #
+    # The finger-relax check further down cannot see it either, because it compares pose
+    # against rest and runs AFTER this bake -- by which point pose IS rest, by construction,
+    # and it dutifully reports 0.0 degrees of difference.
+    #
+    # Zeroing a finger's pose basis leaves it at its authored rest orientation while its
+    # PARENT still takes the clip's pose, so the hand arrives with the clip's roll and the
+    # author's curl. It is opt-in because a rig whose rest-pose hand is a clenched fist wants
+    # the opposite, and nothing here can tell a relaxed hand from a gripping one.
+    if os.environ.get("VRM_KEEP_REST_FINGERS") == "1":
+        _fw = ("finger", "thumb", "index", "middle", "ring", "pinky", "little")
+        _kept = [pb for pb in arm.pose.bones
+                 if any(w in pb.name.lower() for w in _fw)]
+        for _pb in _kept:
+            _pb.matrix_basis.identity()
+        bpy.context.view_layer.update()
+        print("  fingers: EXEMPTED %d finger bone(s) from the bake, so they keep the "
+              "author's rest curl while the rest of the skeleton takes the clip's pose "
+              "(VRM_KEEP_REST_FINGERS=1)" % len(_kept))
+
     bpy.ops.pose.armature_apply()
     bpy.ops.object.mode_set(mode="OBJECT")
     bpy.context.view_layer.update()
