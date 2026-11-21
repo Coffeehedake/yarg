@@ -9745,3 +9745,54 @@ other renderer off, and asks the Animator's humanoid map rather than matching bo
 about answering** -- Alcina's eyelashes, Miku's tie clearances, and now this. The pattern is
 consistent enough to be a rule: before building an instrument, grep this file for the quantity
 it measures, not for the character's name.
+
+### Reports 5 and 9: Batman's cape and Jessica's dress have ONE cause and TWO answers
+
+Both are "guarded" by `cloth_collide_installed.py` -- Batman 12 chains and 0 unguarded, Jessica
+8 and 0 unguarded. **That does not mean what it looks like.** "Guarded" there means the humanoid
+part the chain hugs carries *a* collider; it says nothing about whether that collider is the
+right SIZE. Miku's tie was the first case where the difference mattered, and it is the same
+difference here.
+
+(Jessica's "2 chest chains skipped on purpose" is the `breast|bust|pectoral|boob` regex, which
+is her breast rig, not her dress. Her dress is the four `ClothSpring_1_*` chains.)
+
+`tie_collider_fit.py` generalises to any chain, and the two characters come out opposite.
+
+#### Batman: the bounds CROSS, and the fix is not available as one capsule
+
+| | |
+|---|---|
+| capsule standing in for his torso | `fml_un_C_pelvis_att`, **111.8 mm** |
+| cape joints, rest distance from that axis | 141.7 mm rising to 919.0 mm |
+| body surface beside the top cape joints | median **149.4 mm**, min 123.4 mm |
+| feasible interval | **r in [144.8, 121.7] mm -- EMPTY, crossed by 23.1 mm** |
+
+So his cape is currently held at `111.8 + 20 = 131.8` mm from the axis while his body surface is
+at 149.4 mm: **the solver is holding the cape about 18 mm inside his own silhouette**, which is
+the clipping. But it cannot simply be made bigger, because the cape's top joints are *authored*
+at 141.7 mm -- inside the 149.4 mm surface. A cape attaches under the skin at the shoulders, so
+any capsule big enough to reach his surface starts with those joints inside it and displaces the
+whole cape on frame one.
+
+**Not attempted, and the shape of what would work is recorded instead of built:** collision
+would have to apply to the lower cape only, with the attachment joints excluded, or the capsule
+would have to follow the back rather than the pelvis axis. Both are design decisions about his
+rig, not a radius. Seven of his eleven cape chains were not measured individually.
+
+#### Jessica: a radius exists, and it is comfortable
+
+| | |
+|---|---|
+| feasible interval | **r in [164.9, 186.6] mm** |
+| suggested | **175.7 mm** (midpoint), 21.8 mm wide |
+| first dress joint | held at 195.7 mm vs body surface 184.9 mm -- **+10.9 mm outside** |
+| rest clearance at that radius | **+10.9 mm** |
+
+The remaining three joints of that chain hang clear of her body entirely (no body vertex within
+60 mm), so they constrain nothing, and their rest clearances are +68.0, +97.7 and +202.8 mm.
+
+**This is NOT applied.** It is the same class of change as Miku's tie, on a character nobody has
+asked to have patched, and only one of her four `ClothSpring` chains has been measured -- the
+other three may want different radii or may share one. The number above is a result, not a
+recommendation to run.

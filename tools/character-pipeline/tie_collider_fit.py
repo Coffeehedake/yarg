@@ -301,12 +301,13 @@ def main():
               % (bn[:20], (rec + jr) * 1000, surf * 1000,
                  (rec + jr - surf) * 1000, (d - rec - jr) * 1000))
     print()
-    print("    The interval is only %.1f mm wide because a tie knot RESTS on the chest --"
+    print("    The interval is %.1f mm wide. It is narrow whenever the chain RESTS against"
           % ((cap - need) * 1000))
-    print("    there is physically almost no room between 'outside the body' and 'where it")
-    print("    already is'. A tight interval is the honest answer here, not a weak one, but")
-    print("    it does mean the rest clearance will be small and the guard in")
-    print("    patch_add_springs.py is what has to confirm it rather than this tool.")
+    print("    the body -- a tie knot or a cape attachment has almost no room between")
+    print("    'outside the surface' and 'where it already is' -- and wide when the chain")
+    print("    hangs clear. A tight interval is an honest answer, not a weak one, but it")
+    print("    means the rest clearance will be small, and the guard in the patcher is what")
+    print("    confirms it rather than this tool.")
     return 0
 
 
