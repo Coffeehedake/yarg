@@ -953,6 +953,11 @@ if _had_anim and not _keep_anim_pose:
 # leaving it in the posed one. Until that runs for her skirt and bodice, this flag is how you
 # ask for the pose to be dropped and see the abort that says what is left to do.
 _LEGPOSE_PCT = float(os.environ.get("VRM_LEGPOSE_MAX_PCT", "0.5"))
+# Laplacian passes over a rehomed garment's own edges, to let a neighbourhood outvote a vertex
+# that borrowed from a limb merely passing by. Tunable because the right number depends on how
+# dense the mesh is relative to the stray patch, and the edge-stretch guard below is what says
+# whether it was enough -- do not raise it blind.
+_SMOOTH_PASSES = int(os.environ.get("VRM_REHOME_SMOOTH", "6"))
 _drop_leg_pose = False
 if (os.environ.get("VRM_DROP_LEG_POSE") == "1"
         and not _keep_anim_pose and not _had_anim):
@@ -1088,20 +1093,64 @@ elif _drop_leg_pose and not _keep_anim_pose:
             # percentile beside the median and fail on either.
             _medbefore[_o.name] = (_med_before, _before[min(len(_before) - 1,
                                                             int(len(_before) * 0.99))])
-            _newco, _byb = {}, {}
+            # BORROW from the nearest body vertex, then SMOOTH over the garment's own edges.
+            #
+            # The nearest donor alone is not safe: where a limb merely PASSES BY, a handful of
+            # vertices take its bones and the triangles reaching them are dragged off with it
+            # when the pose goes. Measured on Jessica -- skirt vertices by her hip borrowed her
+            # FOREARM, and the podium render showed them streaked to her hand at an edge
+            # stretch of 118.69x while the median stayed at 1.00x.
+            #
+            # Smoothing is the fix because the fault is LOCAL DISAGREEMENT: a stray vertex
+            # differs sharply from the neighbours it shares triangles with, and a few
+            # Laplacian passes over the mesh's own connectivity let the neighbourhood outvote
+            # it. A sleeve, where the arm is genuinely the right donor, has a whole
+            # neighbourhood agreeing and survives untouched -- which a blanket "never borrow
+            # from arm bones" rule would not allow.
+            _raw = {}
             for _vi, _v in enumerate(_o.data.vertices):
                 _, _ni, _ = _dkd.find(_o.matrix_world @ _v.co)
                 _w = _donor[_ni][1]
                 _tot = sum(_x for _x, _ in _w) or 1.0
+                _raw[_vi] = {_bn: _x / _tot for _x, _bn in _w}
+            _adj = {}
+            for _e in _o.data.edges:
+                _a, _b = _e.vertices[0], _e.vertices[1]
+                _adj.setdefault(_a, []).append(_b)
+                _adj.setdefault(_b, []).append(_a)
+            for _pass in range(_SMOOTH_PASSES):
+                _nxt = {}
+                for _vi, _wd in _raw.items():
+                    _acc = dict(_wd)
+                    _nb = _adj.get(_vi) or []
+                    if _nb:
+                        for _k in list(_acc):
+                            _acc[_k] *= 0.5
+                        _share = 0.5 / len(_nb)
+                        for _n2 in _nb:
+                            for _k, _x in _raw[_n2].items():
+                                _acc[_k] = _acc.get(_k, 0.0) + _x * _share
+                    _s = sum(_acc.values()) or 1.0
+                    # Drop the dust a blend leaves behind, or every vertex ends up naming
+                    # forty bones at a thousandth each and the VRM exporter carries them all.
+                    _acc = {_k: _x / _s for _k, _x in _acc.items() if _x / _s > 0.01}
+                    _s2 = sum(_acc.values()) or 1.0
+                    _nxt[_vi] = {_k: _x / _s2 for _k, _x in _acc.items()}
+                _raw = _nxt
+            _newco, _byb = {}, {}
+            for _vi, _v in enumerate(_o.data.vertices):
+                _wd = _raw.get(_vi) or {}
+                if not _wd:
+                    continue
                 _Mo = Matrix(((0.0,) * 4,) * 4)
-                for _x, _bn in _w:
-                    _Mo += _bmo[_bn] * (_x / _tot)
+                for _bn, _x in _wd.items():
+                    _Mo += _bmo[_bn] * _x
                 try:
                     _newco[_vi] = _Mo.inverted() @ _v.co
                 except ValueError:
                     continue
-                for _x, _bn in _w:
-                    _byb.setdefault(_bn, []).append((_vi, _x / _tot))
+                for _bn, _x in _wd.items():
+                    _byb.setdefault(_bn, []).append((_vi, _x))
             for _vi, _co in _newco.items():
                 _o.data.vertices[_vi].co = _co
             for _bn, _vs in _byb.items():
@@ -1191,11 +1240,29 @@ elif _drop_leg_pose and not _keep_anim_pose:
                             continue
                         _st.append(_eafter[_i] / _l0)
                     if _st:
+                        # NAME THE BONES ON THE WORST EDGES. Which limb a stray patch borrowed
+                        # from is a measurement, not something to read off a render -- and it
+                        # is what any donor restriction has to be built from.
+                        _bad = sorted(range(len(_eb)),
+                                      key=lambda _i: -(_eafter[_i] / _eb[_i]
+                                                       if _eb[_i] > 1e-6 else 0.0))[:200]
+                        _g3 = {_g.index: _g.name for _g in _o.vertex_groups}
+                        _blame = {}
+                        for _i in _bad:
+                            for _vx in _o.data.edges[_i].vertices:
+                                for _ge in _o.data.vertices[_vx].groups:
+                                    if _ge.weight > 0.2:
+                                        _nm = _g3.get(_ge.group)
+                                        _blame[_nm] = _blame.get(_nm, 0.0) + _ge.weight
+                        _top3 = sorted(_blame.items(), key=lambda kv: -kv[1])[:6]
                         _st.sort()
                         _s99 = _st[min(len(_st) - 1, int(len(_st) * 0.99))]
                         _smax = _st[-1]
                         print("      '%s': edge stretch  median %.2fx  p99 %.2fx  max %.2fx"
                               % (_o.name, _st[len(_st) // 2], _s99, _smax))
+                        print("      '%s': bones on the 200 worst edges: %s"
+                              % (_o.name, ", ".join("%s %.0f" % (_n4, _w4)
+                                                    for _n4, _w4 in _top3) or "none"))
                         if _s99 > 3.0:
                             raise SystemExit(
                                 "ABORT: '%s' has edges stretched %.1fx at the 99th percentile "

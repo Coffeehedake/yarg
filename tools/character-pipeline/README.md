@@ -1504,10 +1504,25 @@ bystander.
 
 **The section below is correct about the legs and WRONG that she is fixed.** Rendered on the
 podium — `measurements/jessica-posedrop-REHOMED-streaks-2026-11-20.png`, against
-`-CONTROL-` — her legs are straight and both feet are on the podium, **and a spray of red and
-blue streaks fans from her left hip across to her left hand.** Skirt vertices borrowed weights
-from her FOREARM, because her arm hangs by her hip in the posed source; drop the pose, the arm
-leaves, and the triangles reaching those vertices stretch across the figure.
+`-CONTROL-` — her legs are straight and both feet are on the podium, **and a spray of streaks
+fans out across the figure.**
+
+> **I read the cause off the picture and the picture misled me.** I wrote here, and in a commit
+> message, that skirt vertices had borrowed weights from her FOREARM. **Measured, they had not.**
+> The bones carried by the vertices of the 200 most-stretched edges are:
+>
+> ```
+> thigh.R 163, thigh.L 52, shin.L 33, palm.04.R 27, foot.R 19, shin.R 16
+> ```
+>
+> **Her THIGHS dominate**; the one arm bone, `palm.04.R`, is fourth at a sixth of the weight.
+> These are not wrong-limb borrows at all — they are skirt panels spanning BETWEEN her legs. Her
+> skirt is a tube modelled around legs that are CROSSED in the source, and dropping the pose puts
+> them side by side (6.2° / 6.2°, feet 0.216 apart). The panels bridging the gap have to stretch,
+> and linear blend skinning across a widening gap is exactly what produces these streaks.
+>
+> So the donor restriction I set out to build would not have helped: the donors were already
+> right. One grep over the actual weights settled what three renders and an inference did not.
 
 **Every numeric check passed.** That is the finding. In order:
 
@@ -1528,10 +1543,24 @@ be the artefact: stretched geometry means measure stretch.
 is exact — beside a max of **118.69x**. A median cannot see a tail, and a tail of a few hundred
 vertices is what a viewer sees first.
 
-`VRM_DROP_LEG_POSE=1` now **refuses to write the file**, naming the percentile and the max. The
-rehoming is right for 99% of the mesh and wrong for the rest, and the remaining work is to stop
-a garment borrowing from a limb that is merely passing by — a donor restricted to plausible
-bones, or agreement among the k nearest rather than the single nearest.
+`VRM_DROP_LEG_POSE=1` now **refuses to write the file**, naming the percentile, the max and the
+bones to blame. Smoothing the borrowed weights over the garment's own edges (`VRM_REHOME_SMOOTH`,
+6 passes) took the max from **118.69x to 30.35x** and the p99 from 7.19x to 4.85x — a real
+improvement, and not enough, because the stray region is CONTIGUOUS: its neighbours borrowed the
+same thighs, so averaging arm-with-arm, or thigh-with-thigh, changes nothing about the gap.
+
+#### And the residue is the 2026-11-16 trade, re-derived from the other end
+
+**This is not an implementation defect left to polish.** Her skirt is cut around crossed legs.
+Straighten the legs and the panels bridging them must stretch; no choice of donor, smoothing or
+threshold removes a geometric conflict between a garment's cut and the limbs' position. The only
+repairs are re-modelling the skirt or accepting the stretch.
+
+Which is the closure this file made on 2026-11-16 — *"every available correction trades the
+buried shoe for a twisted pelvis"* — arrived at from a different direction and with a different
+cost in the second half of the sentence. **That closure was better founded than I credited when
+I re-opened the question.** What is genuinely new is that the skeleton CAN be fixed, cleanly and
+measurably, and that what it costs is her skirt rather than her pelvis.
 
 **She is NOT fixed, nothing is installed, and the numbers below stand only for the skeleton.**
 
