@@ -9352,3 +9352,154 @@ properly: export the geometry alone with `strip_for_mixamo.py`, upload it, place
 (put the elbow at the MIDDLE of the arm — too close to the shoulder and the T-pose straightening
 kinks it), apply the **T-Pose** animation, and download FBX Binary *with skin*. Build the result
 with `rig=mixamo`.
+
+## Nine reports from the character select screen, 2026-11-21
+
+Jay looked at the installed roster in the game's own character select and reported nine faults.
+**They are recorded here BEFORE any of them is measured**, with the words he used, because the
+order they are written in is not an order of severity and a report is not a diagnosis. This
+project has twice built a correct mechanism for a fault that turned out not to exist, and once
+named a cause off a render that the weights contradicted.
+
+| # | Character | Reported | Class (provisional) |
+|---|---|---|---|
+| 1 | Elite Terrorist | hand is crumpled | deformation |
+| 2 | Miku | tie clips through her clothes | penetration |
+| 3 | Kronk | right hand isn't set to a grip for the mic | hand pose |
+| 4 | Judy Hopps | hand isn't set to a grip for the mic | hand pose |
+| 5 | Batman | cape clips through his body | penetration |
+| 6 | B1 Battle Droid | still holding his blaster, which will conflict with a mic | stray geometry |
+| 7 | Alcina Dimitrescu | face, eyelashes etc are incorrect | material or geometry |
+| 8 | Prix | right arm and hand are twisted around and crushed | deformation |
+| 9 | Jessica Rabbit | dress clips through her body | penetration |
+
+The "class" column is a guess at what kind of thing each is, written down so it can be shown
+wrong. Three of them cluster as hand faults (1, 3, 4, and arguably 8), three as one surface
+passing through another (2, 5, 9), and 6 and 7 stand alone. **Clustering is a hypothesis about
+shared cause, not evidence of one** -- the skirt-streak investigation looked like one fault with
+one cause and the weights named thighs where the eye named a forearm.
+
+### What the game does with the hand, which settles what "a grip" even means
+
+`BackgroundManager.cs` does **not** pose the hand. It reads six humanoid bones off the Avatar and
+puts the microphone where the fingers already are:
+
+```csharp
+var mic = Instantiate(..., rightHand);                       // parented to the hand
+var yuiIndexGripCenter = Vector3.Lerp(rightThumbDistal.position,
+                                      rightIndexProximal.position, 0.25f);
+mic.transform.position = yuiIndexGripCenter;
+```
+
+So reports 3 and 4 are not "the grip animation failed to play" -- there is no grip animation.
+The mic is placed at a point one quarter of the way from the right thumb's distal joint to the
+right index's proximal joint, and if the fingers are open that point sits in open air with the
+mic hanging in it. The question those two reports actually ask is **where those bones are**, and
+that is a number this repo can read out of the installed bundle.
+
+Two things have to be true before a rest-pose finger measurement can answer it, and neither is
+assumed here:
+
+1. **The required six must be mapped at all.** `GetBoneTransform` returns null rather than
+   throwing for an unmapped bone -- the comment at `BackgroundManager.cs:1046` records what that
+   cost, since the null escaped the `try`, the character never reached its `SetLayer`, and
+   Alastor was invisible rather than mic-less. A character missing them does not get a floating
+   mic; it does not get drawn.
+2. **The animation must not drive the fingers.** The mic is placed after `animator.Update(0f)`,
+   so the pose at that instant is the animation's, not the bundle's rest pose. If the default
+   vocal clips carry finger curves then the rest pose is the wrong thing to measure and the
+   answer is in the clips instead.
+
+Report 6 is the same mechanism seen from the other side: B1's blaster is geometry weighted into
+the hand, so the mic will be placed into a fist that is already full. Nothing about the mic code
+can avoid that -- the fix, if there is one, is at build time.
+
+### Reports 3, 4 and 6 ANSWERED: the hands cannot close, and nine characters are worse off
+
+Two new tools, both population-wide over the 65 installed bundles, both with the unreported
+characters as controls: `hand_grip_check_installed.py` (what the Avatar binds) and
+`mic_placement_check_installed.py` (where the mic is actually put).
+
+#### The grip is a limitation of the models, and the fused bones are ours
+
+`VoxMicGrab.anim` drives twenty **humanoid muscle curves** through a mask that enables exactly
+one body part, `RightFingers`. A muscle curve addresses a SLOT, not a transform, so a slot the
+Avatar does not bind is discarded in silence. The sweep is not uniform -- 48 of 65 bind all
+fifteen right-finger slots, 14 partial, 3 none -- so it discriminates, and the 48 are the
+control that makes a low score mean something.
+
+**Kronk and Judy Hopps both read 9 of 15, missing the identical six slots: all of Middle and all
+of Ring.** Jay named exactly those two. Yoda reads the same 9 of 15 and was not reported.
+
+But the cause is not a mapping that was missed, and the second probe is what said so: **their
+rigs contain no middle or ring bone at all**, and every finger bone either of them does have is
+one THIS PIPELINE INVENTED. Their real finger nodes number zero; the eighteen `*_fused` names in
+each rig come from the `VRM_FILL_FINGERS` block in `build_vrm.py`, which synthesises thumb,
+index and little -- the three the microphone code dereferences -- and deliberately leaves middle
+and ring alone because nothing reads them. Those bones are **weightless on purpose**: they exist
+so a null does not make the character invisible, and they deform nothing.
+
+So the chain is complete and it is nobody's bug: a three-fingered cartoon rig has no finger
+bones, we add weightless stand-ins so the game can find them, the muscle curves move the
+stand-ins, and no skin follows. **The hand cannot close and no change to the mapping will make
+it.** This belongs in the "limitation of the model, not a failure" category.
+
+#### The hypothesis that the mic would be flung down the forearm is WRONG
+
+When no complete finger exists to copy from, `VRM_FILL_FINGERS` lays the stand-ins out by
+stepping along the forearm. Since the game computes `Lerp(RightThumbDistal, RightIndexProximal,
+0.25)`, that looked certain to put the microphone somewhere off the wrist, and the obvious fix
+was to place the stand-ins in the palm instead. **It measures as nothing.** Distance from the
+computed mic point to the nearest right-hand vertex, as a percentage of each character's own
+height, because a millimetre is not comparable across a roster this varied:
+
+```
+54 characters whose two mic bones are REAL         median 0.24%   worst 1.45%
+ 4 whose mic bones this pipeline INVENTED          median 1.20%   worst 1.86%
+```
+
+Kronk's 1.20% sits beside Batman's 1.22%; Judy's 1.86% is the worst reading on the roster and is
+still 19.6 mm. **The mic lands in the hand for every character that gets one.** The stand-ins
+are stepped a third of a hand-length at a time from the hand's own head, so they never get far.
+A fix was designed before it was measured, and the measurement killed it.
+
+#### What the sweep found that nobody reported: nine characters get no microphone
+
+Nine bundles fail `BackgroundManager`'s six-bone requirement outright:
+
+| missing | characters |
+|---|---|
+| five of the six | B1 Battle Droid, Mannequin, Steve |
+| `Right Thumb Distal`, `Right Little Distal`, `Right Little Proximal` | Sonic, Yui Suzukaze |
+| `Right Little Distal`, `Right Little Proximal` | Vegeta, Mickey Mouse |
+| `Right Thumb Distal` | Peacemaker, Vigilante |
+
+**What that costs depends on which build is running, and the difference is severe:**
+
+- With commit `0d3d4e4f` (2026-11-09, "stop a missing finger bone making a character
+  invisible"): the explicit null check returns cleanly, `SetLayer(newCharacter, "Venue")` on the
+  next line still runs, and the character is drawn holding nothing.
+- Without it: `GetBoneTransform` returns null rather than throwing, the null escapes the `try`
+  and surfaces at `rightThumbDistal.position` outside it, the throw leaves `LoadCharacter`
+  before the `SetLayer`, and the venue camera culls the character. **INVISIBLE.**
+
+**The build Jay is running does not have the fix.** `fork-build\YARG_Data\Managed\
+Assembly-CSharp.dll` is dated 2026-11-04 08:41; `0d3d4e4f` landed on `dev` five days later. So
+all nine are invisible in gameplay today, and a rebuild is the whole fix -- nothing about the
+characters needs to change for it. None of this shows in the character-select podium, which does
+not go through `BackgroundManager` at all, which is why nine broken characters look perfect in
+the screenshots that prompted the other eight reports.
+
+**This also corrects report 6.** B1 Battle Droid's blaster cannot "conflict with a mic", because
+B1 has no right hand bone mapped at all and is never given one. The blaster is still wrong, but
+the mechanism named in the report is not the one operating, and the fix for it is at build time.
+
+#### A zero that was my harness, not the subject
+
+The first run of `mic_placement_check_installed.py` reported "no right-hand geometry found" for
+Kronk and Judy and nobody else, which reads as a finding about them. It was not. The tool picked
+hand vertices with a regex over bone names, and their bones are called `n6`, `n38`, `n83` --
+numbered, not named -- so the regex matched nothing on exactly the two characters the tool was
+written to measure. It now takes the hand's descendants from the `m_TOS` hierarchy, by structure.
+The reason it was caught rather than believed is that the tool prints "unmeasured, NOT good"
+instead of a zero ([[verify-a-zero-with-a-control]]).
