@@ -10288,3 +10288,61 @@ other open reports, so resolving their sources has value beyond hands.
 **No archive at all in Downloads**: Aiko, Kronk, Mickey Mouse, Peacemaker, Vigilante, Yui
 Suzukaze. Kronk's and Judy's hands are separately a limitation of their rigs, which no source
 work reaches.
+
+#### The widened survey, same day: 35 of 42 read, and the ambiguity method paid for itself
+
+Two changes to `flat_hand_survey.py`: it unpacks NESTED archives (two levels, zip and 7z,
+refusing traversal entries at each level, not just the outer one), and it measures EVERY
+candidate for an ambiguous character instead of skipping it. Coverage went from 16 of 42 to 35.
+
+**Measuring every candidate resolved two of the three ambiguities outright:**
+
+| character | candidates | result |
+|---|---|---|
+| **Prix** | `Prix.fbx`, `scene.gltf`, `prix.glb` | **all three read 11.0** — which file is "the" source does not matter |
+| **Jessica Rabbit** | `JR - Copy.blend`, `jessica_rabbit.glb` | **both read 30.6** |
+| Harley Quinn | `Snake Hip Hop Dance.fbx` 16.0/12.6, `HQ.blend` 20.4, one unreadable | **disagree by 21.4 — left open** |
+
+That is the whole point of measuring rather than picking: agreement makes the question moot, and
+the one genuine disagreement is now a recorded fact instead of a coin flip. Sonic and The
+Mandalorian are also left open.
+
+**24 characters carry 5.0+ degrees their bundle has lost:** Sayuri 120.1, Baby Groot, Pepsiman,
+The Rock, Shrek 33.8, Jessica Rabbit 30.6, Judy Hopps 29.6, Chibi Rem 26.6, Skeleton Mage 22.9,
+Vegeta 22.2, Spartan Mark V 20.6, Spider-Man PS 20.3, Sophia 16.8, Gwen Stacy 15.4, Spider-Man
+15.2, Iron Man 14.8, Jinx 14.8, Link 13.2, Prix 11.0, Mario 10.6, Tenna 10.1, Alastor 7.6, and
+both Clone Troopers at 4.9/6.4.
+
+**Only TWO are genuinely authored flat**: Power Girl 1.6 and Killer Clown 0.0.
+
+#### A bug in this tool's own summary, of exactly the kind its docstring warns about
+
+The first widened run reported **eight** characters as "AUTHORED FLAT (nothing to fix)", and six
+of them — Batman, K-2SO, Lola Bunny, Miku, Peach, Skibidi Toilet — had printed `-` on every
+single finger. `-` means the slots could not be measured. The summary ran them through
+`float()`, got the -1.0 sentinel, found it below the 5.0 threshold and filed them as flat.
+
+The docstring says, in terms, that a blank and a zero mean opposite things and that averaging
+them together would hide every mitten hand on the roster. The TABLE honoured that and the
+SUMMARY did not, so the detail was right and the headline was wrong — and the headline is what
+anyone would have acted on. Fixed: an unmeasurable character now gets its own bucket and the
+report says "UNMEASURED, which is NOT the same as flat".
+
+**Corrected tally, summing to 42:**
+
+| | count | |
+|---|---|---|
+| bend lost | 24 | candidates for a rebuild |
+| authored flat | 2 | Power Girl, Killer Clown |
+| no finger measurable | 6 | Batman, K-2SO, Lola Bunny, Miku, Peach, Skibidi Toilet |
+| candidates disagree | 3 | Sonic, The Mandalorian, Harley Quinn |
+| no candidate archive | 6 | Aiko, Kronk, Mickey Mouse, Peacemaker, Vigilante, Yui Suzukaze |
+| unreadable | 1 | Yoda — his `.fbx` extracts and Blender prints no result |
+
+#### What this still is NOT
+
+A list of 24 characters to rebuild. Every caveat from the first pass stands: most of these
+sources are animation exports, so `VRM_EXPORT_POSE=rest` alone is the likely fix rather than
+Elite's pair of switches; Sayuri's 120.1 is a fist where flattening was right; and a rebuild
+needs a recipe, which **five of the clearest candidates do not have** — Iron Man, Skeleton Mage,
+Spider-Man, Spider-Man PS and Vegeta have no row in the recipe table at all.

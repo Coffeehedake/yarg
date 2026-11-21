@@ -16,12 +16,21 @@ pipeline's OWN BUILD OUTPUTS. Measuring one answers "what did that build produce
 the author author", and a build that flattened the hand produces a flat `.vrm` every time. So
 this reads the original download archives only.
 
-AMBIGUITY IS REPORTED, NEVER RESOLVED BY GUESSING. Several characters have more than one
+AMBIGUITY IS MEASURED, NOT GUESSED AND NOT SKIPPED. Several characters have more than one
 plausible archive -- Harley Quinn three, Prix three, Power Girl two, Sonic two, Judy two. This
-file already records that Iron Man had four candidate sources and only texture SIZE could
-separate them, and that the newest file is not the source. A character with more than one
-candidate is printed as AMBIGUOUS and not measured; picking one would produce a number that
-looks exactly like a measurement.
+file records that Iron Man had four candidate sources separable only by texture size, and that
+the newest file is not the source, so picking one would produce a number indistinguishable from
+a measurement.
+
+**So every candidate is measured and all of them are printed.** If they agree, which one is
+genuinely the source does not matter for this question and the answer stands; if they disagree,
+that is said plainly and the character stays open. An earlier version of this tool skipped
+ambiguous characters entirely, which turned ten of the forty-two into a silent gap.
+
+NESTED ARCHIVES ARE UNPACKED. Ten archives hold their model inside a SECOND archive --
+`the-rock.zip` contains `source/The_Rock.7z`, `peach-ssb4.zip` contains `source/model.zip`. The
+first version did not recurse and reported all ten as "no model inside", which reads as a
+missing source and was really a missing feature.
 
 Each archive is extracted into its OWN EMPTY DIRECTORY and the model path is passed to Blender
 as an argument, because a downloaded archive is untrusted input. The extraction is deleted
@@ -85,6 +94,56 @@ MAP = {
 NO_SOURCE = ["Aiko", "Kronk", "Mickey Mouse", "Peacemaker", "Vigilante", "Yui Suzukaze"]
 
 MODEL_RE = re.compile(r"\.(fbx|glb|gltf|blend)$", re.I)
+ARC_RE = re.compile(r"\.(zip|7z)$", re.I)
+
+
+def _safe_members(names):
+    """Refuse traversal and absolute entries. A downloaded archive is untrusted input."""
+    return [n for n in names
+            if n.startswith(("/", "\\")) or ".." in n.replace("\\", "/").split("/")
+            or re.match(r"^[A-Za-z]:", n)]
+
+
+def unpack(arc, dest):
+    """Extract one archive. Returns an error string, or None."""
+    try:
+        if arc.lower().endswith(".zip"):
+            with zipfile.ZipFile(arc) as z:
+                bad = _safe_members(z.namelist())
+                if bad:
+                    return "%d traversal entr(ies), refused" % len(bad)
+                z.extractall(dest)
+        else:
+            import py7zr
+            with py7zr.SevenZipFile(arc, "r") as z:
+                bad = _safe_members(z.getnames())
+                if bad:
+                    return "%d traversal entr(ies), refused" % len(bad)
+                z.extractall(dest)
+    except Exception as exc:                                        # noqa: BLE001
+        return "%s: %s" % (type(exc).__name__, exc)
+    return None
+
+
+def unpack_deep(arc, dest, depth=2):
+    """Extract, then extract any archive that extraction produced, to `depth` levels."""
+    err = unpack(arc, dest)
+    if err:
+        return err
+    for _ in range(depth):
+        inner = [os.path.join(dp, f)
+                 for dp, _d, fs in os.walk(dest) for f in fs if ARC_RE.search(f)]
+        if not inner:
+            break
+        for i, p in enumerate(inner):
+            sub = os.path.join(os.path.dirname(p), "_x%d" % i)
+            os.makedirs(sub, exist_ok=True)
+            unpack(p, sub)
+            try:
+                os.remove(p)        # so the next pass does not re-extract it forever
+            except OSError:
+                pass
+    return None
 
 
 def biggest_model(root):
@@ -125,7 +184,7 @@ def main():
     only = set(sys.argv[3:])
     os.makedirs(scratch, exist_ok=True)
 
-    rows, amb, missing, failed = [], [], [], []
+    rows, missing, failed = [], [], []
     for name in sorted(MAP):
         if only and name not in only:
             continue
@@ -133,70 +192,94 @@ def main():
         if not cands:
             missing.append((name, MAP[name][0]))
             continue
-        if len(cands) > 1:
-            amb.append((name, cands))
-            continue
-        arc = os.path.join(dl, cands[0])
-        work = os.path.join(scratch, re.sub(r"[^A-Za-z0-9]+", "_", name))
-        if os.path.isdir(work):
-            shutil.rmtree(work, ignore_errors=True)
-        os.makedirs(work)
-        try:
-            if arc.lower().endswith(".zip"):
-                with zipfile.ZipFile(arc) as z:
-                    bad = [n for n in z.namelist()
-                           if n.startswith(("/", "\\")) or ".." in n or re.match(r"^[A-Za-z]:", n)]
-                    if bad:
-                        failed.append((name, "archive has %d traversal entr(ies), refused"
-                                       % len(bad)))
-                        shutil.rmtree(work, ignore_errors=True)
+        # EVERY candidate is measured. Agreement makes the ambiguity irrelevant;
+        # disagreement is the finding.
+        for ci, cand in enumerate(cands):
+            arc = os.path.join(dl, cand)
+            work = os.path.join(scratch, "%s_%d" % (re.sub(r"[^A-Za-z0-9]+", "_", name), ci))
+            if os.path.isdir(work):
+                shutil.rmtree(work, ignore_errors=True)
+            os.makedirs(work)
+            try:
+                if ARC_RE.search(arc):
+                    err = unpack_deep(arc, work)
+                    if err:
+                        failed.append((name, "%s: %s" % (cand, err)))
                         continue
-                    z.extractall(work)
-                model = biggest_model(work)
-            else:
-                model = os.path.join(work, os.path.basename(arc))
-                shutil.copy2(arc, model)
-            if model is None:
-                failed.append((name, "no .fbx/.glb/.gltf/.blend inside"))
-                continue
-            vals, err = measure(model, 420)
-            if err:
-                failed.append((name, err))
-            else:
-                rows.append((name, vals[0], vals[1], os.path.basename(model),
-                             os.path.basename(arc)))
-                print("  measured %-22s right %-6s left %-6s" % (name, vals[0], vals[1]),
-                      flush=True)
-        finally:
-            shutil.rmtree(work, ignore_errors=True)
+                    model = biggest_model(work)
+                else:
+                    model = os.path.join(work, os.path.basename(arc))
+                    shutil.copy2(arc, model)
+                if model is None:
+                    failed.append((name, "%s: no .fbx/.glb/.gltf/.blend inside, "
+                                         "even after unpacking nested archives" % cand))
+                    continue
+                vals, err = measure(model, 600)
+                if err:
+                    failed.append((name, "%s: %s" % (cand, err)))
+                else:
+                    rows.append((name, vals[0], vals[1], os.path.basename(model),
+                                 cand, len(cands)))
+                    print("  measured %-22s right %-7s left %-7s  [%s]"
+                          % (name, vals[0], vals[1], cand), flush=True)
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
 
     print()
     print("=" * 94)
     print("SOURCE knuckle bend for installed characters whose HANDS READ FLAT (0.0 in the bundle)")
     print("=" * 94)
-    print("%-22s %8s %8s  %s" % ("character", "src R", "src L", "model file"))
+    print("%-20s %7s %7s  %-26s %s" % ("character", "src R", "src L", "model file", "archive"))
     print("-" * 94)
-    damaged = []
-    for name, r, l, model, _arc in sorted(rows, key=lambda t: -max(_f(t[1]), _f(t[2]))):
-        flag = ""
-        if max(_f(r), _f(l)) >= 5.0:
-            flag = "  <== SOURCE HAS BEND, the build destroyed it"
+    by_char = {}
+    for name, r, l, model, arc, ncand in rows:
+        by_char.setdefault(name, []).append((r, l, model, arc, ncand))
+    damaged, disputed, flat, unmeasured_chars = [], [], [], []
+    order = sorted(by_char, key=lambda n: -max(max(_f(x[0]), _f(x[1])) for x in by_char[n]))
+    for name in order:
+        entries = by_char[name]
+        for r, l, model, arc, _n in entries:
+            print("%-20s %7s %7s  %-26s %s" % (name, r, l, model[:26], arc[:28]))
+        # A FINGER THAT COULD NOT BE MEASURED PRINTS "-", AND _f RETURNS -1.0 FOR IT.
+        # Letting that fall through to the "< 5.0" branch files an UNMEASURED character under
+        # "authored flat, nothing to fix" -- which is the exact confusion this tool's own
+        # docstring warns about, committed by the tool. Six characters were reported as
+        # authored flat on the first widened run when every one of their fingers was a dash.
+        worsts = [max(_f(r), _f(l)) for r, l, _m, _a, _n in entries]
+        if max(worsts) < 0.0:
+            unmeasured_chars.append(name)
+            print("%-20s ^^ NO FINGER MEASURABLE in any candidate -- UNMEASURED, which is NOT"
+                  " the same as flat" % "")
+            continue
+        if len(entries) > 1 and (max(worsts) - min(worsts)) >= 5.0:
+            disputed.append(name)
+            print("%-20s ^^ CANDIDATES DISAGREE by %.1f deg -- source not established, left open"
+                  % ("", max(worsts) - min(worsts)))
+        elif max(worsts) >= 5.0:
             damaged.append(name)
-        print("%-22s %8s %8s  %s%s" % (name, r, l, model[:36], flag))
+            print("%-20s ^^ SOURCE HAS BEND the bundle lost%s"
+                  % ("", " (all %d candidates agree)" % len(entries) if len(entries) > 1 else ""))
+        else:
+            flat.append(name)
     print()
-    print("%d measured; %d have 5.0+ degrees of authored bend their bundle has lost."
-          % (len(rows), len(damaged)))
+    print("%d character(s) read over %d candidate file(s): %d carry 5.0+ deg their bundle has"
+          % (len(by_char), len(rows), len(damaged)))
+    print("lost, %d were AUTHORED FLAT, %d have candidates that disagree, %d had NO finger"
+          % (len(flat), len(disputed), len(unmeasured_chars)))
+    print("measurable at all.")
     if damaged:
-        print("  " + ", ".join(damaged))
+        print("  lost bend : " + ", ".join(damaged))
+    if flat:
+        print("  authored flat (nothing to fix): " + ", ".join(flat))
+    if disputed:
+        print("  source disputed: " + ", ".join(disputed))
+    if unmeasured_chars:
+        print("  UNMEASURED (not flat): " + ", ".join(unmeasured_chars))
     print()
     print("A source reading ~0 means the model was AUTHORED with a flat hand. Nothing was lost")
-    print("and no rebuild helps -- that is the character, not a defect.")
-    if amb:
-        print()
-        print("AMBIGUOUS, NOT MEASURED -- more than one candidate archive, and this project has")
-        print("already picked a wrong source once by name and date:")
-        for name, cands in amb:
-            print("  %-22s %s" % (name, ", ".join(cands)))
+    print("and no rebuild helps -- that is the character, not a defect. And a VERY large figure")
+    print("is not a stronger finding: Sayuri's 120.1 deg is a clenched fist from a frozen dance")
+    print("frame, where flattening was probably correct.")
     if missing:
         print()
         print("NO ARCHIVE FOUND for: %s" % ", ".join(n for n, _ in missing))
@@ -209,10 +292,11 @@ def main():
         for name, why in failed:
             print("UNMEASURED  %-22s %s" % (name, why))
     print()
-    print("COVERAGE: %d measured, %d ambiguous, %d archive missing, %d unreadable, %d with no "
+    acc = len(by_char) + len(missing) + len({n for n, _w in failed} - set(by_char))         + len(NO_SOURCE)
+    print("COVERAGE: %d characters measured, %d archive missing, %d unreadable, %d with no "
           "candidate at all = %d of the 42 flat characters accounted for."
-          % (len(rows), len(amb), len(missing), len(failed), len(NO_SOURCE),
-             len(rows) + len(amb) + len(missing) + len(failed) + len(NO_SOURCE)))
+          % (len(by_char), len(missing),
+             len({n for n, _w in failed} - set(by_char)), len(NO_SOURCE), acc))
     print("Every one is named above rather than left out, because a survey that does not say")
     print("what it skipped reads as a clean sweep.")
     return 0
