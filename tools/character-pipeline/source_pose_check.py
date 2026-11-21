@@ -119,6 +119,22 @@ def report(arm):
                           b.to_translation().length))
     print()
     print("ARMATURE %r -- %d bones" % (arm.name, len(arm.data.bones)))
+
+    # THE GATE, reported first, because it decides which of build_vrm.py's pose rules can run
+    # at all. Everything there sits under `if _had_anim ...`; with no action attached the
+    # builder takes the else and keeps the static pose as "the model's shape". A tool that
+    # reports the pose without reporting whether an action exists cannot tell you which branch
+    # a build will take, which is the only thing the pose is evidence FOR.
+    _acts = [a.name for a in bpy.data.actions]
+    _adt = arm.animation_data
+    _assigned = _adt.action.name if (_adt and _adt.action) else None
+    print("ACTIONS in file: %d %s   assigned to this armature: %s"
+          % (len(_acts), _acts[:4] if _acts else "", _assigned or "NONE"))
+    print("  => build_vrm.py would %s"
+          % ("RESET the pose (an action is attached, so it may be a stray frame)"
+             if _assigned else
+             "KEEP the static pose (no action attached, so it reads as the model's shape)"))
+
     print("POSE ON TOP OF REST: %d bone(s)" % len(posed))
     if not posed:
         print("  NONE. The file is at its rest pose, so any lean you can see IS the rest pose")
@@ -138,8 +154,18 @@ def report(arm):
             if tag in low and _side(b.name):
                 pairs.setdefault(tag, {})[_side(b.name)] = b
     print()
+    # SPAN-NORMALISED, because the raw figure is not comparable between two sources.
+    # These files are not in metres and each carries its own scale: Jessica's rig sits at a
+    # matrix_world scale of about 5.58 with her spine at Z ~ 6.9. So a dz of "597 mm" in one
+    # file and "40 mm" in another says nothing about which character is worse off until both
+    # are divided by the rig they belong to. The percentage is the comparable quantity and the
+    # raw column is kept beside it only so a single file can be checked by hand.
+    _hs = [(arm.matrix_world @ b.head_local).z for b in arm.data.bones]
+    span = (max(_hs) - min(_hs)) if _hs else 0.0
     print("L/R PAIRS -- rest first, because that is what a rebuild inherits")
-    print("%-12s %14s %14s   %s" % ("pair", "rest dz (mm)", "posed dz (mm)", "local mirror delta"))
+    print("rig span %.4f in this file's own units; %% columns are of that span" % span)
+    print("%-12s %12s %7s %12s %7s   %s"
+          % ("pair", "rest dz", "rest %", "posed dz", "posed %", "local mirror delta"))
     any_pair = False
     for tag, sides in sorted(pairs.items()):
         if "L" not in sides or "R" not in sides:
@@ -149,11 +175,14 @@ def report(arm):
         lw = (arm.matrix_world @ L.matrix_local).to_translation()
         rw = (arm.matrix_world @ R.matrix_local).to_translation()
         pl, pr = arm.pose.bones.get(L.name), arm.pose.bones.get(R.name)
+        rdz = lw.z - rw.z
         pdz = (((arm.matrix_world @ pl.matrix).to_translation().z
-                - (arm.matrix_world @ pr.matrix).to_translation().z) * 1000.0
+                - (arm.matrix_world @ pr.matrix).to_translation().z)
                if (pl and pr) else float("nan"))
         md = abs(abs(L.matrix_local.to_translation().x) - abs(R.matrix_local.to_translation().x))
-        print("%-12s %14.2f %14.2f   %.2e" % (tag, (lw.z - rw.z) * 1000.0, pdz, md))
+        pct = (lambda v: (100.0 * v / span) if span else float("nan"))
+        print("%-12s %12.4f %6.2f%% %12.4f %6.2f%%   %.2e"
+              % (tag, rdz, pct(rdz), pdz, pct(pdz), md))
     if not any_pair:
         print("  NO L/R PAIR identified BY NAME. That is a fact about the naming, not a")
         print("  symmetric rig -- read the bone list before concluding anything.")

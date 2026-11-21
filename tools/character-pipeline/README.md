@@ -1413,12 +1413,48 @@ than the part about an internal disagreement.
 
 **So props cannot be the discriminator**, because keeping a pose and relaxing a prop hand is
 exactly the right combination and Alcina already gets it. What Jessica needs on top is her BODY
-pose dropped, and the honest position is that the quantity which separates them has not been
-established yet. The candidate worth measuring next is the consequence this project actually
-objects to — a pose that puts one leg root 92 mm from its mirror while the rest pose has them
-equal — tested against Alcina, who is posed too (her legs splay 188 mm and her build is correct).
-**Nothing was implemented, and the rule above stays struck rather than deleted so the next session
-does not re-derive it.**
+pose dropped. **Nothing was implemented, and the rule above stays struck rather than deleted so
+the next session does not re-derive it.**
+
+#### THE LEGS separate them, measured on both with one instrument — 2026-11-20
+
+`source_pose_check.py` on each author source, `%` of each rig's **own** span so two differently
+scaled files are comparable (Alcina's span 3.4507 units, Jessica's GLB 43.3899):
+
+| pair | **Alcina** — pose must be KEPT | **Jessica** — pose must be DROPPED |
+|---|---|---|
+| `thigh` | **0.00%** | **−1.38%** |
+| `shin` | **0.00%** | −0.64% |
+| `foot` | **0.00%** | +0.01% |
+| `toe` | **0.00%** | +0.18% |
+| `shoulder` | 0.10% | −0.00% |
+| `upper_arm` | **1.67%** | −0.43% |
+
+Alcina's 23 posed bones are **all arms, hands and fingers** — `forearm.L` 135.97°, `thumb.02.L`
+102.20°, `hand.L` 61.63° — holding the cigarette holder, with **no spine and no leg bone touched
+at all**. Jessica's pose reaches `spine.001` 37.24°, `spine.002` 36.67°, `thigh.L` 42.89° and
+`shin.L` 61.64°.
+
+**And the ARMS invert.** Alcina's arms are posed roughly four times harder than Jessica's
+(1.67% against 0.43%), so a threshold on overall pose magnitude, or on the arms, gets this
+exactly backwards. Only the legs work, and on them the gap is 0.00% against 1.38% — so the
+cutoff would not be doing the work, which is the property this project asks of a threshold.
+
+> **Jay's objection, and it is half right: "Alcina is bigger than other characters, are we sure
+> we want to use her as a base to compare?"**
+>
+> **Her size does not corrupt the measurement.** The `%` columns exist for that, and her legs
+> read **exactly 0.0000 in raw units** with mirror deltas at 4.47e-08. A zero is scale-free; no
+> normalisation turns it into a non-zero, so "her legs carry no pose" holds at 2.9 m or at 1.7.
+>
+> **But she is NOT a sufficient control, and that is the real objection.** She is necessary —
+> she is the character the existing rule was written to protect, so she is the one who must not
+> regress — and she is also **n = 1 and atypical**: upper-body-only pose, 2.9 m, holding a prop.
+> A rule validated on her alone is validated at one point. The rule would change behaviour for
+> *every* character whose source has a static pose and no action attached, and that population
+> was unmeasured when the rule was proposed. **Sized before implementing, not after** — the same
+> order that the shader-default sweep got wrong, where a "defect" turned out to be shared by 63
+> of 65 characters.
 
 Not built, not installed, and the proposed change is to the BUILDER rather than to a recipe —
 which is a correction to the first version of this section, where I called it "a change of INPUT,
