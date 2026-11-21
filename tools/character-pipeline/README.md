@@ -10524,3 +10524,60 @@ outright — mesh count, material count, texture names. A build whose exclude re
 visibly wrong there. Only once a character passes that sanity leg does its `verify_rebuild` diff
 mean "pipeline drift". That is a per-character judgement, not a sweep, and it is the honest
 shape of this job.
+
+### NOTHING WAS REPAIRED: the three "malformed" rows are all correct (2026-11-21)
+
+I reported Sayuri, Link and Judy Hopps as having malformed or missing recipe rows and set out to
+repair them. **All three are recorded and correct.** Repairing them would have written
+conflicting rows into what is now the only surviving record of how these characters were built.
+
+My matcher failed three different ways, and `^| <name> |` is wrong for every one:
+
+| character | the row | why a grep misses it |
+|---|---|---|
+| Sayuri | `\| Sayuri / Aiko \| cc_base / mixamo \| 1.70 \| hairrig ^Hair$ ...` | **two characters share one row** |
+| Link | `\| Link (OoT) \| linkoot \| 1.65 \| VRM_TEX="Hair=..." \|` | the key is **qualified** |
+| Judy Hopps | `\| Judy Hopps \| judyusd \| 1.05 \| ...` at line 8011 | **nothing wrong with it** — the grep matched a row in a different table and read `2 \| 1 \| 0` as a rig and a height |
+
+Sayuri's literal build command is also on record at line 6347:
+`build_vrm.py -- "Sayuri dans.fbx" <textures> 1.70 cc_base Sayuri <out.vrm> 1024 '' '' '^Hair$'`.
+
+This file already records this exact failure — *"absence as a property of the world. Two tables
+in one file, and the one that was searched is the one that did not have it."* I reproduced it
+while holding the sentence open in another window.
+
+### What the audit found instead, and it is worth having
+
+`recipe_audit.py` splits compound keys, strips qualifiers, and requires a plausible rig AND
+height before believing a row is a recipe. A row it cannot parse is reported as unparsed, never
+as absent.
+
+**50 of 65 installed characters have a recipe. Fifteen do not.** Five of those legitimately
+never had one — this file names them as downloaded bundles: **Adachi Rei, Harq Alkahana,
+Inforder Trogen, and both Hatsune Mikus**. Nothing was built for them, so nothing is missing.
+
+**The other ten are real gaps**, and with the build logs gone they are now permanent:
+
+> Baby Groot · Clone Trooper 501st · Clone Trooper Shiny · **Doom Slayer** · Iron Man Mark 85 ·
+> K-2SO · Kaiser Aufhänger · Skeleton Mage · **Spartan Mark V** · Spider-Man
+
+Two of those are pointed:
+
+- **Doom Slayer** is recorded as one of the eight that rebuilt cleanly and SHIPPED on 2026-11-14
+  — *"only eight shipped: Ariel, Doom Slayer, Gordon Freeman, Heels, Joker, Scott Hall, Shaggy
+  Rogers, Xenomorph"*. He was rebuilt a week ago from a recipe that is now nowhere.
+- **Spartan Mark V** has a row at line 8008 reading `rigify_plain` with an em-dash for height,
+  so his rig survived and his scale did not. He is also the roster's standing control and was
+  rebuilt and installed on 2026-11-16.
+
+Three further rows look like recipes but will not parse, and are flagged as unparsed rather than
+counted either way: `Adachi Rei | skirt | 2.00–4.00`, `Spartan Mark V | rigify_plain | –`,
+`Prix | no | no`.
+
+**What this changes.** Ten characters this pipeline built can no longer be rebuilt from anything
+written down, and four of the twelve "feasible" cost-table candidates are among them. That is a
+larger finding than the hands: it is not that a rebuild would be expensive for these, it is that
+there is nothing to rebuild FROM. Recovering a recipe for Doom Slayer or Spartan Mark V now
+means measuring it back out of the installed bundle — height and rig family are readable, which
+is what the 2026-11-15 cross-check did for twelve characters and got right to the centimetre on
+all of them. That is a real route and it is not archaeology on logs.
