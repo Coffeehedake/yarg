@@ -10463,3 +10463,64 @@ it is mechanical, and it produces the one artefact nobody has — what a rebuild
 
 **Not started.** It is hours of machine time and it ends in a judgement call per character that
 is not mine to make.
+
+### The cost table cannot be built from logs: that corpus is GONE (2026-11-21)
+
+Asked to refresh the rebuild cost table for the fifteen stale characters, the feasibility pass
+came first, and it stopped the job before any machine time was spent.
+
+**Feasibility, over the thirteen characters the 2026-11-14/15 work implicates:**
+
+| | |
+|---|---|
+| feasible now | Gwen Stacy, Chibi Rem, Alcina Dimitrescu, Alice Ivy, Alastor, Lola Bunny, Tenna, Jinx, The Rock — **9** |
+| no parseable recipe row | Sayuri, Link — their rows in this file are malformed |
+| no source archive on disk | Vigilante |
+| needs bespoke prep | Batman (`prep_batman.py`: two half-characters on two armatures) |
+
+Chibi Rem is already costed today (180 -> 158 transforms, 46 bones, 1 material), so eight remain.
+
+#### The blocker, and it is permanent
+
+A cost table is only worth having if each rebuild used the RIGHT arguments. This file states the
+authority: *"the recipes here are harvested from the `ARGV:`/`ENV:` lines builds print, so a log
+IS the recipe that produced its .vrm"*, and the 2026-11-15 search ranged over **87 distinct
+candidate recipes** found in those logs.
+
+**Those logs no longer exist.** Measured, with a control, because a zero from a grep is worth
+nothing on its own:
+
+```
+logs on disk                    43
+logs containing an ARGV: line   19     <- the control: the grep CAN fire
+characters named in any ARGV    Aiko, Chibi Rem, Elite Terrorist   <- 11-18 and today only
+log dates   1 x 10-30   4 x 10-31   2 x 11-01   24 x 11-18   12 x 11-21
+```
+
+Nothing survives from 11-14 or 11-15, which is exactly the window the archaeology drew on. Nor
+do `recipes.py` and `findrecipe.py`, which this file references and which are not in the
+pipeline folder.
+
+**So the recipe table in this README is now the ONLY surviving record of how these characters
+were built.** That is worth stating on its own, independent of hands: those rows are no longer a
+convenience, they are the primary source, and three of them are already known to be malformed
+(Sayuri, Link, Judy Hopps parse as `2 | 1 | 0`).
+
+#### Why I did not run the eight anyway
+
+The arguments would have to be hand-parsed out of prose notes — exclude regexes, `VRM_TEX`
+mappings, hairrig positionals. A wrong argument does not fail loudly; it produces a build that
+differs from the installed bundle, which is **exactly what the cost table measures**. The table
+would report my parsing errors as pipeline drift, in the same column and the same units, with
+nothing to tell them apart.
+
+That is the failure this session has hit repeatedly in cheaper forms. Eight builds and eight
+exports producing a table that cannot distinguish its own errors from its subject is worse than
+no table, because the numbers look like measurements.
+
+**What would make it sound:** reconstruct each recipe from the README row, build, and FIRST
+check the rebuild against the installed bundle on the things an argument error would wreck
+outright — mesh count, material count, texture names. A build whose exclude regex is wrong is
+visibly wrong there. Only once a character passes that sanity leg does its `verify_rebuild` diff
+mean "pipeline drift". That is a per-character judgement, not a sweep, and it is the honest
+shape of this job.
