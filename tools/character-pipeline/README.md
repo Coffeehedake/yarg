@@ -9722,10 +9722,26 @@ Two corrections went in before I stopped, and neither was enough:
   one vertex dropped 11 of Spartan Mark V's bones and 38 of Prix's -- and left the worst reading
   unchanged at 1604.7 mm, on a bone that does dominate vertices.
 
-So the premise is wrong somewhere I have not found. **None of those numbers are reported as
-findings** and the tool is not in the repo: a control that fails means the instrument is
-measuring itself, and a tool nobody can trust is worse than no tool, because its output looks
-exactly like an answer. What is written down here is the attempt, the two corrections that did
-not work, and the control reading that refutes it -- so the next attempt starts from the fact
-that `world(bone) @ bindPose` is NOT the identity on a known-good character, which is the part I
-did not expect and did not explain.
+**CORRECTION, found minutes later and three sections up this same file: the premise is not
+merely wrong, it is a false positive this project already characterised and gave a control.**
+The row reads:
+
+> `SKINDEV` 300 bone/renderer pairs off, fingers worst at 917 mm -- **Alcina reads 600 pairs and
+> 2957 mm and is fine.**
+
+`SKINDEV` is bone-against-renderer deviation, which is the same quantity I rebuilt from the
+bundle side. It is ALREADY KNOWN to read hundreds to thousands of millimetres on characters that
+are not broken, and Alcina at 2957 mm is already the control that says so. My 1604.7 mm on
+Spartan Mark V is not an unexplained instrument failure; it is this measurement behaving exactly
+as recorded, on a tool written without reading the row that describes it.
+
+So the finding stands and is now attributed: **a large `world(bone) @ bindPose` offset is not
+evidence of anything**, the tool stays out of the repo, and none of its numbers are findings.
+The useful instrument for a hand fault is the one that section recommends -- `HandIsolate`,
+which keeps only the triangles whose vertices are all weighted to that hand, switches every
+other renderer off, and asks the Animator's humanoid map rather than matching bone names.
+
+**This is the third time in one session that these notes had already closed a question I set
+about answering** -- Alcina's eyelashes, Miku's tie clearances, and now this. The pattern is
+consistent enough to be a rule: before building an instrument, grep this file for the quantity
+it measures, not for the character's name.
