@@ -1389,6 +1389,37 @@ mic is in her own `EXCLUDE` argument, known at line 183 and so available 700 lin
 decision. **Alcina is the control and must come out unchanged** — ideally byte-identical, the way
 Spartan Mark V was for the bodice re-weighting step.
 
+#### That rule is WRONG, and its own control is what says so — 2026-11-20
+
+**Do not implement the paragraph above.** It was proposed, approved, and then disproved before a
+line of it was written, by the control it had itself nominated. The claim *"Alcina has no removed
+prop"* is false. This file says so 5,700 lines further down, under *"A hand posed around a prop
+that is no longer there"*:
+
+> *"Alcina Dimitrescu holds a cigarette holder. The holder is excluded from the build
+> (`^NurbsPath`) because it skewers her hand"*
+
+So Alcina has an `EXCLUDE`, the excluded geometry is **a prop she is holding**, and her static
+pose is the one that MUST be kept — it is her 9'6". The proposed rule fires on exactly the
+character it was supposed to protect, drops her pose, and compresses her head and torso to 59%.
+**It is not a near miss; she is the worst case for it on the roster.**
+
+And the reason the error was easy to make is worth keeping: the hand-relax rule two lines below
+the bake *was written for Alcina*, from her case, and it works because **the model supplies its
+own control** — her right hand matches rest to 0.0° on all five chains while her left thumb is
+125.7° further curled. That is an asymmetry between two things that should agree, not a
+proximity-to-prop test. I generalised the wrong half of it: the part about a removed prop, rather
+than the part about an internal disagreement.
+
+**So props cannot be the discriminator**, because keeping a pose and relaxing a prop hand is
+exactly the right combination and Alcina already gets it. What Jessica needs on top is her BODY
+pose dropped, and the honest position is that the quantity which separates them has not been
+established yet. The candidate worth measuring next is the consequence this project actually
+objects to — a pose that puts one leg root 92 mm from its mirror while the rest pose has them
+equal — tested against Alcina, who is posed too (her legs splay 188 mm and her build is correct).
+**Nothing was implemented, and the rule above stays struck rather than deleted so the next session
+does not re-derive it.**
+
 Not built, not installed, and the proposed change is to the BUILDER rather than to a recipe —
 which is a correction to the first version of this section, where I called it "a change of INPUT,
 not of builder". Her backup discipline applies when anything is installed.
