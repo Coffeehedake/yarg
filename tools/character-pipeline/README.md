@@ -10195,6 +10195,26 @@ above are the reason that matters more than usual: **the only check that could h
 was launching the game**, and a bundle that fails to load shows up there as a character who is
 simply absent. Everything else here is read out of files.
 
+##### The other ten bundle writers were already right, and the roster proves it
+
+The obvious next worry was how many other tools in this folder had the same line. **None.** All
+ten that write a `.yargchar` already call `env.file.save(packer="original")`:
+
+`patch_add_springs`, `patch_alpha_blend`, `patch_alpha_cutout`, `patch_body_yaw`,
+`patch_bone_aim`, `patch_cull_off`, `patch_mirror`, `patch_shine`, `patch_springs`,
+`patch_transfer_weights`.
+
+The two that were wrong are the two written today, and the reason is specific rather than
+careless: both needed `af` — the SerializedFile — because **the path_id space belongs to the
+serialized file**, which is where a new object's id has to come from. Having reached for `af` to
+allocate the id, I saved `af` as well. The older tools never had to touch it.
+
+**And the sweep is the evidence, not the grep.** A grep shows what the current source says; what
+matters is what those tools actually did to the files they wrote. Many of the 65 installed
+characters have been through several of them — springs, alpha, yaw, shine, weights — and **all 65
+carry the `UnityFS` header**. That is a population-wide test of ten writers against the real
+artefacts, and it passes. The grep only explains why.
+
 ### The rebuild landed, 2026-11-21: the nine mic-less characters are no longer invisible
 
 Built from `dev` at `e2e1aba1`, clean tree, which contains `0d3d4e4f`. 582 MB, 51.8 minutes,
