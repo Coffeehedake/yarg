@@ -9675,3 +9675,57 @@ must re-apply both.
 **And it is not verified in motion.** Every number here is the rest pose. Whether the tie
 visibly stops clipping is a question for the running game, and the spring runtime is the only
 thing that can answer it.
+
+### Report 8, Prix: the recorded mechanism is RULED OUT, and my replacement check failed its control
+
+`rest_pose_check_installed.py` measures what the build-time guard measures, but on the installed
+bundle -- which is the artefact that matters for a character already on disk. Each limb segment
+is the vector between two humanoid joints' world positions, and the number is its angle away
+from the axis a T-pose puts it on. **Joint to joint, never by bone axis:** the build-time guard's
+first version asked which way each BONE POINTS and reported Prix's arms as 90.0 degrees off and
+his legs as 180.0, both sides, to the decimal. Numbers that round are not a pose -- a bone's tail
+is synthesised wherever the rig does not pin one.
+
+**Prix reads 0.0 degrees on all eight segments.** So does every other reported character. The
+sweep is not uniform, which is what makes that mean something: Thanos reads 17.5, Gadget
+Hackwrench 15.5, Xenomorph 12.3, and the roster's worst-segment angle runs median 0.0, p75 2.6,
+p90 5.4, max 17.5. The exact zeros are expected rather than suspicious -- the VRM add-on applies
+a T-pose of its own, so a character that went through it lands exactly on the axis.
+
+**The bent-bind-pose mechanism this file records for Prix is therefore not what is wrong with
+his installed bundle.** His arm is still reported twisted and crushed, so the cause is something
+else, and the entry above that named the mechanism should not be read as having answered this
+report.
+
+#### A check I built to replace it, and withdrew
+
+The obvious next question is whether the MESH agrees with that T-posed skeleton: a limb that
+animates twisted is what a disagreement between the bind pose and the rest pose looks like, and
+`bind_check.py` makes exactly that measurement -- but it needs Blender and a `.vrm`, and only
+about a third of the roster still has one.
+
+So I wrote the bundle equivalent, on the premise that `world(m_Bones[i]) @ m_BindPose[i]` should
+be the identity. **It is not committed, because its control failed and I could not establish
+why.** Spartan Mark V -- this project's standing control, the character that reads 0.0 on every
+left/right pair -- came back with a worst bone of **1604.7 mm**. Prix read 1490.4 mm and Jessica
+Rabbit 1434.7 mm, and both of them render correctly.
+
+Two corrections went in before I stopped, and neither was enough:
+
+- **"Expect the identity" ignores the renderer root.** `m_BindPose` is relative to the root
+  while `world()` is global, so a scale or offset on the character appears in every skin matrix
+  and is not a defect. Re-anchoring every bone to the HIPS should have cancelled it. The numbers
+  did not move by a decimal place, which says the hips frame was already the identity and the
+  root transform was never the explanation.
+- **"Carries any weight" is too loose a filter.** A four-bone influence routinely includes a
+  bone at 0.0001, and such a bone can sit anywhere. Restricting to bones that DOMINATE at least
+  one vertex dropped 11 of Spartan Mark V's bones and 38 of Prix's -- and left the worst reading
+  unchanged at 1604.7 mm, on a bone that does dominate vertices.
+
+So the premise is wrong somewhere I have not found. **None of those numbers are reported as
+findings** and the tool is not in the repo: a control that fails means the instrument is
+measuring itself, and a tool nobody can trust is worse than no tool, because its output looks
+exactly like an answer. What is written down here is the attempt, the two corrections that did
+not work, and the control reading that refutes it -- so the next attempt starts from the fact
+that `world(bone) @ bindPose` is NOT the identity on a known-good character, which is the part I
+did not expect and did not explain.
