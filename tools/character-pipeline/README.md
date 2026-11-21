@@ -10410,3 +10410,56 @@ recipe ROWS, it is recorded in a dedicated section with its own table.
 only for the character and not only for the quantity. "Rebuilt and verified against the
 installed bundle" is a sentence that would have been found by searching for `verify_rebuild`,
 which is the tool I was about to run.
+
+### The stale recipes, re-opened 2026-11-21 and closed again in ten minutes
+
+Asked to chase the fifteen stale recipes, I grepped for the EXPERIMENT first — the rule that
+had just cost two builds and a Unity export — and found it already done, on 2026-11-15, under
+"Recovering a stale recipe: the arguments are not the recipe".
+
+**What that work established, and none of it needs redoing:**
+
+- A cheap `.vrm`-side predicate, validated three ways: **9/9 on the proven pairs, 0/15 on the
+  known-stale, 6/6 on deliberately mismatched**. Its first version was wrong on every count but
+  one and the nine proven pairs said so immediately; the negative control caught two false
+  positives (Lola Bunny, Tenna) before the search ran.
+- A sweep of all 397 `.vrm` on the machine, 5,925 comparisons, exact match for ten of fifteen.
+- Fourteen candidates then rebuilt and exported, which is the control that decides. **Two came
+  back cull-only — Alcina Dimitrescu and Alice Ivy.** Six failed because the recipe was never
+  theirs (`findrecipe.py` matched on output BASENAME, and nine different Batman logs all write
+  `Batman.vrm`). Alastor and Lola Bunny came off EXACT logs and still failed.
+
+The conclusion is the thing to carry: **the recipe is the arguments PLUS the version of
+`build_vrm.py` that ran them.** For thirteen of the fifteen the script has drifted in ways that
+show — an extra material, extra spring chains, colliders fitted elsewhere. *"No archaeology on
+arguments recovers those."*
+
+#### The one thing worth adding: that conclusion is now STRONGER, not weaker
+
+`build_vrm.py` has taken **18 commits since 2026-11-15**, several of which change output
+materially — centring a character on its own root, carrying the source's base colour factor
+instead of forcing white, MToon no longer throwing the base texture away, rehoming orphaned
+meshes, deferring the pose reset past weighting. So the drift that defeated the argument search
+six days ago is wider today.
+
+**Which also means the 2026-11-14 cost table is itself stale.** "Gwen Stacy loses 22 bones and
+their spring chains, Link three textures, Batman and Vigilante their materials" was measured
+against a pipeline that is now 18 commits old. Today's `verify_rebuild` run on Chibi Rem
+reproduced her figure exactly (180 -> 158), so that row at least still holds — but one row is
+not the table.
+
+#### What is actually left, and it is a decision rather than an investigation
+
+The note names it: rebuilding these means *"accepting the current pipeline's output as the new
+baseline, which is a decision about the character, not about the recipe."* That decision is
+better informed now than it was, because several of those 18 commits are FIXES — a character
+rebuilt today gains correct base colour, correct MToon texturing and correct centring, and
+loses whatever its installed bundle holds that the pipeline no longer produces.
+
+So per character it is a real trade, and `verify_rebuild.py` prices it exactly. What would
+serve the decision is a **refreshed cost table**: for each of the fifteen, build on today's
+pipeline, export, and record what it would destroy. That is fifteen builds and fifteen exports,
+it is mechanical, and it produces the one artefact nobody has — what a rebuild costs TODAY.
+
+**Not started.** It is hours of machine time and it ends in a judgement call per character that
+is not mine to make.
