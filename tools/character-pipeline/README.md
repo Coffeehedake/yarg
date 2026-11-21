@@ -10346,3 +10346,67 @@ sources are animation exports, so `VRM_EXPORT_POSE=rest` alone is the likely fix
 Elite's pair of switches; Sayuri's 120.1 is a fist where flattening was right; and a rebuild
 needs a recipe, which **five of the clearest candidates do not have** — Iron Man, Skeleton Mage,
 Spider-Man, Spider-Man PS and Vegeta have no row in the recipe table at all.
+
+#### Chibi Rem NOT installed: the gate failed, and the knobs made her WORSE
+
+Three bundles measured, and the result inverts the Elite case:
+
+| | knuckle bend |
+|---|---|
+| installed | 0.0 |
+| **control build, NO knobs** | **26.6 / 26.6** |
+| treatment, `VRM_KEEP_REST_FINGERS=1 VRM_EXPORT_POSE=rest` | **0.0** |
+
+**Today's builder already handles her correctly with no switches at all, and
+`VRM_EXPORT_POSE=rest` is what flattens her.** Exactly backwards from Elite Terrorist, where
+the same pair of switches was the only thing that recovered his curl.
+
+The mechanism is visible in the logs. Her clip is `GME_Rig|Confession`, which is not a T-pose,
+so it is CLEARED rather than baked — no `EXEMPTED` line, nothing for `VRM_KEEP_REST_FINGERS` to
+do. Her `.vrm` reads 26.6 in both builds, so the `.vrm` cannot discriminate; only the bundle
+can. **So the knob is rig-dependent and must be chosen per character from its own build log.
+There is no batch here.** A sweep applying Elite's recipe to the 24 candidates would have
+flattened some of the ones it was meant to fix.
+
+#### The gate failed, which is the point of having one
+
+`verify_rebuild.py`, control build against the installed bundle:
+
+```
+Chibi Rem  *** object counts GameObject 180->158, Transform 180->158;
+           1 material(s) differ beyond cull: ChibiRem_0;
+           rig names 180->158; 46 bone(s) moved: DEF-backhair1, DEF-backhair4, ...
+CULL-ONLY 0   DIFFERS BEYOND CULL 1
+```
+
+Her installed bundle carries **22 bones a rebuild does not produce**, mostly `DEF-backhair*`,
+plus a material that differs. Installing the rebuild would have fixed a hand and destroyed her
+hair rig. Nothing was installed; her backup
+(`character-backups/Chibi Rem.prerebuild-2026-11-21.4e42c247.yargchar`) is unused.
+
+#### THIS WAS ALREADY MEASURED, A WEEK AGO, IN THIS FILE
+
+"What stopped 16 of the 24: the recipe, not the knob" (2026-11-14) records exactly this, by
+name, having rebuilt and verified against the installed bundles:
+
+| Character | What a rebuild would have destroyed |
+|---|---|
+| Gwen Stacy | 94 -> 72 transforms; 22 bones and their spring chains |
+| Sayuri | 143 -> 124 transforms |
+| Link | Material 6 -> 5, Texture2D 14 -> 11; three textures |
+| **Chibi Rem** | **180 -> 158 transforms** |
+
+**Four of the six candidates I had called rebuildable are on that list.** My gate reproduced
+Chibi Rem's figure independently and to the transform, which is worth something — it confirms
+the record is still current rather than stale — but the question had been answered and I spent
+two builds and an export re-answering it.
+
+**The real blocker for the flat-hand work is therefore NOT the pose knob. It is that 15 of 24
+characters hold a stale recipe**, which that section states plainly and which also explains why
+my earlier text-matching patch check kept coming back "clean": the hazard is not recorded in the
+recipe ROWS, it is recorded in a dedicated section with its own table.
+
+**The rule this costs me, for the fifth time today:** grep this file for the EXPERIMENT, not
+only for the character and not only for the quantity. "Rebuilt and verified against the
+installed bundle" is a sentence that would have been found by searching for `verify_rebuild`,
+which is the tool I was about to run.
