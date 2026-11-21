@@ -1500,10 +1500,63 @@ build**, zero occurrences of the new log lines, and the original `keeping a stat
 bones` intact. That is a stronger control than Alcina, because it is the subject rather than a
 bystander.
 
-**What is left, and it is well localised:** carry her unweighted skirt and bodice into the rest
-pose at `M⁻¹·v` — the machinery this file already describes for Gadget Hackwrench's 188 unweighted
-teeth vertices — and then the pose can be dropped and the build will complete. Nothing installed,
-and her installed character is untouched.
+#### The deferred reset: implemented, self-verified, and it does NOT unblock her
+
+The reset is now **deferred** until after automatic weighting, because resetting at line 905
+strands anything not yet weighted — `UNRIGGED` is not even built until ~1724 and bone heat does
+not run until ~1858. With `VRM_DROP_LEG_POSE=1` the sequence now reads:
+
+```
+leg roots: the static pose adds 1.38% of rig span to their height difference (thigh.L / thigh.R, limit 0.50%)
+DROPPING the static pose: ... the reset is DEFERRED until after automatic weighting
+  auto-weighted unrigged mesh 'Object_10' (13275 verts) to the skeleton
+  auto-weighted unrigged mesh 'Object_9' (24035 verts) to the skeleton
+  deferred reset: 'Object_10' 13275 of 13275 vertices moved to M^-1*v (0 had no usable weight)
+  deferred reset: 'Object_9' 24035 of 24035 vertices moved to M^-1*v (0 had no usable weight)
+  deferred reset: 37310 vertices moved, 0 left alone, worst round-trip 0.000000
+  deferred reset: the static pose is now cleared
+```
+
+**37,310 vertices moved and the round-trip is 0.000000**, so the arithmetic inverts the deform
+exactly — the self-check is in the code and it is the thing that would catch a wrong `M`.
+
+**And the build still ABORTS at the same guard**, `re-weighting 'Object_10' left it on 1 bone(s)`.
+So the ordering was not the whole story and **she is not fixed**. The next suspect, untested: the
+bind itself. Blender's automatic weights solve over the armature's REST positions, so binding
+"while the pose is applied" may not do what deferring assumed, in which case the weights must be
+borrowed from the nearest vertex of a mesh that IS rigged — evaluated deformed — rather than
+taken from bone heat at all. That is the stray-vertex pass's own method, across meshes instead of
+within one.
+
+#### A BYTE-IDENTICAL REBUILD IS NOT A SOUND CONTROL HERE — this builder is non-deterministic
+
+Found while trying to re-prove the default path inert. Four default-path builds of Jessica, all
+**14,798,080 bytes**:
+
+| run | code | sha256 (16) |
+|---|---|---|
+| 1 | before any change | `86767e6ff48531f3` |
+| 2 | after the opt-in rule | `86767e6ff48531f3` |
+| 3 | after the deferred reset | **`bd06fa0c2dd3507e`** |
+| 4 | **identical code to run 3** | `86767e6ff48531f3` |
+
+Run 4 reproduces run 1 on the very code that produced run 3, so **the change is inert and the
+builder varies between runs** — roughly one in four, at a constant length, which is the signature
+of something written in a varying order rather than of different content.
+
+**The consequence is methodological and it reaches backwards.** This file cites a byte-identical
+rebuild as proof that a step is inert — the bodice re-weighting step's control is *"Spartan Mark V
+rebuilt before and after is byte-identical, md5 `b68ce9e4…`"*. At a 1-in-4 variance rate, **a
+single byte-identical rebuild is roughly a 75% coin-flip, not a proof**, and a single
+byte-DIFFERENT rebuild is not evidence of a change either. Repeat it, or compare on the quantity
+you actually care about rather than on bytes. *(Reverting a file to its backup is a different
+claim and stays sound: that is a copy, not a rebuild.)*
+
+The cause is not chased here. The same class of bug is already written up in the sibling repo —
+`yarg-song-server`'s rule *"Packing is DETERMINISTIC. Never make `PackFS` depend on anything but
+the files it is given"*, after a random archive mask gave two clients 16 different files out of 22.
+
+**What is left:** the bind, above. Nothing installed, and her installed character is untouched.
 
 Not built, not installed, and the proposed change is to the BUILDER rather than to a recipe —
 which is a correction to the first version of this section, where I called it "a change of INPUT,

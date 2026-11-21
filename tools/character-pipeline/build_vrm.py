@@ -979,13 +979,28 @@ if (os.environ.get("VRM_DROP_LEG_POSE") == "1"
         if _pct > _LEGPOSE_PCT:
             _drop_leg_pose = True
 
-if (_had_anim or _drop_leg_pose) and not _keep_anim_pose:
-    if _drop_leg_pose and not _had_anim:
-        print("DROPPING the static pose: it poses the LEG ROOTS, so it is a stance rather "
-              "than the model's shape. 18 of the 26 swept sources keep a static pose with "
-              "0.00%% here; set VRM_KEEP_POSE=1 if this character's stance really is its shape.")
+# DEFERRED, and the deferral is the whole point rather than a detail. Resetting the pose HERE
+# strands every mesh that is not yet weighted: `UNRIGGED` is not even built until line ~1724
+# and bone heat does not run until ~1858, so a wholly unweighted mesh gets bound to whatever
+# is NEAR it at that point -- and after a reset the body has moved out from under it. That is
+# how dropping Jessica's pose put her 13,275-vertex skirt on ONE bone and tripped the
+# re-weighting guard. Binding must happen while the geometry and the bones still agree, which
+# means while the pose is applied, so the reset waits until automatic weighting is done and
+# then moves that geometry to M^-1*v -- the same formula the stray-vertex pass above uses, and
+# the same one this file applies to Gadget Hackwrench's unweighted teeth.
+_deferred_leg_reset = False
+if _drop_leg_pose and not _had_anim and not _keep_anim_pose:
+    _deferred_leg_reset = True
+
+if _had_anim and not _keep_anim_pose:
     for pb in arm.pose.bones:
         pb.matrix_basis.identity()
+elif _deferred_leg_reset:
+    print("DROPPING the static pose: it poses the LEG ROOTS, so it is a stance rather than "
+          "the model's shape (18 of the 26 swept sources keep a static pose with 0.00%% "
+          "here). Set VRM_KEEP_POSE=1 if this character's stance really is its shape.")
+    print("  the reset is DEFERRED until after automatic weighting, so unweighted geometry "
+          "is bound while it still fits the body and then moved to M^-1*v")
 else:
     _static = sum(1 for pb in arm.pose.bones
                   if any(abs(pb.matrix_basis[i][j] - (1.0 if i == j else 0.0)) > 1e-5
@@ -1929,6 +1944,68 @@ if UNRIGGED:
                 _md.object = arm
     bpy.ops.object.select_all(action="DESELECT")
     bpy.context.view_layer.update()
+
+# THE DEFERRED RESET, and the M^-1*v that is what makes deferring it worth anything.
+#
+# Bone heat has just bound the UNRIGGED meshes while the pose was still applied, so their
+# weights are the ones the author's arrangement implies. Their vertex coordinates, though,
+# are still where the author left them -- fitting the POSED body. Clear the pose now and the
+# skinning matrix becomes the identity, so each of those vertices simply stays put while the
+# body walks out from under it.
+#
+# So give each one the coordinate that the SAME blend of bones maps back to where it is:
+# for a weighted vertex the armature draws M*v, so storing M^-1*v makes the posed picture
+# identical and the rest pose correct. Exactly the arithmetic the stray-vertex pass above
+# uses, applied to a whole mesh rather than to the strays inside one.
+#
+# Already-rigged meshes need none of this: their coordinates are bind-pose coordinates
+# already, which is why the normal path can reset the pose without touching them.
+if _deferred_leg_reset:
+    _mv_tot = _mv_skip = 0
+    _mv_worst = 0.0
+    for _o in UNRIGGED:
+        _Bu = _o.matrix_world.inverted() @ arm.matrix_world
+        _Biu = _Bu.inverted()
+        _bmu = {}
+        for _pb in arm.pose.bones:
+            _bmu[_pb.name] = _Bu @ (_pb.matrix @ _pb.bone.matrix_local.inverted()) @ _Biu
+        _gi = {g.index: g.name for g in _o.vertex_groups}
+        _n_mv = _n_sk = 0
+        for _v in _o.data.vertices:
+            _w = [(_ge.weight, _gi.get(_ge.group)) for _ge in _v.groups
+                  if _ge.weight > 0.0 and _gi.get(_ge.group) in _bmu]
+            _tot = sum(_x for _x, _ in _w)
+            if not _w or _tot <= 0.0:
+                _n_sk += 1
+                continue
+            _Mv = Matrix(((0.0,) * 4,) * 4)
+            for _x, _bn in _w:
+                _Mv += _bmu[_bn] * (_x / _tot)
+            try:
+                _new = _Mv.inverted() @ _v.co
+            except ValueError:
+                _n_sk += 1          # a degenerate blend: leave the vertex where it is
+                continue
+            # SELF-CHECK, because "the vertices moved" is not "they moved correctly": the
+            # same blend must map the new coordinate back onto the old one.
+            _mv_worst = max(_mv_worst, ((_Mv @ _new) - _v.co).length)
+            _v.co = _new
+            _n_mv += 1
+        print("  deferred reset: '%s' %d of %d vertices moved to M^-1*v (%d had no usable "
+              "weight and were left alone)"
+              % (_o.name, _n_mv, len(_o.data.vertices), _n_sk))
+        _mv_tot += _n_mv
+        _mv_skip += _n_sk
+    print("  deferred reset: %d vertices moved, %d left alone, worst round-trip %.6f"
+          % (_mv_tot, _mv_skip, _mv_worst))
+    if _mv_worst > 1e-4:
+        print("  WARNING: that round-trip is NOT near zero, so the move did not invert the "
+              "deform. The result is WRONG rather than merely different -- do not ship it.")
+    for pb in arm.pose.bones:
+        pb.matrix_basis.identity()
+    bpy.context.view_layer.update()
+    print("  deferred reset: the static pose is now cleared")
+
 
 # A part that is meant to be RIGID can be forced onto one bone. An auto-rigger
 # weights by proximity to its own humanoid skeleton and has no idea which lumps
