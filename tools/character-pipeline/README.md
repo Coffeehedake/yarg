@@ -11809,3 +11809,55 @@ count them, print the count, and refuse to report if it is zero.
 > into his upper arm" and its successor 35.1 mm. They are readings from an instrument that
 > cannot see colliders. The A/B is the only thing that established that, and it cost one extra
 > run.
+
+#### THE PROBE WORKS, and the 41 capsules are worth 36% (2026-11-21)
+
+The cause of the dead simulation was in the library and it is explicit —
+`Vrm10FastSpringboneRuntimeStandalone.InitializeAsync`:
+
+```csharp
+m_instance = instance;
+// NOTE: FastSpringBoneService は UnitTest などでは動作しない
+if (Application.isPlaying) await ConstructSpringBoneAsync(awaitCaller);
+```
+
+**Outside play mode the spring buffer is never built**, so `Process(dt)` stepped an empty
+combiner and the cape was dragged along by its parent bones. `ReconstructSpringBone()` is the
+library's own synchronous construction path and is on the interface. The probe now calls it and
+then **asserts the buffer before measuring**: springs, logics, collider slots, against the
+`VRM10SpringBoneCollider` count on the character, refusing outright at zero. Those numbers are
+the proof it is running — 120 collider slots for the 10-collider Batman against 582 for the
+52-collider one, and garment movement up from 288.8 mm (rigid) to 1115 mm (simulated).
+
+**Three arms, one change each, so the two are not confounded:**
+
+| | colliders | Center | vertex-frames | worst | depth-weighted |
+|---|---|---|---|---|---|
+| A | 10 | — | 1612 | 144.5 mm | **54331** |
+| C | 51 | — | 1436 | 125.1 mm | **34588** |
+| B | 51 | `_Character` | 1436 | 125.1 mm | **34588** |
+
+**The 41 fitted capsules account for the whole improvement: 36% off the depth-weighted
+penetration, 13% off the peak, and the rest-pose baseline falls from 153 vertices at 75.9 mm to
+148 at 37.1 mm.** That is the first measured evidence that anything done today helped.
+
+**The Center is UNMEASURED here, not useless.** B and C are identical to the digit, and that is
+what the harness must report: it poses the character with a clip and never MOVES his transform,
+and a Center only matters when the transform moves. The probe cannot see what it was written
+for. Testing it needs the harness to translate the character the way the carousel does.
+
+**Where the cape actually goes, now that it is being simulated**: the deepest penetrations are
+into `C_spine_b` and `C_spine_c` — the TORSO — at 125–144 mm, not the arms. The earlier
+arm-only picture came from the dead simulation and is void. Both of those bones had their
+fitted capsules heavily clamped by the no-displacement bound (`spine_c` 141.7 → 105.0 mm,
+`spine_d` 197.8 → 61.2 mm), which makes the obvious next experiment: relax the clamp and see
+whether the number falls further.
+
+**The self-check that was wrong, recorded because it is the third of the day.** `height` was
+taken over all baked vertices, so it was the bounding box of the character PLUS the flying cape
+— the same Batman read 1.886 m and 2.025 m in two runs. It exists to catch a local/world space
+mistake and was tracking the very thing it should have been independent of. Now body-only, and
+all three arms read 1.886 m. Alongside the "did the garment move" guard that could not tell
+simulation from rigid follow-through, and the penetration metric that could not tell a fault
+from authored overlap, the pattern is one kind of mistake: **checks whose failure mode is
+silence.**

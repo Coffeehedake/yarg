@@ -129,6 +129,43 @@ namespace YARG.Editor
                 // Vrm10FastSpringboneRuntimeStandalone -- the synchronous path
                 var runtime = vrm.Runtime;
                 var springs = runtime.SpringBone;
+
+                // THE SPRING BUFFER IS NEVER BUILT IN EDIT MODE, and this is why the first
+                // version of this probe produced byte-identical numbers for two bundles that
+                // differ by 41 colliders. Vrm10FastSpringboneRuntimeStandalone.InitializeAsync
+                // reads, in full:
+                //
+                //     m_instance = instance;
+                //     // NOTE: FastSpringBoneService は UnitTest などでは動作しない
+                //     if (Application.isPlaying) await ConstructSpringBoneAsync(awaitCaller);
+                //
+                // so outside play mode Process(dt) steps an empty combiner and the cloth is
+                // carried rigidly by its parent bones. ReconstructSpringBone() is the library's
+                // own synchronous construction path and is on the interface.
+                springs.ReconstructSpringBone();
+                springs.Process(1f / fps);      // forces ReconstructIfDirty on the combiner
+
+                int bufColliders = 0, bufLogics = 0, bufSprings = 0;
+                if (springs is Vrm10FastSpringboneRuntimeStandalone st &&
+                    st.m_bufferCombiner.Combined != null)
+                {
+                    bufColliders = st.m_bufferCombiner.Combined.Colliders.Length;
+                    bufLogics = st.m_bufferCombiner.Combined.Logics.Length;
+                    bufSprings = st.m_bufferCombiner.Combined.Springs.Length;
+                }
+                int sceneColliders = go.GetComponentsInChildren<VRM10SpringBoneCollider>().Length;
+                Say(string.Format(
+                    "spring buffer: {0} spring(s), {1} logic(s), {2} collider slot(s); the " +
+                    "character carries {3} collider component(s)",
+                    bufSprings, bufLogics, bufColliders, sceneColliders));
+                if (bufLogics == 0 || bufColliders == 0)
+                {
+                    Say("REFUSED: the spring buffer is empty, so nothing would be simulated and " +
+                        "any number below would describe cloth carried rigidly by its parent " +
+                        "bones. That is exactly what this probe reported before the A/B caught " +
+                        "it.");
+                    return;
+                }
                 Say(string.Format("subject {0}, clip {1} ({2:0.00}s), spring runtime {3}",
                     Path.GetFileNameWithoutExtension(charPath), clip.name, clip.length,
                     springs.GetType().Name));
@@ -310,16 +347,26 @@ namespace YARG.Editor
                         if (bi >= 0 && bi < bones.Length && bones[bi] != null)
                             bone = bones[bi].name;
                     }
-                    if (p.y < lo) lo = p.y;
-                    if (p.y > hi) hi = p.y;
                     bool isGarment = false;
                     foreach (var m in match)
                         if (bone.IndexOf(m, StringComparison.OrdinalIgnoreCase) >= 0)
                             { isGarment = true; break; }
                     if (isGarment)
+                    {
                         garment.Add((p, bone));
+                    }
                     else
+                    {
+                        // The height check is a check on the SPACE the vertices are in, so it
+                        // must be taken over the body alone. Taken over everything it is the
+                        // bounding box of the character plus whatever the cloth is doing, and
+                        // the same Batman then measured 1.886 m in one run and 2.025 m in
+                        // another purely because his cape flew higher. A self-check that moves
+                        // with the thing it is checking is not a check.
+                        if (p.y < lo) lo = p.y;
+                        if (p.y > hi) hi = p.y;
                         body.Add((p, n, bone));
+                    }
                 }
                 UnityEngine.Object.DestroyImmediate(baked);
             }
