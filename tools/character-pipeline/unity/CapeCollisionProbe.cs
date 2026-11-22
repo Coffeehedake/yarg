@@ -241,6 +241,8 @@ namespace YARG.Editor
                 // settle: step the solver at the clip's first pose so the opening frames are
                 // not a transient from instantiation being read as a finding
                 Animator animator = null;
+                float animClipLen = 0f;
+                float animSpeed = 1f;
                 if (useAnimator)
                 {
                     animator = go.GetComponentInChildren<Animator>();
@@ -272,6 +274,23 @@ namespace YARG.Editor
                     }
                     animator.Rebind();
                     animator.Update(0f);
+                    // What is actually playing, and for how long. Without this the window below
+                    // is a number nobody has justified.
+                    var info = animator.GetCurrentAnimatorClipInfo(0);
+                    foreach (var ci in info)
+                    {
+                        if (ci.clip == null) continue;
+                        if (ci.clip.length > animClipLen) animClipLen = ci.clip.length;
+                        Say(string.Format(CultureInfo.InvariantCulture,
+                            "animator layer 0 plays {0} ({1:0.00}s, weight {2:0.00})",
+                            ci.clip.name, ci.clip.length, ci.weight));
+                    }
+                    if (info.Length == 0)
+                    {
+                        Say("NOTE: the Animator reports no clip on layer 0 at frame 0, so the "
+                            + "coverage check below cannot run. Treat the window as unjustified.");
+                    }
+                    animSpeed = animator.speed <= 0f ? 1f : animator.speed;
                 }
                 else
                 {
@@ -561,13 +580,33 @@ namespace YARG.Editor
                 float covered = frames / Mathf.Max(0.0001f, fps);
                 if (useAnimator)
                 {
-                    // An Animator state machine has no single length to compare against, so the
-                    // clip-coverage check cannot run. Saying that plainly beats letting a check
-                    // that did not execute read as a check that passed.
-                    Say(string.Format(CultureInfo.InvariantCulture,
-                        "COVERAGE: {0:0.00}s of the Animator's own state machine at {1:0} fps. " +
-                        "There is no single clip length to compare against, so the clip-coverage " +
-                        "check is NOT running for this mode.", covered, fps));
+                    // The Animator DOES know what it is playing, so this check runs after all.
+                    // It is the same check the 2026-11-21 retraction added for clip mode, and it
+                    // exists because a window chosen for speed rode along as if it were the
+                    // setup and cost two results their sign.
+                    float need = animClipLen / Mathf.Max(0.0001f, animSpeed);
+                    if (animClipLen <= 0f)
+                    {
+                        Say(string.Format(CultureInfo.InvariantCulture,
+                            "COVERAGE: {0:0.00}s at {1:0} fps, against an Animator that named no "
+                            + "clip. The coverage check could NOT run -- treat the window as "
+                            + "unjustified rather than as passed.", covered, fps));
+                    }
+                    else if (covered < need * 0.98f)
+                    {
+                        fails.Add(string.Format(CultureInfo.InvariantCulture,
+                            "-frames {0} at {1:0} fps covers {2:0.00}s of a {3:0.00}s animator "
+                            + "state ({4:0}%). Sampling 38% of a clip on 2026-11-21 changed the "
+                            + "SIGN of two results. Pass -frames {5} or more.",
+                            frames, fps, covered, need, 100f * covered / need,
+                            Mathf.CeilToInt(need * fps)));
+                    }
+                    else
+                    {
+                        Say(string.Format(CultureInfo.InvariantCulture,
+                            "COVERAGE: {0:0.00}s of a {1:0.00}s animator state ({2:0}%).",
+                            covered, need, 100f * covered / need));
+                    }
                 }
                 else if (covered < clip.length * 0.98f)
                     fails.Add(string.Format(CultureInfo.InvariantCulture,

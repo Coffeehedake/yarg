@@ -12260,7 +12260,7 @@ bit-reproducible, so they are not noise -- but they may not be measuring what Ja
 further sweeping could discover that. **He saw the fault; the probe cannot adjudicate it; so the
 next step is a render, not a rig.**
 
-### Two days of cape measurements were of the wrong animation (2026-11-22)
+### The cape measurements used a different DRIVER, not a different animation (2026-11-22)
 
 Jay asked for a render of the worst gauntlet frames. Producing it meant asking what the
 character-select screen actually plays, and it is not what had been measured.
@@ -12300,3 +12300,37 @@ not, so it photographed a static floor and came back byte-identical on every fra
 anything differed from the background. The check that catches it is a comparison: a shot
 byte-identical to the same view at another frame is pointed at something that is not moving.
 That is now in both the probe and `YargCharAnim`.
+
+#### CORRECTION, same day: it is the same CLIP. The driver is what differs.
+
+Making the probe report what the Animator is actually playing -- which the section above should
+have done before claiming anything -- gives:
+
+    animator layer 0 plays VoxIdle (10.55s, weight 1.00)
+
+**The podium's Idle state resolves to VoxIdle, the very clip the probe was already sampling.**
+So "two days of measurements were of the wrong animation" is WRONG, and it was published here,
+in a commit message, in the scope document and in a memory before it was checked.
+
+What is true, and still worth the flag:
+
+| | how the pose is produced |
+|---|---|
+| clip mode (every earlier measurement) | `clip.SampleAnimation(go, t)` -- the clip's curves applied **directly to the transforms** |
+| `-useAnimator` (what the game does) | the **Animator**, which retargets the same clip through the humanoid **Avatar** and runs the state machine |
+
+Those are genuinely different poses -- 0 of 120 shared frames match -- which is the same lesson
+this folder already carries about the Avatar: a humanoid bone patched in four places is still
+discarded by the Animator, because it retargets from the Avatar. The earlier numbers were an
+**approximation of the game's posing**, not a measurement of a different animation, and
+`-useAnimator` is the faithful path.
+
+**What tipped it over into a published claim was the arithmetic agreeing with the story.** The
+two runs differ frame by frame, which looked like proof of a different animation; it is equally
+consistent with the same clip applied two ways. I had the evidence for the weaker claim and
+asserted the stronger one.
+
+**The coverage check added with this correction earned itself immediately:** the 5 s diagnostic
+run was refused for covering 47% of a 10.55 s state, and the 10 s run used for the podium
+numbers above covered 95%. The sweep that follows uses `-frames 633`.
+
