@@ -11712,3 +11712,51 @@ point today. **The fix is not a collider: it is more chains across the cape's wi
 double, to bring the spacing under about 100 mm so no limb fits between two of them. The 41
 fitted capsules are still worth having (they are what stops the cape once its joints reach him)
 but they cannot constrain a sheet that no joint line crosses.
+
+### The instrument this needed all along: measure the SIMULATION, not the file (2026-11-21)
+
+Jay, after the retraction: *"I think we don't need more chains, necessarily, we need a better
+tool for you to be able to analyze the collisions, since you can't see the animations."*
+
+That is the correct diagnosis of the whole day. Five fixes were derived from a static bundle and
+judged by eye on screenshots of a moving thing. Every tool in this folder reads the rest pose;
+none of them can answer "where does the cape GO".
+
+**The animations are here, and that was worth checking.** `Assets/Resources/Animations/Vocals/
+Default/` holds six clips, and `VoxIdle.anim` is the one the preview triggers —
+`CharacterPreview` calls `SetPreviewIdle()`, which is `SetTrigger(AnimationStateType.Idle)`.
+
+**But they are HUMANOID MUSCLE CURVES, not transform curves**, which decides the design:
+
+    attribute: Chest Front-Back          attribute: Left Arm Down-Up
+    attribute: Head Nod Down-Up          attribute: Left Forearm Stretch
+    attribute: Left Shoulder Down-Up     attribute: LeftFootQ.w / LeftFootT.x ...
+
+372 curves, all muscle values plus IK goals. Turning those into bone rotations is Unity's
+humanoid retargeter — per-bone pre/post rotations and muscle limits out of the Avatar's human
+description. **Reimplementing that in Python would be reimplementing Unity, and the first thing
+such a simulator would do is disagree with the engine in some way nobody could see.** This
+folder has already shipped a checker that could not see its own library's tolerance; a
+hand-rolled retargeter is that failure with more surface area.
+
+**So the instrument runs IN Unity, in the scratch project, and reimplements nothing:**
+
+1. load the `.yargchar` bundle and instantiate the character;
+2. play the real `VoxIdle` clip through the real Animator, so retargeting is Unity's own;
+3. let the real UniVRM spring solver run — the same `UpdateFastSpringBoneJob` this README has
+   been quoting all day;
+4. each sampled frame, `BakeMesh` the garment and the body and measure **signed penetration of
+   garment vertices into body geometry**, attributed to the body bone they are inside;
+5. write a table: frame, garment bone, body part, depth, count.
+
+That answers in numbers what has been guessed at from pictures all day — including the two
+questions still open, whether the cape passes through his arm and whether any collider change
+helps — and it does it over the whole clip rather than at one frame somebody happened to
+screenshot.
+
+**What it costs and what it must prove before anyone believes it.** Unity takes a project lock,
+so it is single-caller. A measuring run keeps `-nographics`. And it needs a CONTROL before any
+output of it is trusted: run it on a character whose cloth is known to behave and show it
+reports no penetration, then on Batman, who is known not to. A harness that reports zero for
+everything looks exactly like a clean result — this project has had five such zeros in one
+afternoon.
