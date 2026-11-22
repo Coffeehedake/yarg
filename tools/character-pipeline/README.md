@@ -11581,3 +11581,21 @@ So the Center diagnosis is NOT withdrawn — a cape standing out level from the 
 a force problem, and the roster's 174-for-174 control still holds. What is withdrawn is the
 target. The next thing to try is one field, `--center _Character`, and it is the last cheap shot
 before this needs the game's animation data rather than the bundle's.
+
+#### Second target: Center → `_Character` (2026-11-21)
+
+Same field, different node, and the reasoning is the one `Root` failed to satisfy: `_Character`
+is the Vrm10Instance's own transform, it is measured identity in position, rotation and scale on
+every character sampled, it is an ancestor of every bone (`Root <- GLTF_created_1_rootJoint <-
+_Character` on Batman), and it is the node the game instantiates rather than anything an
+animation clip drives. If the glitch was a Center space that moved under the cloth, this cannot
+reproduce it.
+
+Applied to all twelve chains. `UnityFS`, 5,592,485 bytes (+207), md5 `dcf188b2`, all 65
+installed characters still carry the AssetBundle header. The previous attempt is kept as
+`character-backups/Batman.yargchar.701cb250-center-glitches.bak`, because it is the only
+artefact that reproduces the glitch and the two differ in exactly one field.
+
+**If this glitches too**, the Center idea is wrong for our conversions whatever the target, and
+the next question is not a field in the bundle — it is what the select screen actually does to
+the character, which needs the game's animation data.
