@@ -12334,3 +12334,32 @@ asserted the stronger one.
 run was refused for covering 47% of a 10.55 s state, and the 10 s run used for the podium
 numbers above covered 95%. The sweep that follows uses `-frames 633`.
 
+### Gravity 0.70 installed, after re-sweeping on the path the game uses (2026-11-22)
+
+Every earlier gravity number came from `clip.SampleAnimation`. The game poses the character
+through the **Animator**, which retargets the same `VoxIdle` clip via the humanoid Avatar, and
+that produces different poses. Re-swept with `-useAnimator` at 100% coverage (10.55s of a 10.55s
+state, checked by the probe rather than assumed), seven arms:
+
+| gravity | ALL dw | ALL peak | GAUNTLET | gauntlet peak | travel |
+|---|---|---|---|---|---|
+| 0.00 as shipped | 343522 | 267.8 mm | 2814 | 56.1 mm | 1287 mm |
+| 0.30 previously installed | 219671 | 105.2 mm | 2734 | 67.9 mm | 956 mm |
+| 0.50 | 205488 | 130.0 mm | 2856 | 66.3 mm | 674 mm |
+| **0.70 INSTALLED** | **186885** | 119.7 mm | **2266** | **51.1 mm** | **483 mm** |
+
+**Installing 0.30 was right and is confirmed on this path**: against the 0.00 the character
+shipped with, 36% less total penetration and **61% off the peak**. **But it was not the
+optimum, and on the clip path it looked like one** -- there 0.30 was a U-curve minimum with 0.50
+and 0.70 both worse at the gauntlets. On the Animator path that reverses, and 0.70 wins on every
+penetration measure: total -15%, gauntlet -17%, gauntlet peak -25%. Three quantities moving
+together, clear of the ~10% reshuffling threshold this thin metric carries.
+
+**The price is cape travel, 956 mm to 483 mm -- the cape moves half as far.** No table can rank
+that against the clipping it removes, so both were rendered at the same four frames and Jay
+chose from the pictures. "Less penetration because it barely moves" is the trap the clamp relax
+already walked into, and it is the reason this was not installed on the strength of the numbers.
+
+Installed `d4dc0d6d`, from `c8636806`. **The written file was then re-measured and reproduces
+the arm to the digit** (186885 / 119.7 / 2266 / 51.1 / 483). Backups and what each one actually
+holds: `character-backups/BATMAN-INDEX.md`.
