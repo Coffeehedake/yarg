@@ -36,6 +36,12 @@ import sys
 
 GAUNTLET_BONES = ("blade",)
 
+# --zone overrides what the split column counts. The default stays the gauntlet fins because
+# that is what the earlier tables in the README mean, but the fins are 90 of 2145 penetration
+# rows and the ARMS are 1521 of them, so a comparison aimed at the reported fault wants
+# --zone uparm,loarm,clav,hand,blade.
+ZONE_LABEL = "GAUNTLET"
+
 
 def die(msg):
     print("REFUSED: %s" % msg)
@@ -80,7 +86,16 @@ def load_meta(csv_path):
 
 
 def main():
+    global GAUNTLET_BONES, ZONE_LABEL
+    if "--zone" in sys.argv:
+        keys = sys.argv[sys.argv.index("--zone") + 1]
+        GAUNTLET_BONES = tuple(k.strip().lower() for k in keys.split(",") if k.strip())
+        if not GAUNTLET_BONES:
+            die("--zone was given an empty list, so the split column would count nothing")
+        ZONE_LABEL = "+".join(GAUNTLET_BONES)[:12].upper()
     paths = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if "--zone" in sys.argv:
+        paths = [a for a in paths if a != sys.argv[sys.argv.index("--zone") + 1]]
     if not paths:
         print(__doc__)
         return 2
@@ -108,7 +123,7 @@ def main():
                   "unverified." % (len(paths) - len(known), len(paths)))
 
     print("%-26s %9s %8s   %9s %8s   %9s %8s   %8s"
-          % ("", "ALL dw", "peak", "GAUNTLET", "peak", "body", "peak", "travel"))
+          % ("", "ALL dw", "peak", ZONE_LABEL, "peak", "rest", "peak", "travel"))
     base = None
     for p in paths:
         rows = load_rows(p)
@@ -151,8 +166,8 @@ def main():
             per_joint[gb] += nv * dp
     if per_joint:
         tot = sum(per_joint.values()) or 1.0
-        print("gauntlet contact in %s, by garment bone:"
-              % os.path.basename(paths[-1]).replace(".csv", ""))
+        print("%s contact in %s, by garment bone:" % (ZONE_LABEL,
+              os.path.basename(paths[-1]).replace(".csv", "")))
         for bone, v in per_joint.most_common(6):
             print("    %-30s %5.1f%%" % (bone[:30], 100.0 * v / tot))
     return 0

@@ -2,7 +2,7 @@
 """Set a VRM10 spring joint's floats -- radius, gravity, stiffness, drag -- on chosen chains.
 
     python set_joint_params.py <file.yargchar> --chain NAME [--chain NAME ...]
-           [--from-index N] [--joint-radius MM] [--gravity P]
+           [--from-index N] [--to-index N] [--joint-radius MM] [--gravity P]
            [--stiffness S] [--drag D] [--write]
 
 WHY. A spring joint carries four floats and this roster ships three of them untouched from the
@@ -75,6 +75,12 @@ def main():
     if not chains:
         die("--chain is required; this tool never touches a chain nobody named")
     frm = int(arg("--from-index", 3))
+    # --to-index bounds the range at the far end. Without it every float on this roster has only
+    # ever been set across joints 1..10 at once, so "stiffness" has always meant the whole cape
+    # -- and the arm contact lives in joints 1-3, which have never been touched alone.
+    to = int(arg("--to-index", "1000000"))
+    if to < frm:
+        die("--to-index %d is before --from-index %d, which selects nothing" % (to, frm))
     jr = arg("--joint-radius")
     gp = arg("--gravity")
     st = arg("--stiffness")
@@ -124,7 +130,7 @@ def main():
             die("--from-index %d selects nothing on %s, which has %d joint(s)"
                 % (frm, cn, len(jps)))
         for i, jp in enumerate(jps):
-            if i < frm:
+            if i < frm or i > to:
                 continue
             rec = joints.get(jp)
             if rec is None:
@@ -134,7 +140,8 @@ def main():
     if not want:
         die("no joint selected")
 
-    print("%d chain(s), %d joint(s) selected from index %d" % (len(chains), len(want), frm))
+    rng = ("from index %d" % frm) if to >= 1000000 else ("indices %d..%d" % (frm, to))
+    print("%d chain(s), %d joint(s) selected, %s" % (len(chains), len(want), rng))
     print("they currently carry:")
     for nm, ix, fmt in (("jointRadius", 5, "%.1f mm"), ("gravityPower", 4, "%.2f"),
                         ("stiffnessForce", 2, "%.3f"), ("dragForce", 3, "%.3f")):
@@ -268,7 +275,7 @@ def main():
         die("the patch verified wrong and was NOT written:\n  - " + "\n  - ".join(problems[:12]))
 
     open(path, "wb").write(data)
-    print("WRITTEN. %d joint(s) on %d chain(s) from index %d." % (touched, len(chains), frm))
+    print("WRITTEN. %d joint(s) on %d chain(s), %s." % (touched, len(chains), rng))
     return 0
 
 

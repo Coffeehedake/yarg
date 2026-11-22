@@ -12415,3 +12415,57 @@ across joints 1..10. Joints 1-3 carry 59% of the arm contact and are the stiffes
 a chain simply by being near the anchor. Lowering stiffness on those three alone -- leaving the
 hang of the lower cape untouched -- has never been tried, and `set_joint_params.py` would need
 only a `--to-index` to express it.
+
+### Softening the top three joints works, and NOT for the reason I proposed (2026-11-22)
+
+The previous section found 97.6% of arm-into-cape contact on the rigid collar plus joints 1-3,
+and proposed the one untried lever: stiffness has only ever been set uniformly over joints 1..10,
+so soften 1-3 alone and let the top of the cape yield to an arm. `set_joint_params.py` gained
+`--to-index` for it and `cape_probe_compare.py` gained `--zone`, because the fins are 90 rows and
+the ARMS are 1521.
+
+Three arms on top of the installed character (gravity 0.70, stiffness 0.85 elsewhere), full
+coverage, Animator-driven:
+
+| joints 1-3 stiffness | ALL dw | ARM dw | arm peak | travel |
+|---|---|---|---|---|
+| **0.85 (installed)** | 186885 | 145858 | 117.5 mm | **483 mm** |
+| 0.60 | 176128 (-6%) | 132526 (-9%) | 101.0 mm | 348 mm |
+| 0.40 | 156847 (-16%) | 127392 (-13%) | 77.6 mm | 296 mm |
+| 0.20 | 154496 (-17%) | 127310 (-13%) | **72.2 mm (-39%)** | **197 mm (-59%)** |
+
+**The numbers improve and the mechanism is wrong.** If the gain came from joints 1-3 yielding,
+the reduction would be concentrated on joints 1-3. Arm contact by index, against the installed
+baseline:
+
+| | total | joints 1-3 | RIGID bones |
+|---|---|---|---|
+| top 0.20 | -12.7% | -8.6% | **-15.9%** |
+| top 0.40 | -12.7% | -11.5% | **-12.3%** |
+| top 0.60 | -9.1% | -9.0% | **-8.1%** |
+
+**The rigid bones improve as much as -- at 0.20, more than -- the joints actually changed.**
+Those bones are on no spring chain, so nothing in these arms acts on them directly. (They are not
+perfectly rigid either, which is a flaw in the control I built: "rigid" here means the DOMINANT
+bone is unsprung, and those vertices still carry partial weight on sprung joints. So the row can
+move -- but it should move far less than the joints being edited, and it does not.)
+
+What is actually happening is in the travel column: **483 mm to 197 mm**. The cape is not
+yielding to the arm, it is barely moving, so it is flung into the arm less. That is the clamp
+relax again, and the proxy-versus-goal trap for the third time on this character.
+
+**The render is what settles it.** Rendered at the same four frames, the soft-top cape loses most
+of its spread -- the flare and the scalloped silhouette collapse toward the body, and at frame
+530 it is nearly flat against his back. The arm clipping visibly improves and the cape stops
+reading as a cape. Against a 39% better arm peak that is not a trade worth taking, and it is on
+top of gravity 0.70 having already halved travel from 956 mm: at 0.20 the cape retains about a
+fifth of the movement it had this morning.
+
+**NOT INSTALLED.** Batman stays at `d4dc0d6d`. `--to-index` and `--zone` stay, because the
+measurement they made possible is the useful part: the arm contact is at the top of the cape, and
+no spring float reaches it without making the cape stop moving.
+
+**What that leaves.** Every float on the existing rig trades arm clipping against cape motion,
+because they all act by damping the cape rather than by moving it out of the way. The 29% of the
+cape welded to the torso cannot be addressed at all without rig work -- 30 leaf bones that cannot
+be sprung as they stand. That is the real job, and it is a rig change, not a parameter.
