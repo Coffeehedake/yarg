@@ -206,3 +206,30 @@ lead did come out of the geometry pass: **Pomni has one inside-out piece**, 168 
 `PomniFace` at z 1.16–1.20, which is head height and is where her hair is reported to clip
 through. That is a `VRM_ORIENT_CONSISTENT` candidate, and it is the kind of thing a blanket
 double-side would have buried.
+
+## New candidate, 2026-11-22: an inside-out solid on The Rock, found by fixing the gate
+
+`The Rock  Object014  615 faces  95.0% manifold  signed volume -0.00021858 m3  z 1.74–1.80`
+
+Surfaced by the `facing_check.py` edge-counting fix (`3281a08c`), which admitted seven pieces
+the old count had skipped. It survives reference-point invariance — negative from both the
+centroid and the origin, agreeing to 8.5%, at 0.889 solidity — so it is a genuine solid shell
+wound inside-out, not a sheet whose sign is noise. (Jinx's `hair_base`, surfaced by the same
+fix, is noise: its sign FLIPS between reference points. The two are not equal and should not be
+reported together.)
+
+**This is NOT an answer to The Rock's reported arms.** z 1.74–1.80 is head-and-shoulders height
+on a 1.96 m character; the report is his arms. It is listed here as a candidate in its own
+right, on a character that happens to have an open report, and conflating the two would be the
+mistake this file has already made once with Pomni.
+
+### And Pomni's inside-out piece is WITHDRAWN
+`PomniFace` is not a closed shell: 90.9% manifold once its own boundary is counted, with a
+signed volume that changes by 121x depending on the reference point. The lead recorded above as
+"one genuine lead" is dead. **Her reported fault is untouched** — the layering/weighting
+classification stands.
+
+Worth recording why it was ever a lead: `docs/character-models.md:1173` had already dismissed
+this exact piece as "Pomni 1 (flat, 1.4% solid: ignore)", with the rule on the line above —
+"a paper-thin double-layer shell fills 1-2% and its sign is noise" — four days before this file
+revived it. The newer document resurrected what the older one had closed.
