@@ -11410,3 +11410,53 @@ that would have produced hers. Her numbers above are still worth having: they ar
 of her file, not of a fix. But the `CapsuleInside` type found in the runtime the same afternoon
 is a better starting point for a skirt than anything here, and none of this should be acted on
 until a cape or a skirt has been measured in the pose the player actually sees.
+
+### EVERY character with cloth has most of its body uncovered (2026-11-21)
+
+Batman had 69.1% of his body skin outside every collider. The obvious question is whether that
+is a Batman problem, and nothing in this pipeline had ever asked it.
+`coverage_sweep_installed.py` asks it of all 65 installed characters. The fourteen that have
+spring chains at all:
+
+| character | chains | colliders | uncovered |
+|---|---|---|---|
+| Tenna | 4 | **2** | **98.1%** |
+| Jinx | 6 | 10 | 92.5% |
+| Aiko | 4 | 10 | 76.0% |
+| Yoda | 1 | **2** | 75.2% |
+| Xenomorph | 5 | 9 | 70.9% |
+| Sayuri | 6 | 10 | 69.7% |
+| Heels | 6 | 10 | 62.2% |
+| Prix | 5 | 10 | 54.9% |
+| Ariel | 6 | 10 | 50.5% |
+| Peach | 9 | 10 | 48.2% |
+| Pomni | 6 | 10 | 47.9% |
+| Link | 6 | 10 | 45.9% |
+| Miku | 9 | 11 | 45.5% |
+| **Batman** | 12 | **52** | **18.6%** |
+
+**Ten colliders, over and over, whatever the character is.** Eleven of the fourteen carry
+exactly nine or ten, and the median body is **62.2% uncovered**. Tenna has two colliders for a
+whole figure and 98.1% of her is untouchable by her own cloth; Yoda has two and 75.2%.
+
+So the thing that was chased all afternoon on Batman's cape — a radius, then another radius,
+then a third — was never his. **It is the roster's, and it has been there since the first
+character was converted.** Every one of these has cloth that can pass through most of its
+wearer, and on thirteen of them nothing has been done about it.
+
+Batman is now the only character on the roster whose cloth has a body to hit, and at 18.6% he
+is three times better covered than the next best. That number is from this sweep's 4,000-vertex
+sample against the writer's 12,000, which is why it reads 18.6% here and 18.1% there — the same
+measurement at two resolutions, not two measurements.
+
+**What this does NOT say.** It does not say any of these thirteen has a visible fault. Coverage
+is an upper bound on what the cloth could pass through, not a report that it does: a character
+whose garment never swings far has nothing to collide with and does not care. Tenna at 98.1%
+with four chains is worth a look; so is Prix at 54.9%, who is on the open list already for an
+arm nobody has explained. But this project has built a flawless mechanism for a fault that did
+not exist before, and the order is: look at the character, then measure, then fit.
+
+**And the sweep's own first run was wrong in a way worth keeping.** `--out <path>` fed the
+output path in as a character file, so it ran on one row called `cov`. It was legible only
+because a character that decodes nothing prints `--` rather than a clean `0.0%`. A sweep that
+reported "0.0% uncovered" for a text file would have been believed.
