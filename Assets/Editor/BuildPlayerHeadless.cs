@@ -65,6 +65,22 @@ namespace YARG.Editor
                     Debug.Log("BUILD INFO: development build (plain http allowed)");
                 }
 
+                // CORRECT THE EDITOR'S OWN STORED ARCHITECTURE, not just this build's.
+                // `target` below pins x64 for anything built through here, but the File > Make
+                // Test Build menu item takes its architecture from this setting instead, and on
+                // 2026-11-21 that produced a 32-BIT player: every native plugin then failed to
+                // load (bass, sqlite3, RtMidi, libusb) because they all live in Plugins/x86_64,
+                // so the game came up with no audio, no score database, no input backend and
+                // broken menus. The DLLs were present and correct; nothing could load them.
+                // Setting it here costs nothing and stops the menu path repeating it.
+                if (EditorUserBuildSettings.selectedStandaloneTarget != BuildTarget.StandaloneWindows64)
+                {
+                    Debug.Log("BUILD INFO: editor's standalone target was " +
+                        $"{EditorUserBuildSettings.selectedStandaloneTarget}, setting it to " +
+                        "StandaloneWindows64");
+                    EditorUserBuildSettings.selectedStandaloneTarget = BuildTarget.StandaloneWindows64;
+                }
+
                 var options = new BuildPlayerOptions
                 {
                     scenes = scenes,
@@ -74,8 +90,21 @@ namespace YARG.Editor
                     options = flags,
                 };
 
+                // SAY WHAT THE EDITOR ACTUALLY THINKS, unconditionally. Asking for Win64 and
+                // getting a 32-bit player happened three times on 2026-11-21 -- with the target
+                // pinned here, -buildTarget Win64 on the command line, the editor's stored
+                // standalone target already x64, the win64 payload present and 64-bit, and a
+                // clean output directory. Every guess at the cause was wrong because none of
+                // these values was ever printed.
+                Debug.Log($"BUILD INFO: activeBuildTarget={EditorUserBuildSettings.activeBuildTarget}, " +
+                    $"selectedStandaloneTarget={EditorUserBuildSettings.selectedStandaloneTarget}, " +
+                    $"standaloneBuildSubtarget={EditorUserBuildSettings.standaloneBuildSubtarget}, " +
+                    $"requested={options.target}");
+
                 var report = BuildPipeline.BuildPlayer(options);
                 var summary = report.summary;
+                Debug.Log($"BUILD INFO: report says platform={summary.platform}, " +
+                    $"outputPath={summary.outputPath}");
 
                 Debug.Log($"BUILD INFO: result {summary.result}");
                 Debug.Log($"BUILD INFO: {summary.totalSize / (1024 * 1024)} MB, " +
@@ -115,6 +144,38 @@ namespace YARG.Editor
                 long bytes = dir.GetFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
                 Debug.Log($"BUILD INFO: {output} exists, tree is {bytes / (1024 * 1024)} MB");
 
+                // READ THE ARCHITECTURE OFF THE PRODUCED FILE. Asking for x64 above and getting
+                // x64 are different claims, and the gap between them cost an evening: a 32-bit
+                // player ran, loaded none of its native plugins, and reported the damage as
+                // DllNotFoundException for files that were present, correct and byte-identical
+                // to a working build. Nothing in the build output said "32-bit" anywhere.
+                string machine = PeMachine(output);
+                Debug.Log($"BUILD INFO: {Path.GetFileName(output)} machine type {machine}");
+                if (machine != "x64")
+                {
+                    Debug.LogError($"BUILD FAIL: produced a {machine} player. Everything in " +
+                        "YARG_Data/Plugins/x86_64 is 64-bit, so this build would start and then " +
+                        "fail to load bass, sqlite3, RtMidi and libusb - no audio, no scores, " +
+                        "no input, broken menus.");
+                    EditorApplication.Exit(1);
+                    return;
+                }
+
+                // and the plugins it will need at runtime are actually beside it
+                string pluginDir = Path.Combine(Path.GetDirectoryName(output),
+                    Path.GetFileNameWithoutExtension(output) + "_Data", "Plugins", "x86_64");
+                string[] needed = { "bass.dll", "sqlite3.dll", "yarg_audio.dll" };
+                var absent = needed.Where(n => !File.Exists(Path.Combine(pluginDir, n))).ToArray();
+                if (absent.Length > 0)
+                {
+                    Debug.LogError($"BUILD FAIL: {pluginDir} is missing " +
+                        string.Join(", ", absent));
+                    EditorApplication.Exit(1);
+                    return;
+                }
+                Debug.Log($"BUILD INFO: {Directory.GetFiles(pluginDir, "*.dll").Length} native " +
+                    "plugin(s) present beside the player");
+
                 // Unity can return Succeeded WITH errors, and the first real run did exactly
                 // that: three "RenderTexture.Create failed" from -nographics, alongside
                 // "Build Finished, Result: Success". Reporting that as a clean PASS would be
@@ -136,6 +197,35 @@ namespace YARG.Editor
             {
                 Debug.LogError("BUILD FAIL: threw " + e);
                 EditorApplication.Exit(1);
+            }
+        }
+
+        /// <summary>
+        /// The PE header's machine type, read off the file itself rather than inferred from
+        /// what the build was asked for.
+        /// </summary>
+        private static string PeMachine(string path)
+        {
+            try
+            {
+                using var fs = File.OpenRead(path);
+                using var br = new BinaryReader(fs);
+                fs.Position = 0x3C;
+                int peOffset = br.ReadInt32();
+                fs.Position = peOffset;
+                if (br.ReadUInt32() != 0x00004550) return "not a PE file";   // "PE\0\0"
+                ushort machine = br.ReadUInt16();
+                return machine switch
+                {
+                    0x8664 => "x64",
+                    0x014c => "x86 (32-bit)",
+                    0xAA64 => "arm64",
+                    _      => $"0x{machine:x4}",
+                };
+            }
+            catch (Exception e)
+            {
+                return "unreadable (" + e.GetType().Name + ")";
             }
         }
     }

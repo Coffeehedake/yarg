@@ -12025,3 +12025,56 @@ measured over the flying cape, and now a sample window covering a third of the a
 one produced confident numbers; every one was caught by a control rather than by inspection. The
 rule earned here: **a measurement must state what it covered**, and a harness that cannot say
 "I only looked at 38% of this" will eventually be believed.
+
+### Unity reported StandaloneWindows64 and wrote a 32-bit player (2026-11-21)
+
+Jay, mid-session: *"the menus are all broken."* Nothing to do with the cape, and the diagnosis
+took four wrong guesses before anything was measured.
+
+**THE SYMPTOM.** The build made that morning started, then failed to load **every** native
+plugin — `bass` (no audio), `sqlite3` (`ScoreContainer` dead), `RtMidi` and `libusb` (no input
+backend, and the MIDI backend then threw from `InputSystem.onBeforeUpdate` **every frame**:
+25,399 exceptions and an 18 MB `Player.log` in three minutes), followed by a
+`LoadingScreen.cs:68` NullReferenceException. Broken menus are the last link in that chain, not
+the fault.
+
+**THE CAUSE.** The player is **32-bit**. Everything in `YARG_Data/Plugins/x86_64` is 64-bit, so
+a 32-bit player loads none of it and looks in a `Plugins/x86` that does not exist. Every earlier
+build on the machine is x64 (`fork-build` Nov 4, `fork-build.old-2026-10-30`); only the Nov 21
+one is x86.
+
+**FOUR WRONG GUESSES, each disproved by measuring rather than by thinking harder.**
+
+| guess | what the measurement said |
+|---|---|
+| the plugins are missing from the build | all 15 present; `RtMidi.dll` is **byte-identical** (same sha256) to the working build's |
+| Windows blocked them (Mark-of-the-Web) | no `Zone.Identifier` stream on any of them |
+| `MakeTestBuild.cs` fails to pin an architecture | it is **upstream's** file and deliberately reads the editor's Build Settings; our own `BuildPlayerHeadless` already pinned `StandaloneWindows64` |
+| the output directory was dirty from the 32-bit build | a build into a brand-new empty directory is still 32-bit |
+
+**WHAT IT ACTUALLY DOES**, with every relevant value printed rather than assumed:
+
+    activeBuildTarget=StandaloneWindows64  selectedStandaloneTarget=StandaloneWindows64
+    standaloneBuildSubtarget=Player        requested=StandaloneWindows64
+    report says platform=StandaloneWindows64
+    actual file: PE32 executable for MS Windows (GUI), Intel i386
+
+**Unity's own build report names the platform it was asked for, and the file on disk is a
+different architecture.** `-buildTarget Win64` on the command line is accepted ("Targeting
+platform: Win64"). The editor's `win64_player_development_mono` payload is present and genuinely
+`PE32+ x86-64`. And the output still carries `UnityCrashHandler32.exe`, a file that exists only
+in the **win32** variation folder — so the win32 payload is being copied while Win64 is
+reported. That is the editor installation, not this project: **repair the Windows Build Support
+module from Unity Hub.** Nothing in the repo can work around it.
+
+**THE CHECK IS THE POINT.** `BuildPlayerHeadless` now reads the **PE header of the executable it
+produced** and fails the build when it is not x64, then confirms the native plugins are beside
+it. It caught this on its first run, on a build Unity called `Succeeded` with a 585 MB tree and
+an exe present — which is exactly what the morning's build looked like before it was handed over.
+Four independent confirmations agree the file is 32-bit (`file(1)`, raw PE bytes via `od`, a C#
+reader and a PowerShell one), because by then the instrument had been wrong often enough that one
+reading was not worth trusting.
+
+**The rule, and it is the same one as the cape probe's truncated window:** a tool's report of
+what it did is not a measurement of what it produced. `summary.platform` is the build system
+describing its own intent. The PE header is the artefact. Read the artefact.
