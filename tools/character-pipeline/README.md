@@ -11599,3 +11599,48 @@ artefact that reproduces the glitch and the two differ in exactly one field.
 **If this glitches too**, the Center idea is wrong for our conversions whatever the target, and
 the next question is not a field in the bundle — it is what the select screen actually does to
 the character, which needs the game's animation data.
+
+#### A PREDICTION, written before the reload comes back: the Center will change nothing (2026-11-21)
+
+Two measurements taken while the file was loading, both of which undercut my own story.
+
+**1. The select screen does NOT rotate the character.** `CharacterDisplayManager` moves
+characters around a circle, but look at what it writes:
+
+```csharp
+_podiums[i].transform.position = new Vector3(x, _podiums[i].transform.position.y, z);
+```
+
+**Position only, no rotation**, and `UpdatePodiumPositions` runs only inside the carousel
+tween's `OnUpdate` — i.e. only while you are pressing left or right. A character standing on
+the podium is not being moved at all. The spinning disc under him is podium art.
+
+So "the turntable flings the cloth outward, permanently" is **wrong**. There is no continuous
+rotation to fling anything. The Center would matter during a carousel transition and should do
+nothing at all while he stands still, which is exactly the condition every screenshot was taken
+in.
+
+**2. gravityPower ≈ 0 is universal, including on the characters that behave.** The whole roster:
+
+| character | gravityPower |
+|---|---|
+| Hatsune Miku (Retry Now ver.) | 0.00 ×191, **0.02** ×16 |
+| Kaiser Aufhänger | 0.00 ×120, **0.01** ×100 |
+| Adachi Rei | 0.00 ×134, **0.05** ×12 |
+| Inforder Trogen | **0.00 ×290** |
+| everyone else, Batman included | 0.00 |
+
+The VRM-native characters whose cloth behaves use zero gravity too, or a hundredth. So "the cape
+has no gravity to pull it back down" is not the differentiator either — it is simply how VRM
+spring bones are tuned, and other characters look right with it.
+
+**THE PREDICTION, recorded now so it cannot be fitted to the answer afterwards: the
+`_Character` Center will make no visible difference to a stationary Batman.** If it does, my
+model of what moves that cape is wrong in a way worth knowing about, and that is a more useful
+outcome than being right.
+
+**What that leaves.** Not gravity, not the turntable, not collision geometry, and not a field I
+have found in the bundle. The remaining candidate is the idle animation itself — whether its
+clips drive the cape bones, which would put the Animator and the spring solver in a fight over
+the same transforms. That data is in the game's assets, not in a `.yargchar`, so answering it
+means running the thing rather than reading it.
