@@ -12199,3 +12199,63 @@ joint predicts **how often**, not **how deeply**; the "sharp 40 mm ceiling" of 2
 truncated window and is still withdrawn.
 
 More chains is the remaining lever, and it is a cape re-weight rather than a float.
+
+### Six of Batman's eleven cape chains drive nothing, and the gauntlet fault is NEAR the joints (2026-11-22)
+
+Scoping "more chains" after every joint float turned out to be at its best value. The scope is
+`measurements/batman-cape-chains-scope-2026-11-22.md`; two things I had been repeating were wrong.
+
+**FIVE CHAINS DRIVE THE CAPE, NOT ELEVEN.** Resolving every bone in the cape mesh's skin to a
+name and summing the weight each spring joint receives: `C_cape`, `L_cape`, `L_cape_a`, `R_cape`
+and `R_cape_a` carry 217-350 each, and `L/R_cape_c`, `L/R_cape_d`, `L/R_cape_e` carry **exactly
+zero**. The dead six sit at z = -81 to +154 -- the sides and the FRONT. Batman's cape is a
+back-only cape, so the source rig's wrap-around chains have no mesh to move, and they are
+simulated every frame for nothing. Removing them would cut cape spring work 55% with no possible
+visual change, which is also the test: the probe must come back identical.
+
+It corrects the spacing too. Between the chains that actually drive geometry the spans are
+**237-266 mm**, four of them, 967 mm across the back. The 337 mm I quoted was a gap between two
+DEAD chains.
+
+**THE JOIN THAT HID IT.** `SkinnedMeshRenderer.m_Bones` holds **Transform component** path_ids
+while a spring joint names its **GameObject**. Looking bones up in a GameObject table resolves
+nothing and prints a clean, total, plausible **0 of 121 joints weighted** -- which is what the
+first version of this measurement said. It was caught only because a control taken minutes
+earlier had found 80 weighted cape bones. The script now refuses to count at all unless every
+skin bone resolved to a name and at least one is a cape joint.
+
+**THE GAUNTLET FAULT AND THE TORSO FAULT HAVE OPPOSITE PROFILES.** The probe now takes
+`-zoneMatch`, splitting its distance table by which body part is penetrated -- needed because the
+whole-garment table is dominated by somewhere else: the gauntlets are 195 of 12,043 penetrating
+vertex-frames, 1.6%. Share of all garment vertex-frames penetrating, by distance to the nearest
+spring joint:
+
+| distance to nearest joint | gauntlets (`blade*`) | torso (`clav*`) |
+|---|---|---|
+| 0-20 mm | **0.405%** (and the 87.5 mm worst case) | 0.037% |
+| 40-60 mm | 0.256% | 1.101% |
+| 80-100 mm | 0.081% | 2.660% |
+| >= 150 mm | **0.014%** | **6.062%** |
+
+Torso penetration is 160x more likely far from a joint than near one -- collision protecting what
+it can reach, and a mid-span problem that more chains would fix. **Gauntlet penetration is 29x
+more likely NEAR a joint than far from one.** New chains add joints mid-span, which is where the
+reported fault is least present. Chains are the right tool for the torso and the wrong tool for
+what Jay reported.
+
+**NOR IS IT A MISSING COLLIDER,** though no collider exists on any `blade` bone and that looked
+like the answer for ten minutes. All **190** fin vertices sit **inside** a collider, median
+**57.9 mm** deep, against a control of **18.4%** of the whole body being outside every collider --
+the fins are better covered than the body average, buried in the forearm capsules the cape
+already collides with. Rest-pose containment is fair here, unusually, because fins and forearm
+capsules are rigidly parented to the same bones, so the relative position does not change with
+the arm.
+
+**AND THE INSTRUMENT DISCLAIMS THE MEASUREMENT.** This probe's own remarks, written when it was
+built: *near a sharp edge it can be wrong by the local triangle size ... it is trying to answer
+"is an arm through this cape", and an arm is 200 mm.* The fins are 190 vertices of thin sharp
+protrusion and the gauntlet readings are 20-87 mm on 90 of 2,400 rows. Eleven arms were spent
+optimising a quantity the probe says it cannot resolve for this feature class. The readings are
+bit-reproducible, so they are not noise -- but they may not be measuring what Jay can see, and no
+further sweeping could discover that. **He saw the fault; the probe cannot adjudicate it; so the
+next step is a render, not a rig.**

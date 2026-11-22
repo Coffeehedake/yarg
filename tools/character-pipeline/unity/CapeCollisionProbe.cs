@@ -83,6 +83,17 @@ namespace YARG.Editor
             // to assume: it is the whole justification for building ~100 new bones.
             string gapOut = Arg("-gapOut");
 
+            // -zoneMatch splits the gap table by WHICH PART OF THE BODY is being penetrated.
+            // Without it, "penetration happens far from a joint" is a statement about the whole
+            // garment, and the fault actually being chased may be the exception: on Batman the
+            // forearm-gauntlet contact is ~90 of ~2400 rows, 1.5% of the total, so the headline
+            // table can be dominated entirely by penetration somewhere else.
+            string[] zone = (Arg("-zoneMatch", "") ?? "")
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(z => z.Trim().ToLowerInvariant())
+                .Where(z => z.Length > 0)
+                .ToArray();
+
             var log = new StringBuilder();
             void Say(string s) { Debug.Log("[CapeProbe] " + s); log.AppendLine(s); }
 
@@ -213,7 +224,7 @@ namespace YARG.Editor
                 float[] baseline = null;
                 var jointPos = new List<Vector3>();
                 var gapAll = new List<float>();
-                var gapPen = new List<(float dist, float depth)>();
+                var gapPen = new List<(float dist, float depth, string into)>();
                 float worstOverall = 0f;
                 string worstWhere = "";
                 int sampled = 0;
@@ -291,7 +302,7 @@ namespace YARG.Editor
                             }
                             dmin = Mathf.Sqrt(dmin);
                             gapAll.Add(dmin);
-                            if (depth > 0f) gapPen.Add((dmin, depth));
+                            if (depth > 0f) gapPen.Add((dmin, depth, b.bone));
                         }
 
                         if (depth <= 0f) continue;
@@ -398,7 +409,7 @@ namespace YARG.Editor
                         return edges.Length - 1;
                     }
                     foreach (var d in gapAll) nAll[Bin(d)]++;
-                    foreach (var (d, dep) in gapPen)
+                    foreach (var (d, dep, _into) in gapPen)
                     {
                         int b = Bin(d);
                         nPen[b]++; dSum[b] += dep;
@@ -431,6 +442,65 @@ namespace YARG.Editor
                         "{0} joint(s) measured against; {1} garment vertex-frames, {2} of them " +
                         "penetrating; wrote {3}",
                         jointTf.Count, gapAll.Count, gapPen.Count, gapOut));
+
+                    // THE SAME TABLE FOR ONE ZONE ONLY. This is the measurement that decides
+                    // whether more spring chains can reach a fault at all: a chain protects what
+                    // comes near its joints, so if a zone's penetration sits at the same
+                    // distances as the garment as a whole, more chains move it, and if it sits
+                    // close to joints that already exist, they will not. The ALL column stays the
+                    // control -- every garment vertex-frame, in the zone or not.
+                    if (zone.Length > 0)
+                    {
+                        var zPen = new int[edges.Length];
+                        var zSum = new float[edges.Length];
+                        var zMax = new float[edges.Length];
+                        int zTot = 0;
+                        foreach (var (d, dep, into) in gapPen)
+                        {
+                            string lo = (into ?? "").ToLowerInvariant();
+                            if (!zone.Any(k => lo.Contains(k))) continue;
+                            int zb = Bin(d);
+                            zPen[zb]++; zSum[zb] += dep; zTot++;
+                            if (dep > zMax[zb]) zMax[zb] = dep;
+                        }
+                        string zonePath = gapOut.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)
+                            ? gapOut.Substring(0, gapOut.Length - 4) + "-zone.csv"
+                            : gapOut + "-zone.csv";
+                        var z = new StringBuilder();
+                        z.AppendLine("dist_to_nearest_joint_mm,all_vertex_frames," +
+                                     "zone_penetrating,pct_of_all,mean_depth_mm,max_depth_mm");
+                        Say(string.Format(CultureInfo.InvariantCulture,
+                            "zone test -- penetration into [{0}] only, by distance to the "
+                            + "nearest spring joint ({1} of {2} penetrating vertex-frames):",
+                            string.Join("|", zone), zTot, gapPen.Count));
+                        Say(string.Format("{0,-14} {1,10} {2,12} {3,8} {4,11} {5,10}",
+                            "band (mm)", "all", "zone pen", "pct", "mean depth", "max depth"));
+                        for (int i = 0; i < edges.Length; i++)
+                        {
+                            if (nAll[i] == 0 && zPen[i] == 0) continue;
+                            string band = i == 0 ? "< 20"
+                                : i == edges.Length - 1 ? ">= 150"
+                                : string.Format("{0:0}-{1:0}", edges[i - 1] * 1000f,
+                                                edges[i] * 1000f);
+                            float pct = nAll[i] > 0 ? 100f * zPen[i] / nAll[i] : 0f;
+                            float mean = zPen[i] > 0 ? zSum[i] / zPen[i] : 0f;
+                            Say(string.Format(CultureInfo.InvariantCulture,
+                                "{0,-14} {1,10} {2,12} {3,7:0.00}% {4,10:0.0} {5,9:0.0}",
+                                band, nAll[i], zPen[i], pct, mean * 1000f, zMax[i] * 1000f));
+                            z.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                                "{0},{1},{2},{3:0.0000},{4:0.00},{5:0.00}",
+                                band, nAll[i], zPen[i], pct, mean * 1000f, zMax[i] * 1000f));
+                        }
+                        if (zTot == 0)
+                        {
+                            Say("REFUSED to draw a conclusion from the zone table: no penetrating"
+                                + " vertex-frame matched [" + string.Join("|", zone) + "], so"
+                                + " this is a spelling result and not a measurement. Check the"
+                                + " into_body_bone column of the -out CSV for the real names.");
+                        }
+                        File.WriteAllText(zonePath, z.ToString());
+                        Say("wrote " + zonePath);
+                    }
                 }
                 Finish(log, outPath, 0);
             }
