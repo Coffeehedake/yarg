@@ -164,12 +164,28 @@ def pieces_report():
                         comp[g] = nc
                         stack.append(g)
             nc += 1
+        # EVERY EDGE IS COUNTED ONCE PER PIECE THAT TOUCHES IT, and manifoldness is judged
+        # WITHIN the piece. This used to read `c = comp[fl[0]]` -- the component of whichever
+        # face happened to come first on that edge -- which is wrong in the one place it matters.
+        #
+        # `adj` above only joins faces across edges shared by exactly two faces, so pieces are
+        # SEPARATED at non-manifold edges. Those are precisely the edges that bound a shell
+        # tucked inside another surface. Attributing each of them to a single arbitrary
+        # component meant the other pieces on that edge never got it in their denominator, so a
+        # piece whose boundary is entirely non-manifold had almost none of its boundary counted
+        # and sailed through the 95% gate below.
+        #
+        # Measured on Pomni: her 168-face `PomniFace` piece is 90.9% manifold by its own edges
+        # and should have been skipped as "not a closed shell". It was admitted, and produced an
+        # INSIDE-OUT verdict on a signed volume of -0.0000008 m3 that changes by 121x depending
+        # on the reference point -- the signature of a surface that is not closed at all.
         ecount = collections.defaultdict(lambda: [0, 0])
         for fl in edges.values():
-            c = comp[fl[0]]
-            ecount[c][1] += 1
-            if len(fl) == 2:
-                ecount[c][0] += 1
+            per = collections.Counter(comp[f] for f in fl)
+            for c, n in per.items():
+                ecount[c][1] += 1
+                if n == 2:
+                    ecount[c][0] += 1
         byc = collections.defaultdict(list)
         for p in polys:
             byc[comp[p.index]].append(p)
