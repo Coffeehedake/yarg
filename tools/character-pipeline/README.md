@@ -12561,3 +12561,33 @@ points at them.
 What this does NOT do is touch the cape's behaviour, which is the point: it is a cost removal,
 not a fix. The arms still clip, 29% of the cape is still welded to the torso on 30 leaf bones
 that are on no chain, and that remains rig work.
+
+### The seventh dead chain, sharkHat_att, dropped on Jay's say-so (2026-11-22)
+
+Reported in the section above and deliberately left out of that change, since the authorisation
+covered the cape. Jay then authorised it, so Batman is now `f7d268e0`: **5 spring chains, 55
+joints**, down from twelve and 124 at the start of the day.
+
+**One check the weight guard could not make, asked before the drop.** `sharkHat` is an accessory,
+and an accessory is often a mesh PARENTED to a bone rather than skinned to it. Such a mesh owns
+no skin weight at all, so a guard that measures weight is blind to it, and dropping its chain
+would stop geometry that currently moves. Measured instead of assumed: this character has
+**no `MeshRenderer` at all** — two `SkinnedMeshRenderer`s and nothing else — so nothing can be
+parented to a bone and moved by it, and the hat chain has 0 descendants outside itself. The scan
+reporting two renderers rather than zero is its own control.
+
+**The three bundles produce BYTE-IDENTICAL probe output.** Not similar, and not "identical to the
+digit" as reported for the first drop — the same md5:
+
+| bundle | chains / joints | probe csv md5 | coverage |
+|---|---|---|---|
+| `d4dc0d6d` | 12 / 124 | `25a04ec1aa` | 100% |
+| `78f42ac3` | 6 / 58 | `25a04ec1aa` | 100% |
+| `f7d268e0` | 5 / 55 | `25a04ec1aa` | 100% |
+
+Three runs, three distinct write times, one output. `YargCharLoadTest` reads 6/58 against 5/55
+with 52 humanoid bones, 2 skinned meshes, 573 bones and `humanoid=True` on both.
+
+**Spring work over the day: 124 joints stepped per frame down to 55, a 55.6% cut**, with no
+measurable change of any kind to what the character does. The 55% figure I was quoting this
+morning for six chains was wrong for six and turns out to be right for seven.
