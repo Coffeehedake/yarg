@@ -83,11 +83,36 @@ namespace YARG.Editor
             // to assume: it is the whole justification for building ~100 new bones.
             string gapOut = Arg("-gapOut");
 
+            // -useAnimator drives the character's OWN Animator (Attract, else Idle) instead of
+            // sampling -clipPath. That is what the character-select podium does, and it is a
+            // DIFFERENT ANIMATION from VoxIdle.anim -- which means every cape number produced
+            // before this flag existed describes a clip nobody was looking at when the fault
+            // was reported.
+            bool useAnimator = Array.IndexOf(Environment.GetCommandLineArgs(),
+                                             "-useAnimator") >= 0;
+
             // -zoneMatch splits the gap table by WHICH PART OF THE BODY is being penetrated.
             // Without it, "penetration happens far from a joint" is a statement about the whole
             // garment, and the fault actually being chased may be the exception: on Batman the
             // forearm-gauntlet contact is ~90 of ~2400 rows, 1.5% of the total, so the headline
             // table can be dominated entirely by penetration somewhere else.
+            // RENDERING FROM INSIDE THE PROBE, because the alternative renderer drives the
+            // character's own Animator with an Attract/Idle trigger while this samples
+            // VoxIdle.anim directly. Those are different animations, so "frame 240" in a shot
+            // taken that way would not be the frame measured here, and the picture would answer
+            // a question nobody asked. Rendered from this loop the shot IS the measured moment:
+            // same clip time, same spring state, same posed mesh.
+            string shotDir = Arg("-shotDir");
+            string shotBone = Arg("-shotBone");
+            int shotRes = int.Parse(Arg("-shotRes", "900"), CultureInfo.InvariantCulture);
+            // 0.42 m from a forearm fills the frame with skin. The question is whether the cape
+            // crosses the limb, which needs the limb, the cape and the gap between them in one
+            // picture.
+            float shotDist = float.Parse(Arg("-shotDist", "0.95"), CultureInfo.InvariantCulture);
+            var shotFrames = new HashSet<int>((Arg("-shotFrames", "") ?? "")
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => int.Parse(x.Trim(), CultureInfo.InvariantCulture)));
+
             string[] zone = (Arg("-zoneMatch", "") ?? "")
                 .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(z => z.Trim().ToLowerInvariant())
@@ -182,8 +207,17 @@ namespace YARG.Editor
                         "it.");
                     return;
                 }
-                Say(string.Format("subject {0}, clip {1} ({2:0.00}s), spring runtime {3}",
-                    Path.GetFileNameWithoutExtension(charPath), clip.name, clip.length,
+                // NAME THE DRIVER, NOT JUST THE CLIP THAT HAPPENS TO BE LOADED. This line read
+                // "clip VoxIdle (10.55s)" on the first -useAnimator run, where VoxIdle drove
+                // nothing -- a label from the wrong animation on a report about another one,
+                // which is exactly how two days of measurements came to describe a clip nobody
+                // was watching.
+                Say(string.Format("subject {0}, driven by {1}, spring runtime {2}",
+                    Path.GetFileNameWithoutExtension(charPath),
+                    useAnimator
+                        ? "the character's OWN Animator (what the character-select podium plays)"
+                        : string.Format(CultureInfo.InvariantCulture, "clip {0} ({1:0.00}s)",
+                                        clip.name, clip.length),
                     springs.GetType().Name));
 
                 var smrs = go.GetComponentsInChildren<SkinnedMeshRenderer>();
@@ -206,7 +240,43 @@ namespace YARG.Editor
                 float dt = 1f / fps;
                 // settle: step the solver at the clip's first pose so the opening frames are
                 // not a transient from instantiation being read as a finding
-                clip.SampleAnimation(go, 0f);
+                Animator animator = null;
+                if (useAnimator)
+                {
+                    animator = go.GetComponentInChildren<Animator>();
+                    if (animator == null)
+                    {
+                        Say("REFUSED: -useAnimator was asked for and this character has no " +
+                            "Animator, so every frame would be identical and the cape would " +
+                            "read as perfectly still.");
+                        Finish(log, outPath, 2);
+                        return;
+                    }
+                    bool trig = false;
+                    foreach (var pm in animator.parameters)
+                    {
+                        if (pm.type != AnimatorControllerParameterType.Trigger) continue;
+                        if (pm.name == "Attract" || pm.name == "Idle")
+                        {
+                            animator.SetTrigger(pm.name);
+                            Say("animator trigger: " + pm.name);
+                            trig = true;
+                            break;
+                        }
+                    }
+                    if (!trig)
+                    {
+                        Say("NOTE: no Attract or Idle trigger on this Animator; it will run " +
+                            "whatever its default state is. Say so rather than implying the " +
+                            "podium animation was reproduced.");
+                    }
+                    animator.Rebind();
+                    animator.Update(0f);
+                }
+                else
+                {
+                    clip.SampleAnimation(go, 0f);
+                }
                 for (int i = 0; i < 60; i++) springs.Process(dt);
 
                 var rows = new List<string>();
@@ -225,6 +295,56 @@ namespace YARG.Editor
                 var jointPos = new List<Vector3>();
                 var gapAll = new List<float>();
                 var gapPen = new List<(float dist, float depth, string into)>();
+                // The probe instantiates into whatever scene happens to be open, which has
+                // no camera and no light of its own. Both are made here, because a render that
+                // silently came out black would look exactly like a cape that is not clipping.
+                Camera shotCam = null;
+                Transform shotTarget = null;
+                var shotMade = new List<string>();
+                var shotBlank = new List<string>();
+                var shotSame = new List<string>();
+                var shotPrev = new Dictionary<string, string>();
+                if (shotDir != null)
+                {
+                    Directory.CreateDirectory(shotDir);
+                    var camGo = new GameObject("probe-cam");
+                    shotCam = camGo.AddComponent<Camera>();
+                    shotCam.clearFlags = CameraClearFlags.SolidColor;
+                    shotCam.backgroundColor = new Color(0.12f, 0.13f, 0.15f, 1f);
+                    shotCam.fieldOfView = 38f;
+                    shotCam.nearClipPlane = 0.01f;
+                    shotCam.farClipPlane = 50f;
+                    // Two lights, from opposite sides. One directional light leaves the far side
+                    // of a BLACK cape unlit against a dark background, which is the one thing
+                    // this picture must not do.
+                    var rigs = new[] { new Vector3(35f, -40f, 0f), new Vector3(15f, 150f, 0f) };
+                    var power = new[] { 1.5f, 0.9f };
+                    for (int li = 0; li < rigs.Length; li++)
+                    {
+                        var lgo = new GameObject("probe-light");
+                        var lt = lgo.AddComponent<Light>();
+                        lt.type = LightType.Directional;
+                        lt.intensity = power[li];
+                        lt.color = Color.white;
+                        lgo.transform.rotation = Quaternion.Euler(rigs[li]);
+                    }
+                    if (!string.IsNullOrEmpty(shotBone))
+                    {
+                        shotTarget = go.GetComponentsInChildren<Transform>(true)
+                            .FirstOrDefault(tr => tr.name.ToLowerInvariant()
+                                                    .Contains(shotBone.ToLowerInvariant()));
+                        if (shotTarget == null)
+                        {
+                            Say("REFUSED: -shotBone " + shotBone + " matches no transform on " +
+                                "this character, so every close-up would be aimed at the origin " +
+                                "and would show a clean cape by construction.");
+                            Finish(log, outPath, 2);
+                            return;
+                        }
+                        Say("shots aimed at " + shotTarget.name);
+                    }
+                }
+
                 float worstOverall = 0f;
                 string worstWhere = "";
                 int sampled = 0;
@@ -233,8 +353,16 @@ namespace YARG.Editor
 
                 for (int f = 0; f <= frames; f++)
                 {
-                    float t = (f / fps) % Mathf.Max(0.0001f, clip.length);
-                    clip.SampleAnimation(go, t);
+                    float t = f / fps;
+                    if (useAnimator)
+                    {
+                        animator.Update(dt);
+                    }
+                    else
+                    {
+                        t = t % Mathf.Max(0.0001f, clip.length);
+                        clip.SampleAnimation(go, t);
+                    }
                     springs.Process(dt);
 
                     if (f % every != 0) continue;
@@ -249,6 +377,90 @@ namespace YARG.Editor
                     garmentSeen = Mathf.Max(garmentSeen, garment.Count);
                     bodySeen = Mathf.Max(bodySeen, body.Count);
                     if (garment.Count == 0 || body.Count == 0) continue;
+
+                    if (shotCam != null && shotFrames.Contains(f))
+                    {
+                        float h = Mathf.Max(1.0f, heightSeen);
+                        var tags = new List<string>();
+                        var ats = new List<Vector3>();
+                        var looks = new List<Vector3>();
+                        var fovs = new List<float>();
+                        if (shotTarget != null)
+                        {
+                            Vector3 bp = shotTarget.position;
+                            // Three directions, because one view cannot separate "the cape is
+                            // through the fin" from "the cape is in front of the fin".
+                            tags.Add("outboard");
+                            ats.Add(bp + new Vector3(-shotDist, shotDist * 0.10f, 0f));
+                            looks.Add(bp); fovs.Add(34f);
+                            tags.Add("front");
+                            ats.Add(bp + new Vector3(0f, shotDist * 0.10f, shotDist));
+                            looks.Add(bp); fovs.Add(34f);
+                            tags.Add("above");
+                            ats.Add(bp + new Vector3(0f, shotDist, shotDist * 0.14f));
+                            looks.Add(bp); fovs.Add(34f);
+                        }
+                        // THE WIDE VIEW IS FRAMED FROM THE SUBJECT'S OWN BOUNDS, not from the
+                        // origin. Aimed at the origin it photographed the floor: every wide shot
+                        // came back byte-identical across frames while the close-ups all
+                        // differed, because the character is not at the origin and nothing in
+                        // the picture was moving.
+                        Vector3 lo = body[0].p, hi = body[0].p;
+                        for (int bi2 = 1; bi2 < body.Count; bi2++)
+                        {
+                            lo = Vector3.Min(lo, body[bi2].p);
+                            hi = Vector3.Max(hi, body[bi2].p);
+                        }
+                        Vector3 mid = (lo + hi) * 0.5f;
+                        float reach = Mathf.Max(0.5f, (hi - lo).magnitude);
+                        tags.Add("wide");
+                        ats.Add(mid + new Vector3(reach * 0.55f, reach * 0.12f, reach * 1.05f));
+                        looks.Add(mid); fovs.Add(40f);
+
+                        for (int vi2 = 0; vi2 < tags.Count; vi2++)
+                        {
+                            shotCam.transform.position = ats[vi2];
+                            shotCam.transform.LookAt(looks[vi2]);
+                            shotCam.fieldOfView = fovs[vi2];
+                            Color32[] px;
+                            var png = Shoot(shotCam, shotRes, out px);
+                            string nm = string.Format(CultureInfo.InvariantCulture,
+                                "f{0:0000}-{1}.png", f, tags[vi2]);
+                            File.WriteAllBytes(Path.Combine(shotDir, nm), png);
+                            shotMade.Add(nm);
+                            // IS THE SUBJECT EVEN IN FRAME? A near-empty picture is the failure
+                            // that reads as good news, so it is counted rather than left to the
+                            // eye: pixels differing from the background colour.
+                            int lit = 0;
+                            var bg = shotCam.backgroundColor;
+                            int br = (int) (bg.r * 255f), bgg = (int) (bg.g * 255f),
+                                bb2 = (int) (bg.b * 255f);
+                            for (int pi = 0; pi < px.Length; pi++)
+                            {
+                                if (Mathf.Abs(px[pi].r - br) + Mathf.Abs(px[pi].g - bgg)
+                                    + Mathf.Abs(px[pi].b - bb2) > 18) lit++;
+                            }
+                            float fill = 100f * lit / Mathf.Max(1, px.Length);
+                            Say(string.Format(CultureInfo.InvariantCulture,
+                                "  shot {0}  subject fills {1:0.0}% of frame", nm, fill));
+                            if (fill < 2f)
+                            {
+                                shotBlank.Add(string.Format(CultureInfo.InvariantCulture,
+                                    "{0} ({1:0.0}%)", nm, fill));
+                            }
+                            // A picture that is BYTE-IDENTICAL to the same view at a different
+                            // frame is photographing something that is not moving, which on an
+                            // animating character means it is not photographing the character.
+                            // "Something is in frame" cannot catch that; only a comparison can.
+                            string sig = System.Convert.ToBase64String(
+                                System.Security.Cryptography.MD5.Create().ComputeHash(png));
+                            if (shotPrev.TryGetValue(tags[vi2], out var was) && was == sig)
+                            {
+                                shotSame.Add(nm);
+                            }
+                            shotPrev[tags[vi2]] = sig;
+                        }
+                    }
 
                     if (firstTails.Count == 0)
                         firstTails = garment.Select(g => g.p).ToList();
@@ -347,7 +559,17 @@ namespace YARG.Editor
                 // of the clip was included. A truncated window is not a sparse measurement, it
                 // is a different measurement, and nothing said so.
                 float covered = frames / Mathf.Max(0.0001f, fps);
-                if (covered < clip.length * 0.98f)
+                if (useAnimator)
+                {
+                    // An Animator state machine has no single length to compare against, so the
+                    // clip-coverage check cannot run. Saying that plainly beats letting a check
+                    // that did not execute read as a check that passed.
+                    Say(string.Format(CultureInfo.InvariantCulture,
+                        "COVERAGE: {0:0.00}s of the Animator's own state machine at {1:0} fps. " +
+                        "There is no single clip length to compare against, so the clip-coverage " +
+                        "check is NOT running for this mode.", covered, fps));
+                }
+                else if (covered < clip.length * 0.98f)
                     fails.Add(string.Format(CultureInfo.InvariantCulture,
                         "-frames {0} at {1:0} fps covers {2:0.00}s of a {3:0.00}s clip ({4:0}%). " +
                         "The cape's largest excursions need not be in the part you sampled, so " +
@@ -502,6 +724,30 @@ namespace YARG.Editor
                         Say("wrote " + zonePath);
                     }
                 }
+                if (shotDir != null)
+                {
+                    Say(string.Format("wrote {0} shot(s) to {1}", shotMade.Count, shotDir));
+                    if (shotMade.Count == 0)
+                    {
+                        Say("REFUSED: -shotDir was given and no frame matched -shotFrames, so " +
+                            "nothing was rendered. The frames have to be ones this run SAMPLES: " +
+                            "with -every " + every + " that means multiples of " + every + ".");
+                    }
+                    else if (shotSame.Count > 0)
+                    {
+                        Say("WARNING: " + shotSame.Count + " shot(s) are byte-identical to the " +
+                            "same view at an earlier frame -- " + string.Join(", ", shotSame) +
+                            ". On an animating character that means the camera is pointed at " +
+                            "something static, not at the subject. Do not read those as frames " +
+                            "where nothing is happening.");
+                    }
+                    else if (shotBlank.Count > 0)
+                    {
+                        Say("WARNING: " + shotBlank.Count + " of " + shotMade.Count + " shot(s) " +
+                            "are nearly empty -- " + string.Join(", ", shotBlank) + ". Those " +
+                            "show no subject and must not be read as a clean cape.");
+                    }
+                }
                 Finish(log, outPath, 0);
             }
             finally
@@ -562,6 +808,31 @@ namespace YARG.Editor
                 UnityEngine.Object.DestroyImmediate(baked);
             }
             if (hi > lo) height = Mathf.Max(height, hi - lo);
+        }
+
+        /// <summary>
+        /// Render the camera to a PNG and hand back the pixels, so the caller can check the
+        /// picture is not empty. Same method as YargCharAnim's, which has produced real shots
+        /// out of this project before.
+        /// </summary>
+        private static byte[] Shoot(Camera cam, int res, out Color32[] px)
+        {
+            var rt = new RenderTexture(res, res, 24, RenderTextureFormat.ARGB32);
+            var old = cam.targetTexture;
+            cam.targetTexture = rt;
+            cam.Render();
+            RenderTexture.active = rt;
+            var tex = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
+            tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+            tex.Apply();
+            RenderTexture.active = null;
+            cam.targetTexture = old;
+            px = tex.GetPixels32();
+            var png = tex.EncodeToPNG();
+            UnityEngine.Object.DestroyImmediate(tex);
+            rt.Release();
+            UnityEngine.Object.DestroyImmediate(rt);
+            return png;
         }
 
         private static Dictionary<long, List<int>> BuildGrid(List<(Vector3 p, Vector3 n, string bone)> body)

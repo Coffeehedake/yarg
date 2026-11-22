@@ -23,6 +23,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -117,6 +118,12 @@ public static class YargCharAnim
             float step = float.TryParse(Arg(args, "-step"), out var ss) ? ss : 0.125f;
             float warmup = float.TryParse(Arg(args, "-warmup"), out var ww) ? ww : 1.0f;
             float yaw = float.TryParse(Arg(args, "-yaw"), out var yy) ? yy : 0f;
+            // -closeBone adds a second camera per frame, aimed at one bone. The podium shot is
+            // the whole character at 900 px, where a forearm is ~40 px -- fine for "is the cape
+            // flying", useless for "is the cape through the gauntlet".
+            var closeBone = Arg(args, "-closeBone");
+            float closeDist = float.TryParse(Arg(args, "-closeDist"), out var cd) ? cd : 0.95f;
+            var closeDirs = (Arg(args, "-closeDirs") ?? "outboard,front,above").Split(',');
             Debug.Log($"[ANIM] frames={frames} step={step}s warmup={warmup}s res={res} yaw={yaw}");
 
             int high = Array.IndexOf(QualitySettings.names, "High");
@@ -194,6 +201,38 @@ public static class YargCharAnim
                         anim.Update(warmup);
                     }
 
+                    Transform closeTf = null;
+                    Camera closeCam = null;
+                    if (!string.IsNullOrEmpty(closeBone))
+                    {
+                        closeTf = ch.GetComponentsInChildren<Transform>(true)
+                            .FirstOrDefault(tr => tr.name.ToLowerInvariant()
+                                                    .Contains(closeBone.ToLowerInvariant()));
+                        if (closeTf == null)
+                        {
+                            // A close-up aimed at nothing would render the podium floor and look
+                            // like a perfectly clean limb. Say so instead.
+                            Debug.LogError($"[ANIM] {name}: -closeBone {closeBone} matches no " +
+                                           "transform. No close-ups written; do not read their " +
+                                           "absence as a clean result.");
+                            failures++;
+                        }
+                        else
+                        {
+                            var ccGo = new GameObject("close-cam");
+                            closeCam = ccGo.AddComponent<Camera>();
+                            closeCam.clearFlags = cam.clearFlags;
+                            closeCam.backgroundColor = cam.backgroundColor;
+                            closeCam.cullingMask = cam.cullingMask;
+                            closeCam.fieldOfView = 34f;
+                            closeCam.nearClipPlane = 0.01f;
+                            closeCam.farClipPlane = 50f;
+                            Debug.Log($"[ANIM] {name}: close-ups on {closeTf.name} at {closeDist} m");
+                        }
+                    }
+                    var closeSigs = new Dictionary<string, string>();
+                    var closeSame = new List<string>();
+
                     Color32[] prev = null;
                     var moved = new List<int>();
                     for (int f = 0; f < frames; f++)
@@ -205,6 +244,36 @@ public static class YargCharAnim
                         File.WriteAllBytes(Path.Combine(outDir, $"{safe}_f{f:000}.png"), png);
                         if (prev != null) moved.Add(Moved(prev, px));
                         prev = px;
+
+                        if (closeCam != null)
+                        {
+                            Vector3 bp = closeTf.position;
+                            foreach (var dir in closeDirs)
+                            {
+                                Vector3 off;
+                                switch (dir.Trim().ToLowerInvariant())
+                                {
+                                    case "front": off = new Vector3(0f, closeDist * 0.1f, closeDist); break;
+                                    case "above": off = new Vector3(0f, closeDist, closeDist * 0.14f); break;
+                                    case "behind": off = new Vector3(0f, closeDist * 0.1f, -closeDist); break;
+                                    case "inboard": off = new Vector3(closeDist, closeDist * 0.1f, 0f); break;
+                                    default: off = new Vector3(-closeDist, closeDist * 0.1f, 0f); break;
+                                }
+                                closeCam.transform.position = bp + off;
+                                closeCam.transform.LookAt(bp);
+                                Color32[] cpx;
+                                var cpng = Shoot(closeCam, res, out cpx);
+                                var cname = $"{safe}_f{f:000}_{dir.Trim()}.png";
+                                File.WriteAllBytes(Path.Combine(outDir, cname), cpng);
+                                // Same control as the wide sequence: a close-up byte-identical to
+                                // the one before it is photographing something that is not moving.
+                                var sig = Convert.ToBase64String(
+                                    System.Security.Cryptography.MD5.Create().ComputeHash(cpng));
+                                if (closeSigs.TryGetValue(dir, out var was) && was == sig)
+                                    closeSame.Add(cname);
+                                closeSigs[dir] = sig;
+                            }
+                        }
                         foreach (var g in baked) UnityEngine.Object.DestroyImmediate(g);
                         foreach (var smr in Disabled) if (smr != null) smr.enabled = true;
                     }
@@ -233,6 +302,23 @@ public static class YargCharAnim
                     else
                     {
                         Debug.Log($"[ANIM] {name}: CONTROL OK -- motion present in {moved.Count - deadPairs} of {moved.Count} frame pairs, {total} px total");
+                    }
+
+                    if (closeCam != null)
+                    {
+                        if (closeSame.Count > 0)
+                        {
+                            Debug.LogError($"[ANIM] {name}: {closeSame.Count} close-up(s) are " +
+                                           "byte-identical to the previous frame of the same " +
+                                           "view -- " + string.Join(", ", closeSame) + ". The " +
+                                           "camera is on something static, not on the limb.");
+                            failures++;
+                        }
+                        else
+                        {
+                            Debug.Log($"[ANIM] {name}: close-ups all differ frame to frame");
+                        }
+                        UnityEngine.Object.DestroyImmediate(closeCam.gameObject);
                     }
 
                     UnityEngine.Object.DestroyImmediate(podiumGo);

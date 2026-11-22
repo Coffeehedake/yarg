@@ -12259,3 +12259,44 @@ optimising a quantity the probe says it cannot resolve for this feature class. T
 bit-reproducible, so they are not noise -- but they may not be measuring what Jay can see, and no
 further sweeping could discover that. **He saw the fault; the probe cannot adjudicate it; so the
 next step is a render, not a rig.**
+
+### Two days of cape measurements were of the wrong animation (2026-11-22)
+
+Jay asked for a render of the worst gauntlet frames. Producing it meant asking what the
+character-select screen actually plays, and it is not what had been measured.
+
+| | animation |
+|---|---|
+| every cape number: 11 sweep arms, all four joint floats, the chain scope | `Assets/Resources/Animations/Vocals/Default/VoxIdle.anim`, sampled directly -- a PROJECT clip |
+| the character-select podium, where the fault was reported | the character's OWN Animator: `Podium.cs` triggers `Attract`, `CharacterPreview` calls `SetPreviewIdle`. Those clips are IN THE BUNDLE. |
+
+`CapeCollisionProbe -useAnimator` drives the Animator instead, and the two are genuinely
+different: **0 of their 120 shared frames match**, row by row.
+
+| | VoxIdle | podium Idle |
+|---|---|---|
+| gauntlet depth-weighted | 3148 | **2734** |
+| worst gauntlet contact | 87.5 mm | **67.9 mm** |
+| all-body depth-weighted | 216309 | 216247 |
+| deepest anywhere | 102.3 mm into `L_clav` | 105.2 mm into `R_hip` |
+
+**The all-body totals land 0.03% apart on two different animations.** A single headline number
+could not have told them apart, and nearly did not: the suspicion that `-useAnimator` had not
+taken effect was only settled by comparing the runs frame by frame.
+
+**THE CHAIN CONCLUSION SURVIVES THE CORRECTION, which is what mattered.** On the podium
+animation the gauntlet contact peaks in the 40-60 mm band (0.322% of vertex-frames) and falls to
+0.022% beyond 150 mm -- a different profile from VoxIdle's, which peaked at 0-20 mm, but the same
+answer: the contact is within 60 mm of an existing joint and the far bands are empty. New chains
+add joints mid-span. They would land where this fault is not.
+
+**The probe also now renders.** `-shotDir`, `-shotFrames`, `-shotBone` take pictures from inside
+the measuring loop, so the shot is the frame its number came from -- the alternative renderer
+drives a different animation, which is how this whole thing started. Two framing faults were
+found by looking at the output rather than by reasoning about it: close-ups at 0.42 m showed
+skin rather than a limb, and the WIDE view was aimed at the world origin where the character is
+not, so it photographed a static floor and came back byte-identical on every frame. **The
+"is the subject in frame" guard passed that at 43.5% fill**, because it only asked whether
+anything differed from the background. The check that catches it is a comparison: a shot
+byte-identical to the same view at another frame is pointed at something that is not moving.
+That is now in both the probe and `YargCharAnim`.
