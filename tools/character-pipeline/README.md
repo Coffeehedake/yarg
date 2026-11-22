@@ -11943,3 +11943,85 @@ right then: 69.8% to 18.6% came with a 36% fall in penetration. It is not right 
 maximise. Beyond the point where the body is represented, more coverage buys volume that pushes,
 and pushing is the fault. Any further capsule work has to be judged on the probe, not on the
 sweep.
+
+### The probe was measuring 38% of the clip, and most of this day's findings were that (2026-11-21)
+
+Jay: *"Add more chains."* The chains were not built, and the reason is the whole of this section.
+
+**THE DEFECT. Every arm measured today ran `-frames 240` at 60 fps against a 10.55 s clip** —
+633 frames. So each run saw the first **4.00 seconds, 38%**, of the animation and reported a
+clean number with no warning. The probe's own default, `-frames 180`, is 3 seconds and worse.
+Re-run over the whole clip at 127 samples instead of 13:
+
+| | 13 samples, 38% of clip | 127 samples, whole clip |
+|---|---|---|
+| arm C peak | 125.1 mm | **275.1 mm** (at frame 520, which no run reached) |
+| arm C total | 34588 | 341796 |
+| gravity 0.15 vs C | **10% better** | **13% WORSE** |
+| gravity 0.30 gauntlets | **3.4x worse** | **29% better** |
+
+Two results changed SIGN. A truncated window is not a sparse measurement, it is a different
+measurement, and this is the fourth check this week whose failure mode was silence. The probe now
+refuses a window shorter than the clip and a run under 40 samples, naming the `-frames` value to
+pass. Both would have refused every run made today.
+
+**WHAT IS WITHDRAWN.** All of it was measured on the truncated window:
+
+* **The 40 mm ceiling.** "Nothing within 40 mm of a joint exceeds 25 mm, past it 125 mm" was the
+  centre of the case for more chains. Over the whole clip the band maxima are **flat** — arm A
+  reads 142.6 / 137.0 / 126.1 / 137.1 / 134.7 / 139.7 / 151.3 mm from the nearest band outward.
+  A vertex 20 mm from a joint reaches 142 mm deep.
+* **"40 mm is the skinning influence radius."** Inferred from the step; there is no step.
+* **The chain arithmetic** — 2542 mm of perimeter, 32 chains, 231 new bones — was derived from
+  those band maxima and is void.
+* **The mid-gap mechanism itself.** If a vertex beside a joint can be 142 mm inside the body then
+  the joint is inside it too, so cloth is not failing *between* joints. More joints would add
+  more things that get driven in. **The geometry that prompted this is still true** — adjacent
+  chains are 236-337 mm apart and nine of eleven gaps are wider than `spine_b` is thick — but the
+  evidence that the spacing is the *cause* is gone.
+
+**WHAT SURVIVES, measured over the whole clip.**
+
+| arm | change | total | peak | gauntlets | travel |
+|---|---|---|---|---|---|
+| A | his author's 10 colliders | 555868 | 151.3 mm | 3909 | 1077 mm |
+| C | + 41 fitted capsules | 341796 | **275.1 mm** | 4431 | 1296 mm |
+| D | + clamp relaxed 20 mm | 779147 | 154.0 mm | 6249 | 2087 mm |
+| F | + jointRadius 65 mm | 336206 | 275.1 mm | **2980** | 1296 mm |
+| **installed** | **+ gravityPower 0.30** | **216309** | **102.3 mm** | **3148** | **959 mm** |
+
+* **A CORRECTION TO A PUSHED COMMIT.** `8c11ac5c` says the 41 capsules took "36% off the
+  depth-weighted penetration, 13% off the peak". The 36% stands (38.5% here). **The peak claim is
+  wrong and is retracted: the peak is 82% WORSE**, 151.3 -> 275.1 mm, and the capsules also
+  raise cape travel 20%. They cut the total and worsen the single worst excursion, by the same
+  mechanism the clamp relax showed — extra collider volume drives the cloth.
+* **The clamp relax is 2.28x worse, not 3.07x.** Direction confirmed on better data, magnitude
+  revised, and travel +61% confirms the mechanism. The clamp stays at zero.
+* **A fatter joint radius is inert on the body** (1.6%, identical peak), which falsifies the
+  "protected zone is twice the joint radius" theory recorded in `set_joint_params.py` before the
+  run. Its one real effect is the **gauntlets, down 33%** — the only lever that improves the
+  arms, and the arms are what was reported.
+* **`blade1/2/3` are NOT cape scallops.** They were suspected of being garment misread as body,
+  which would have made ~40% of all rows bogus. Tracing the parents settles it:
+  `blade1 -> blades_b -> blades_a -> blades_att -> fml_un_L_loarm`. They are the fins on his
+  forearm gauntlets, correctly body, and cape-into-gauntlet is exactly the clipping that was
+  reported in those words. A real finding was nearly corrected away.
+
+**INSTALLED: `gravityPower` 0.00 -> 0.30 on 110 joints of his 11 cape chains.** Total penetration
+down **37%**, peak down **63%** (275.1 -> 102.3 mm), gauntlets down **29%**, cape travel down
+**26%** — better on every axis, and more than the 41 capsules bought. md5 `c8636806`, backup
+`character-backups/Batman.yargchar.dcf188b2-pre-gravity.bak`. The installed file was then
+re-probed and reproduces the measured arm exactly.
+
+**The caveat Jay has to judge, because the probe cannot.** Of 30 installed characters only four
+carry any non-zero `gravityPower`, and the authored values run **0.004 to 0.075** — the four that
+arrived as real VRMs, the same four that set the spring `Center`. **0.30 is four times the
+highest value any real author chose here.** A cape is heavier than a twintail so some
+extrapolation is defensible, but whether it reads as weight or as sag is a look question. 0.15
+was measured and is *worse than doing nothing*, so the choice is 0.30 or revert.
+
+**And the day's third retraction of its own instrument.** The dead-buffer A/B, the height
+measured over the flying cape, and now a sample window covering a third of the animation. Every
+one produced confident numbers; every one was caught by a control rather than by inspection. The
+rule earned here: **a measurement must state what it covered**, and a harness that cannot say
+"I only looked at 38% of this" will eventually be believed.

@@ -77,6 +77,11 @@ namespace YARG.Editor
             int frames = int.Parse(Arg("-frames", "180"), CultureInfo.InvariantCulture);
             int every = int.Parse(Arg("-every", "10"), CultureInfo.InvariantCulture);
             float fps = float.Parse(Arg("-fps", "60"), CultureInfo.InvariantCulture);
+            // DOES PENETRATION HAPPEN MID-GAP? Collision moves a spring JOINT and never the
+            // sheet between two of them, so "add more chains" predicts that the deep vertices
+            // are the ones FAR from any joint. That prediction is cheap to test and expensive
+            // to assume: it is the whole justification for building ~100 new bones.
+            string gapOut = Arg("-gapOut");
 
             var log = new StringBuilder();
             void Say(string s) { Debug.Log("[CapeProbe] " + s); log.AppendLine(s); }
@@ -173,6 +178,20 @@ namespace YARG.Editor
                 var smrs = go.GetComponentsInChildren<SkinnedMeshRenderer>();
                 if (smrs.Length == 0) { Say("REFUSED: no SkinnedMeshRenderer"); return; }
 
+                // the live joint transforms, for the mid-gap test. Taken from the spring
+                // definitions rather than by name, so a chain this pipeline invented is
+                // counted exactly like one the author drew.
+                var jointTf = new List<Transform>();
+                foreach (var sp in vrm.SpringBone.Springs)
+                    foreach (var jt in sp.Joints)
+                        if (jt != null && jt.transform != null) jointTf.Add(jt.transform);
+                if (gapOut != null && jointTf.Count == 0)
+                {
+                    Say("REFUSED: -gapOut was asked for and this character has no spring joints " +
+                        "to measure distance to, so every reading would be a harness artefact.");
+                    return;
+                }
+
                 float dt = 1f / fps;
                 // settle: step the solver at the clip's first pose so the opening frames are
                 // not a transient from instantiation being read as a finding
@@ -192,6 +211,9 @@ namespace YARG.Editor
                 // it rests, so every depth below is measured against this
                 // vertex's own settled baseline.
                 float[] baseline = null;
+                var jointPos = new List<Vector3>();
+                var gapAll = new List<float>();
+                var gapPen = new List<(float dist, float depth)>();
                 float worstOverall = 0f;
                 string worstWhere = "";
                 int sampled = 0;
@@ -240,6 +262,12 @@ namespace YARG.Editor
                             f, nz, baseline.Length, bmax * 1000f));
                         continue;   // the baseline frame is not itself a reading
                     }
+                    // joint positions for this frame, read once rather than per vertex
+                    if (gapOut != null)
+                    {
+                        jointPos.Clear();
+                        foreach (var tr in jointTf) jointPos.Add(tr.position);
+                    }
                     var per = new Dictionary<string, (int n, float worst, string into)>();
                     for (int gi = 0; gi < garment.Count; gi++)
                     {
@@ -249,6 +277,23 @@ namespace YARG.Editor
                         float raw = -Vector3.Dot(g.p - b.p, b.n);
                         float rest = gi < baseline.Length ? baseline[gi] : 0f;
                         float depth = raw - Mathf.Max(0f, rest);
+
+                        // THE CONTROL IS EVERY VERTEX, NOT ONLY THE DEEP ONES. "penetrating
+                        // vertices sit 80 mm from a joint" says nothing until the same figure
+                        // for the whole garment is beside it.
+                        if (gapOut != null)
+                        {
+                            float dmin = float.MaxValue;
+                            for (int k = 0; k < jointPos.Count; k++)
+                            {
+                                float d2 = (jointPos[k] - g.p).sqrMagnitude;
+                                if (d2 < dmin) dmin = d2;
+                            }
+                            dmin = Mathf.Sqrt(dmin);
+                            gapAll.Add(dmin);
+                            if (depth > 0f) gapPen.Add((dmin, depth));
+                        }
+
                         if (depth <= 0f) continue;
                         per.TryGetValue(g.bone, out var cur);
                         if (cur.n == 0) cur = (0, 0f, b.bone);
@@ -281,6 +326,30 @@ namespace YARG.Editor
                               "' -- nothing was measured as garment");
                 if (bodySeen == 0) fails.Add("no body geometry was found");
                 if (sampled == 0) fails.Add("no frame was sampled");
+
+                // THE SAMPLE WINDOW MUST COVER THE CLIP, and this is the check that was not
+                // here when it mattered. Every arm measured on 2026-11-21 ran -frames 240 at
+                // 60 fps against a 10.55 s (633 frame) clip, so it saw the first 38% of the
+                // animation and reported a clean number. Arm C's peak read 125.1 mm over that
+                // window and 275.0 mm over the whole clip -- its worst moment is at frame 520,
+                // which no run reached -- and one arm's improvement changed SIGN when the rest
+                // of the clip was included. A truncated window is not a sparse measurement, it
+                // is a different measurement, and nothing said so.
+                float covered = frames / Mathf.Max(0.0001f, fps);
+                if (covered < clip.length * 0.98f)
+                    fails.Add(string.Format(CultureInfo.InvariantCulture,
+                        "-frames {0} at {1:0} fps covers {2:0.00}s of a {3:0.00}s clip ({4:0}%). " +
+                        "The cape's largest excursions need not be in the part you sampled, so " +
+                        "this cannot be compared with anything. Pass -frames {5:0} or more.",
+                        frames, fps, covered, clip.length, 100f * covered / clip.length,
+                        Mathf.Ceil(clip.length * fps)));
+
+                // and enough samples WITHIN the window to catch an extreme
+                if (sampled > 0 && sampled < 40)
+                    fails.Add(string.Format(CultureInfo.InvariantCulture,
+                        "only {0} frame(s) sampled. 13 samples of this clip put the peak at " +
+                        "125.1 mm where 127 put it at 275.0 mm; a swinging garment needs dense " +
+                        "sampling. Lower -every.", sampled));
                 float moved = 0f;
                 for (int i = 0; i < Mathf.Min(firstTails.Count, lastTails.Count); i++)
                     moved = Mathf.Max(moved, Vector3.Distance(firstTails[i], lastTails[i]));
@@ -311,6 +380,58 @@ namespace YARG.Editor
                 foreach (var r in rows) csv.AppendLine(r);
                 File.WriteAllText(outPath, csv.ToString());
                 Say("wrote " + rows.Count + " row(s) to " + outPath);
+
+                if (gapOut != null && gapAll.Count > 0)
+                {
+                    // Bin by distance to the nearest spring joint. The ALL column is the
+                    // control: if the deep vertices are no further from a joint than the
+                    // garment is on average, the sheet-between-joints story is wrong and more
+                    // chains will not help, however reasonable the mechanism sounds.
+                    float[] edges = { 0f, 0.02f, 0.04f, 0.06f, 0.08f, 0.10f, 0.15f, 9f };
+                    var nAll = new int[edges.Length];
+                    var nPen = new int[edges.Length];
+                    var dSum = new float[edges.Length];
+                    var dMax = new float[edges.Length];
+                    int Bin(float d)
+                    {
+                        for (int i = 0; i < edges.Length; i++) if (d < edges[i]) return i;
+                        return edges.Length - 1;
+                    }
+                    foreach (var d in gapAll) nAll[Bin(d)]++;
+                    foreach (var (d, dep) in gapPen)
+                    {
+                        int b = Bin(d);
+                        nPen[b]++; dSum[b] += dep;
+                        if (dep > dMax[b]) dMax[b] = dep;
+                    }
+                    var g = new StringBuilder();
+                    g.AppendLine("dist_to_nearest_joint_mm,all_vertex_frames,penetrating," +
+                                 "pct_penetrating,mean_depth_mm,max_depth_mm");
+                    Say("mid-gap test -- distance from each garment vertex to its nearest " +
+                        "spring joint:");
+                    Say(string.Format("{0,-14} {1,10} {2,12} {3,8} {4,11} {5,10}",
+                        "band (mm)", "all", "penetrating", "pct", "mean depth", "max depth"));
+                    for (int i = 0; i < edges.Length; i++)
+                    {
+                        if (nAll[i] == 0 && nPen[i] == 0) continue;
+                        string band = i == 0 ? "< 20"
+                            : i == edges.Length - 1 ? ">= 150"
+                            : string.Format("{0:0}-{1:0}", edges[i - 1] * 1000f, edges[i] * 1000f);
+                        float pct = nAll[i] > 0 ? 100f * nPen[i] / nAll[i] : 0f;
+                        float mean = nPen[i] > 0 ? dSum[i] / nPen[i] : 0f;
+                        Say(string.Format(CultureInfo.InvariantCulture,
+                            "{0,-14} {1,10} {2,12} {3,7:0.0}% {4,10:0.0} {5,9:0.0}",
+                            band, nAll[i], nPen[i], pct, mean * 1000f, dMax[i] * 1000f));
+                        g.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                            "{0},{1},{2},{3:0.00},{4:0.00},{5:0.00}",
+                            band, nAll[i], nPen[i], pct, mean * 1000f, dMax[i] * 1000f));
+                    }
+                    File.WriteAllText(gapOut, g.ToString());
+                    Say(string.Format(CultureInfo.InvariantCulture,
+                        "{0} joint(s) measured against; {1} garment vertex-frames, {2} of them " +
+                        "penetrating; wrote {3}",
+                        jointTf.Count, gapAll.Count, gapPen.Count, gapOut));
+                }
                 Finish(log, outPath, 0);
             }
             finally
