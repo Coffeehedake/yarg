@@ -40,6 +40,17 @@ public static class YargCharLoadTest
         return fallback;
     }
 
+    // A field on one VRM version is a property on the next, and a reflected read that only
+    // tries one of them returns null and reads as "this character has no spring bones".
+    private static object Member(object obj, Type t, string name)
+    {
+        var f = t.GetField(name);
+        if (f != null) return f.GetValue(obj);
+        var p = t.GetProperty(name);
+        if (p != null) return p.GetValue(obj, null);
+        return null;
+    }
+
     public static void Run()
     {
         var list = Arg("-yargchars");
@@ -82,20 +93,42 @@ public static class YargCharLoadTest
                         if (hb != HumanBodyBones.LastBone && anim.GetBoneTransform(hb) != null)
                             human++;
 
-                // VRM spring chains are MonoBehaviours in these bundles; count
-                // them and their joints by type name so this needs no
-                // reference to the VRM assembly.
-                int chains = 0, joints = 0;
+                // SPRING CHAINS LIVE ON Vrm10Instance.SpringBone.Springs, and nowhere else.
+                //
+                // This used to count every MonoBehaviour whose type name contained
+                // "SpringBone", which is the JOINT, COLLIDER and COLLIDER-GROUP components --
+                // 179 of them on Batman. That number is identical before and after a chain is
+                // dropped, because dropping a chain removes a list entry and leaves the
+                // components in the file, so the one column that was supposed to show a lost
+                // chain could not show one. It also looked for a `RootBones` field, which
+                // VRM10 does not have, so the joint count was 0 on every character ever run.
+                //
+                // Reflected rather than referenced so this still needs no VRM assembly, and
+                // `springComponents` is kept BESIDE the real counts: the old number was not
+                // wrong about anything except its name, and a count that silently changes
+                // meaning between versions of this file is worse than one that is explained.
+                int chains = 0, joints = 0, springComponents = 0;
                 foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true))
                 {
                     if (mb == null) continue;
-                    var tn = mb.GetType().Name;
-                    if (tn.IndexOf("SpringBone", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                    chains++;
-                    var f = mb.GetType().GetField("RootBones") ?? mb.GetType().GetField("rootBones");
-                    if (f != null && f.GetValue(mb) is System.Collections.IEnumerable roots)
-                        foreach (var r in roots)
-                            if (r is Transform t) joints += t.GetComponentsInChildren<Transform>(true).Length;
+                    if (mb.GetType().Name.IndexOf("SpringBone", StringComparison.OrdinalIgnoreCase) >= 0)
+                        springComponents++;
+                }
+                foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true))
+                {
+                    if (mb == null || mb.GetType().Name != "Vrm10Instance") continue;
+                    var springRoot = Member(mb, mb.GetType(), "SpringBone");
+                    if (springRoot == null) continue;
+                    if (!(Member(springRoot, springRoot.GetType(), "Springs")
+                          is System.Collections.IEnumerable sp))
+                        continue;
+                    foreach (var s in sp)
+                    {
+                        if (s == null) continue;
+                        chains++;
+                        if (Member(s, s.GetType(), "Joints") is System.Collections.IEnumerable js)
+                            foreach (var j in js) if (j != null) joints++;
+                    }
                 }
 
                 // Animating it is part of the test: a rig that instantiates
@@ -104,9 +137,10 @@ public static class YargCharLoadTest
 
                 Say(string.Format(
                     "{0}: OK  {1} bytes  {2} clips  {3} humanoid bones  {4} skinned meshes  "
-                    + "{5} bones  {6} spring chains / {7} joints  humanoid={8}",
+                    + "{5} bones  {6} spring chains / {7} joints  ({8} spring components)  "
+                    + "humanoid={9}",
                     label, bytes, clips, human, smrs.Length, bones.Count,
-                    chains, joints, isHuman));
+                    chains, joints, springComponents, isHuman));
             }
             catch (Exception e)
             {

@@ -12469,3 +12469,95 @@ no spring float reaches it without making the cape stop moving.
 because they all act by damping the cape rather than by moving it out of the way. The 29% of the
 cape welded to the torso cannot be addressed at all without rig work -- 30 leaf bones that cannot
 be sprung as they stand. That is the real job, and it is a rig change, not a parameter.
+
+### Six dead cape chains dropped from Batman, and the acceptance gate could not see it (2026-11-22)
+
+Half of Batman's spring work was being spent on chains that move nothing. Dropping them is the
+first change to this character all day that costs nothing, and it is installed.
+
+`chain_weight_installed.py` is the measurement, and it CORRECTS TWO OF MY OWN NUMBERS. I had
+been saying "11 chains, six of them dead" since the morning. Measured on the installed bundle:
+
+| chain | joints | sum w | dom v |
+|---|---|---|---|
+| fml_un_C_cape_att | 11 | 350.09 | 361 |
+| fml_un_R_cape_a_att | 11 | 258.01 | 253 |
+| fml_un_L_cape_a_att | 11 | 255.79 | 247 |
+| fml_un_L_cape_att | 11 | 217.67 | 218 |
+| fml_un_R_cape_att | 11 | 212.89 | 211 |
+| **sharkHat_att** | **3** | **0.00** | **0** |
+| fml_un_L/R_cape_c/d/e_att | 11 each | 0.00 | 0 |
+
+**Twelve chains, not eleven, and SEVEN carry nothing, not six.** The seventh is `sharkHat_att`
+-- a shark hat, three joints, no weight, not a cape. It is NOT dropped: the authorisation was
+for the six dead CAPE chains, and quietly widening a change because the extra one looks free is
+how a scope stops being the one that was agreed. It is reported here instead.
+
+**The weight guard refuses, and was made to fire before being trusted.** `drop_dead_chains.py`
+takes the measurement itself rather than the caller's word, using `chain_weight_installed`'s own
+functions rather than a second copy of them. Proven against three cases: a live chain
+(`REFUSED: fml_un_C_cape_att carries 350.09 of skin weight over 361 dominant vertices`), a name
+that does not exist, and one dead plus one live -- which refuses whole rather than applying the
+half it liked.
+
+#### The descendant trap, and the zero that was not evidence yet
+
+A weightless bone deforms nothing, but the solver still WRITES its transform, and every
+descendant inherits it. So a chain that deforms nothing can still be the thing that moves
+something, and `sum w == 0` is blind to that. The check reported 0 weighted descendants for all
+six -- and then the control said that number meant nothing: **every chain on the character reads
+0, the five live ones included.** A broken father->child map reads exactly the same.
+
+Descending from the root settled it: `_Character` reaches 595 transforms, 208 of them weighted,
+so the walk works; and each dead chain's bone has exactly one child, the next joint of its own
+chain. The chains are linear paths ending in a leaf, nothing hangs below them, and the zero is
+real. That control is now an assertion inside the tool, so the zero can never again be reported
+unverified.
+
+#### THE ACCEPTANCE GATE WAS BLIND TO THE THING IT GATES
+
+`YargCharLoadTest` is the check that runs before an install, and on the first run it reported:
+
+    OLD-12chains: OK ... 179 spring chains / 0 joints
+    NEW-6chains:  OK ... 179 spring chains / 0 joints
+
+Identical, on two files that differ by six chains. It counted every MonoBehaviour whose type
+name contains "SpringBone" -- the JOINT, COLLIDER and COLLIDER-GROUP components, 179 of them --
+and dropping a chain removes a list entry while leaving those components in the file, so the one
+column meant to show a lost chain could not show one. The joint count was `0` on every character
+ever run through it, because it looked for a `RootBones` field VRM10 does not have.
+
+Chains live on `Vrm10Instance.SpringBone.Springs` and nowhere else. Fixed, with the old number
+KEPT BESIDE the real ones as `spring components`, since it was never wrong about anything except
+its name:
+
+    OLD-12chains: OK  5582627 bytes  52 humanoid bones  2 skinned meshes  573 bones  12 spring chains / 124 joints  (179 spring components)  humanoid=True
+    NEW-6chains:  OK  5587434 bytes  52 humanoid bones  2 skinned meshes  573 bones   6 spring chains /  58 joints  (179 spring components)  humanoid=True
+
+Both load, both humanoid, same rig and same meshes. That is UNITY reading the file rather than
+UnityPy, which is the cross-check this project owes itself after shipping two characters in a
+container eleven UnityPy-based checkers all passed.
+
+#### The visual claim, which made a sharp prediction
+
+The probe is bit-deterministic, so "these chains move nothing" predicts an IDENTICAL reading,
+not a similar one. Both runs Animator-driven at 100% coverage, 127 frames:
+
+| | ALL dw | peak | ARM dw | arm peak | travel |
+|---|---|---|---|---|---|
+| 12 chains (`d4dc0d6d`) | 186885 | 119.7mm | 145858 | 117.5mm | 483mm |
+| 6 chains (`78f42ac3`) | 186885 | 119.7mm | 145858 | 117.5mm | 483mm |
+| difference | +0% | | +0% | | +0% |
+
+Identical to the digit, and the 12-chain run also reproduces this morning's baseline exactly.
+
+**INSTALLED.** Batman is `78f42ac3`; `d4dc0d6d` is backed up as
+`batman-grav70-12chains.yargchar.d4dc0d6d.bak`. Spring joints stepped per frame: **124 -> 58,
+53.2% less** (I had been claiming 55%). The 66 `VRM10SpringBoneJoint` components are left in the
+file as inert data -- the solver reaches a joint only through `Springs`, deleting objects out of
+an AssetBundle risks every other PPtr in it, and the tool verifies that nothing else still
+points at them.
+
+What this does NOT do is touch the cape's behaviour, which is the point: it is a cost removal,
+not a fix. The arms still clip, 29% of the cape is still welded to the torso on 30 leaf bones
+that are on no chain, and that remains rig work.
