@@ -31,7 +31,11 @@ CHARS = os.path.expandvars(r"%USERPROFILE%\AppData\LocalLow\FatalException\YARG-
 BACKUPS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "..", "..", "..", "character-backups")
 BROKEN = os.path.join(BACKUPS, "Batman.yargchar.58097723-capsules-engulf-arms.bak")
-BATMAN = os.path.join(CHARS, "Batman.yargchar")
+# The AUTHORED baseline is the backup, not the installed file. The installed one gained a
+# fitted 41-capsule body group on 2026-11-21, so using it would compare a capsule against a
+# standard that is no longer the author's -- and the test caught that itself and refused to
+# run rather than quietly comparing against the wrong thing.
+BATMAN = os.path.join(BACKUPS, "Batman.yargchar.c60e0a61.bak")
 MIKU = os.path.join(CHARS, "Miku.yargchar")
 
 BAD_HOSTS = ("fml_un_L_clav", "fml_un_R_clav", "fml_un_C_spine_d")

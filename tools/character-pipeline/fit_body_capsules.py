@@ -59,6 +59,63 @@ def eig3(M):
     return tuple(v)
 
 
+def fit_capsules(tf, world, skin, minv=40, pct=90.0, excl=()):
+    """[(bone, r_local, A_local, B_local, ws, wp, wq)], one per bone with enough own skin.
+
+    Everything is in the BONE'S OWN local frame, which is what makes the result pose-invariant
+    and what `place_body_capsules.py` needs in order to write it.
+    """
+    byname = {}
+    for pid, rec in tf.items():
+        byname.setdefault(rec.get("name") or "", pid)
+    owned = defaultdict(list)
+    for bn, q in skin:
+        owned[bn].append(q)
+
+    out = []
+    for bn in sorted(owned, key=lambda b: -len(owned[b])):
+        pts = owned[bn]
+        if len(pts) < minv or any(s in bn.lower() for s in excl):
+            continue
+        pid = byname.get(bn)
+        if pid is None:
+            continue
+        wp, wq, ws = world(pid)
+        iq = (wq[0], -wq[1], -wq[2], -wq[3])     # conjugate negates the LAST three
+
+        def to_local(P, wp=wp, iq=iq, ws=ws):
+            v = (P[0] - wp[0], P[1] - wp[1], P[2] - wp[2])
+            r3 = cci.qrot(iq, v)
+            return (r3[0] / ws[0], r3[1] / ws[1], r3[2] / ws[2])
+
+        L = [to_local(P) for P in pts]
+        cx = [sum(p[i] for p in L) / len(L) for i in range(3)]
+        M = [[sum((p[i] - cx[i]) * (p[j] - cx[j]) for p in L) / len(L)
+              for j in range(3)] for i in range(3)]
+        ax = eig3(M)
+        ts = sorted(sum((p[i] - cx[i]) * ax[i] for i in range(3)) for p in L)
+        t0, t1 = ts[int(len(ts) * 0.02)], ts[int(len(ts) * 0.98)]
+        A = tuple(cx[i] + ax[i] * t0 for i in range(3))
+        B = tuple(cx[i] + ax[i] * t1 for i in range(3))
+        ds = []
+        for p in L:
+            t = max(t0, min(t1, sum((p[i] - cx[i]) * ax[i] for i in range(3))))
+            c = tuple(cx[i] + ax[i] * t for i in range(3))
+            ds.append(math.sqrt(sum((p[i] - c[i]) ** 2 for i in range(3))))
+        ds.sort()
+        r = ds[min(len(ds) - 1, int(len(ds) * pct / 100.0))]
+        if r <= 0.002:
+            continue
+        out.append((bn, r, A, B, ws, wp, wq))
+    return out
+
+
+def to_world(v, wp, wq, ws):
+    sc = (v[0] * ws[0], v[1] * ws[1], v[2] * ws[2])
+    r3 = cci.qrot(wq, sc)
+    return (wp[0] + r3[0], wp[1] + r3[1], wp[2] + r3[2])
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -108,57 +165,17 @@ def main():
           % (before, len(sample), 100.0 * before / len(sample)))
     print()
 
-    fitted = []
+    fitted = fit_capsules(tf, world, skin, minv, pct, excl)
     print("%-26s %6s %9s %9s %9s" % ("bone", "verts", "radius", "length", "already"))
     print("-" * 70)
     have = set(v[0] for v in shapes.values())
-    for bn in sorted(owned, key=lambda b: -len(owned[b])):
-        pts = owned[bn]
-        if len(pts) < minv:
-            continue
-        if any(s in bn.lower() for s in excl):
-            continue
-        pid = byname.get(bn)
-        if pid is None:
-            continue
-        wp, wq, ws = world(pid)
-        iq = (wq[0], -wq[1], -wq[2], -wq[3])     # conjugate negates the LAST three
-
-        def to_local(P, wp=wp, iq=iq, ws=ws):
-            v = (P[0] - wp[0], P[1] - wp[1], P[2] - wp[2])
-            r3 = cci.qrot(iq, v)
-            return (r3[0] / ws[0], r3[1] / ws[1], r3[2] / ws[2])
-
-        L = [to_local(P) for P in pts]
-        cx = [sum(p[i] for p in L) / len(L) for i in range(3)]
-        M = [[sum((p[i] - cx[i]) * (p[j] - cx[j]) for p in L) / len(L)
-              for j in range(3)] for i in range(3)]
-        ax = eig3(M)
-        ts = sorted(sum((p[i] - cx[i]) * ax[i] for i in range(3)) for p in L)
-        t0, t1 = ts[int(len(ts) * 0.02)], ts[int(len(ts) * 0.98)]
-        A = tuple(cx[i] + ax[i] * t0 for i in range(3))
-        B = tuple(cx[i] + ax[i] * t1 for i in range(3))
-        ds = []
-        for p in L:
-            t = max(t0, min(t1, sum((p[i] - cx[i]) * ax[i] for i in range(3))))
-            c = tuple(cx[i] + ax[i] * t for i in range(3))
-            ds.append(math.sqrt(sum((p[i] - c[i]) ** 2 for i in range(3))))
-        ds.sort()
-        r = ds[min(len(ds) - 1, int(len(ds) * pct / 100.0))]
-        if r <= 0.002:
-            continue
-        fitted.append((bn, r, A, B, ws, wp, wq))
+    for bn, r, A, B, _ws, _wp, _wq in fitted:
         print("%-26s %6d %6.1f mm %6.1f mm %9s"
-              % (bn[:26], len(pts), r * 1000,
+              % (bn[:26], len(owned[bn]), r * 1000,
                  math.sqrt(sum((B[i] - A[i]) ** 2 for i in range(3))) * 1000,
                  "yes" if bn in have else ""))
 
     # what the proposed set would cover, in WORLD space so it is comparable with `before`
-    def to_world(v, wp, wq, ws):
-        sc = (v[0] * ws[0], v[1] * ws[1], v[2] * ws[2])
-        r3 = cci.qrot(wq, sc)
-        return (wp[0] + r3[0], wp[1] + r3[1], wp[2] + r3[2])
-
     proposed = [(bn, r * ws[0], to_world(A, wp, wq, ws), to_world(B, wp, wq, ws), 1)
                 for bn, r, A, B, ws, wp, wq in fitted]
     after = uncovered(list(shapes.values()) + proposed)
