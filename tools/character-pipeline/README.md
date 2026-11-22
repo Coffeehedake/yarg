@@ -11670,3 +11670,45 @@ happening".
 **Not claiming this is finished.** One frame of an idle is not a measurement, the cape is still
 spread much wider than a cape should hang, and whether it stays clear of his arms through the
 whole animation is a question only watching it can answer.
+
+#### RETRACTION: I misread the screenshot, and the section above is withdrawn (2026-11-21)
+
+The previous section says the reload showed "his arms and torso clear" and concludes from it
+that the prediction failed and the mechanism needed revising. **Jay: "In the picture I just
+sent, it is completely intersecting his right arm."** He is right. I read the picture wrong and
+then built a conclusion, a revised mechanism and a commit on top of the misreading.
+
+So, withdrawn, in order:
+
+- **"Arms and torso clear"** — false. The cape intersects his right arm in that frame.
+- **"The prediction failed"** — unsupported. The prediction was that `_Character` would make no
+  visible difference; nothing in that picture falsifies it. It is unresolved, not refuted.
+- **"The fling is at arrival, not continuous"** — this was reasoning invented to explain an
+  improvement that was not there. It may still be true, and it has no evidence behind it.
+
+Reading an outcome off a screenshot is the same class of error as the rest of this day: it is a
+measurement taken by eye, from one frame, by the person who wanted a particular answer.
+
+#### WHY NO COLLIDER CAN FIX THIS, measured
+
+Collision moves a spring JOINT and forces it back to the bone's length. The cape's surface
+follows the joints by skin weights, so **the sheet spanning between two joint lines is
+constrained by nothing**. That matters only if the gaps are big enough to swallow something.
+They are:
+
+| | |
+|---|---|
+| cape chains, nearest-neighbour spacing, every rung | **median 125 mm, max 291 mm** |
+| `R_loarm` / `L_loarm` capsules | 102 mm radius → **205 mm across** |
+| `R_uparm` / `L_uparm` capsules | 96 mm radius → **192 mm across** |
+
+**His arm is wider than the median gap between cape joint lines.** A 200 mm arm sits entirely
+between two joint lines 125–291 mm apart, with both lines legally outside every collider, while
+the sheet between them passes straight through him. Every collider in the file is doing its job
+and the arm goes through the cloth anyway.
+
+That is the ceiling on five attempts' worth of collision work, and it was measurable at any
+point today. **The fix is not a collider: it is more chains across the cape's width** — roughly
+double, to bring the spacing under about 100 mm so no limb fits between two of them. The 41
+fitted capsules are still worth having (they are what stops the cape once its joints reach him)
+but they cannot constrain a sheet that no joint line crosses.
