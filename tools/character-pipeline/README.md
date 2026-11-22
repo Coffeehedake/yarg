@@ -11644,3 +11644,29 @@ have found in the bundle. The remaining candidate is the idle animation itself �
 clips drive the cape bones, which would put the Animator and the spring solver in a fight over
 the same transforms. That data is in the game's assets, not in a `.yargchar`, so answering it
 means running the thing rather than reading it.
+
+#### PREDICTION WRONG, and the mechanism revised (2026-11-21)
+
+The prediction above — *"the `_Character` Center will make no visible difference to a stationary
+Batman"* — **failed.** The reload shows the cape spread wide but **behind and to the sides, with
+his arms and torso clear**: no panel through a forearm, nothing across his chest, which is what
+the previous build showed. Something changed, and by the terms set before the test, that means
+my model was wrong.
+
+**Where the reasoning broke.** I established correctly that the select screen never rotates a
+standing character, and then concluded from it that the Center could do nothing. That does not
+follow. `UpdatePodiumPositions` moves characters **during the carousel transition**, which is a
+real translation of the character transform — and you arrive at Batman by transitioning to him.
+With no Center, that arrival flings the cloth in world space; with `gravityPower = 0` there is
+nothing to pull it back, only `stiffnessForce` returning it toward rest, and at 0.850 over a
+cape eleven joints long that is slow. **So the fling is at arrival, not continuous — and what
+you look at afterwards is a cape still recovering from it.** A Center removes the fling
+entirely.
+
+That is consistent with both halves: there is no continuous rotation (measured, and still true),
+and the Center still matters (observed). The error was treating "not continuous" as "not
+happening".
+
+**Not claiming this is finished.** One frame of an idle is not a measurement, the cape is still
+spread much wider than a cape should hang, and whether it stays clear of his arms through the
+whole animation is a question only watching it can answer.
