@@ -11541,3 +11541,43 @@ either way.
 > is the signature of a Blender armature export. As a Center that should be harmless, because a
 > constant basis change cancels out and the node still moves with the character. It is recorded
 > because "same name" was taken as "same thing", and that assumption has not been tested.
+
+#### Center → `Root` made it GLITCH, and Batman's `Root` is not Miku's (2026-11-21)
+
+*"His cape glitches all over the place now."* **Restored** to `5ae75c36` — the 41 capsules, no
+Center — before anything else.
+
+**The engine is not at fault, and that was checked rather than assumed.** UniVRM handles a
+Center consistently at all three points: seeding (`FastSpringBoneConbinedBuffer`, NaN branch)
+applies `center.worldToLocalMatrix`, the job reads with `localToWorldMatrix` and writes back
+with `worldToLocalMatrix`, and `FastSpringBoneBuffer` adds the center to the transform list and
+resolves its index. A non-identity Center should work. The first hypothesis — that the engine
+only applied the transform in one direction, so an identity Center hid a bug — is **disproved**.
+
+**What is actually different is the node.** Walking the hierarchy:
+
+    Miku (Retry Now ver.)  Root <- _Character            children: J_Bip_C_Hips
+    Batman                 Root <- GLTF_created_1_rootJoint <- _Character
+                           children: fml_un_COM, HitCollision01, SpringJoint1,
+                                     fml_un_L_wrist_marker, fml_un_C_prop1, ...
+
+Miku's `Root` is a clean static skeleton root with exactly one child. **Batman's is a game-rig
+root**: it carries a centre-of-mass node, hit collision, props and IK markers, and it sits under
+an extra `GLTF_created_1_rootJoint`. It also carries a 90° rotation about Y, `rot (0.707, 0,
+0.707, 0)`.
+
+**The likely cause, stated as a hypothesis and not as a finding: `Root` is animated.** A rig
+with a COM node under its root is one where the animation drives that root — that is what root
+motion is. A Center whose own transform jerks every frame is a space that jerks every frame, and
+cloth stored in it glitches. Nothing here can see the game's animation clips, so this is not
+proved.
+
+**It predicts a safe target**, which is the useful part: `_Character` is the Vrm10Instance's own
+transform, measured identity in position, rotation and scale on all five characters sampled, and
+**not something an animation clip drives** — it is the node the game instantiates. It would
+cancel the turntable exactly as `Root` was meant to, without being animated itself.
+
+So the Center diagnosis is NOT withdrawn — a cape standing out level from the shoulders is still
+a force problem, and the roster's 174-for-174 control still holds. What is withdrawn is the
+target. The next thing to try is one field, `--center _Character`, and it is the last cheap shot
+before this needs the game's animation data rather than the bundle's.
