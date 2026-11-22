@@ -1,37 +1,46 @@
 # -*- coding: utf-8 -*-
-"""Set `m_jointRadius` / `m_gravityPower` on chosen joints of chosen spring chains.
+"""Set a VRM10 spring joint's floats -- radius, gravity, stiffness, drag -- on chosen chains.
 
     python set_joint_params.py <file.yargchar> --chain NAME [--chain NAME ...]
-           [--from-index N] [--joint-radius MM] [--gravity P] [--write]
+           [--from-index N] [--joint-radius MM] [--gravity P]
+           [--stiffness S] [--drag D] [--write]
 
-WHY. The cape probe measured the thing that decides how deep cloth gets: **distance from a
-garment vertex to the nearest spring joint**, and the ceiling steps sharply at about 40 mm.
+WHY. A spring joint carries four floats and this roster ships three of them untouched from the
+converter's defaults. Each is a one-line experiment against a fault that otherwise costs a cape
+re-weight, so the tool exists to make trying one cheap and reversible rather than to recommend
+any particular value.
 
-    dist to nearest joint    penetrating    max depth
-    0-20 mm                        3.5%       21.0 mm
-    20-40 mm                       7.3%       25.2 mm
-    40-60 mm                      10.7%       61.0 mm
-    60-80 mm                      12.3%       70.2 mm
-    100-150 mm                    10.4%      124.8 mm
+    m_jointRadius     how close a joint must come to a collider to be pushed off it
+    m_gravityPower    the restoring force; 0.00 across this roster, so a flung cape stays flung
+    m_stiffnessForce  the pull back toward the authored rest direction
+    m_dragForce       velocity damping
 
-Nothing within 40 mm of a joint ever exceeded 25 mm; past it, 125 mm. Batman's joints carry
-`m_jointRadius = 0.02`, so **the protected zone is about twice the joint radius** -- which says
-the same hole can be closed from either end: more joints across the sheet, or a bigger radius
-on the joints already there. His cape's adjacent chains are 236-337 mm apart, so closing it with
-chains means roughly tripling them (~240 new bones and a cape re-weight); this tool is the other
-end, and it is a float.
+WHAT COLLISION ACTUALLY DOES, because it bounds every radius experiment: it moves a JOINT, never
+the sheet between two joints, and the test is `dist(joint, collider) < colliderR + jointR` -- so
+collider radius and joint radius are additive, and a joint that starts inside a collider is
+shoved out on frame one and the spring overshoots. Fattening the 41 fitted body capsules was
+measured on 2026-11-21 to make penetration 2.28x worse by exactly that route, with garment travel
+rising 1115 -> 1754 mm. That is why `--from-index` exists and defaults to 3: the joints near the
+attachment lie on the skin. The rest-pose gate below names every joint whose new radius would
+reach a collider it currently clears, and it only runs for `--joint-radius`, since the other
+three floats cannot displace anything at rest.
 
-WHAT THIS IS NOT. Raising the radius on a joint that RESTS against the body is the same mistake
-as fattening a collider, which was measured on 2026-11-21 to make penetration 3.07x worse:
-collision tests `dist(joint, collider) < colliderR + jointR`, so the two are additive, and a
-joint that starts inside is shoved out on frame one and the spring then overshoots. That is why
-`--from-index` exists and defaults to 3: the joints near the attachment are the ones lying on the
-skin, and they keep their authored radius. Raising everything uniformly is predicted to
-reproduce the 3x harm, and the prediction is recorded here rather than in a commit message after
-the fact.
+TWO CLAIMS THIS DOCSTRING USED TO MAKE, BOTH WITHDRAWN 2026-11-22.
 
-`m_gravityPower` is 0.00 on every chain of this roster, so a cape has no restoring force once
-something throws it. That is a separate lever on a separate mechanism and is applied separately.
+It carried a table of penetration depth against distance-to-nearest-joint, showing a sharp
+ceiling at 40 mm, and inferred from it that "the protected zone is about twice the joint radius".
+Both are gone:
+
+  * **The table was measured over 38% of the animation.** The probe ran 240 frames at 60 fps
+    against a 633-frame clip. At full coverage the band maxima are flat -- 142.6 mm for vertices
+    within 20 mm of a joint -- so there is no ceiling and no step. The 32-chain, 231-bone job
+    that table sized was an artefact of the window.
+  * **The 2x-radius rule was then tested directly and is false.** Raising the radius from 20 mm
+    to 65 mm on 55 joints moved the depth-weighted total by 1.6% and left the peak identical.
+
+What remains true, and is a geometric fact rather than a measurement of this tool: adjacent cape
+chains are 236-337 mm apart, so a limb can pass between two chains without ever coming within
+reach of a joint. Closing that needs chains, not floats.
 
 It backs the file up, keeps the bundle a `UnityFS` bundle, and verifies on the bytes in hand --
 checking BOTH directions, that every selected joint changed and that no unselected joint did.
@@ -68,11 +77,38 @@ def main():
     frm = int(arg("--from-index", 3))
     jr = arg("--joint-radius")
     gp = arg("--gravity")
+    st = arg("--stiffness")
+    dg = arg("--drag")
     write = "--write" in sys.argv
-    if jr is None and gp is None:
-        die("nothing asked for: pass --joint-radius and/or --gravity")
+    if jr is None and gp is None and st is None and dg is None:
+        die("nothing asked for: pass --joint-radius, --gravity, --stiffness and/or --drag")
     jr = None if jr is None else float(jr) / 1000.0
     gp = None if gp is None else float(gp)
+    st = None if st is None else float(st)
+    dg = None if dg is None else float(dg)
+
+    # Refuse the obviously wrong rather than write it and measure noise. UniVRM clamps drag to
+    # 0..1 and treats stiffness as an unbounded force, but every joint on this roster carries
+    # 0.0-1.0 for both, so a value far outside that is a typo (0.9 typed as 9) and not an
+    # experiment somebody meant.
+    for nm, v, hi in (("--stiffness", st, 4.0), ("--drag", dg, 1.0)):
+        if v is None:
+            continue
+        if v < 0.0 or v > hi:
+            die("%s %g is outside 0..%g; on this roster both floats sit in 0.0-1.0, so this "
+                "is a typo rather than an experiment" % (nm, v, hi))
+
+    # WHAT EACH FLOAT CAN AND CANNOT REACH, said once so a null result is not read as a fix
+    # that did not take. jointRadius and gravityPower were both swept on Batman's cape:
+    # gravity 0.30 cut the depth-weighted total 37% and the peak 63%, and is a measured
+    # optimum -- 0.20, 0.25, 0.40, 0.50 and 0.70 are all worse at the gauntlets. Radius did
+    # nothing. Stiffness and drag act on how far a joint travels from its rest direction, so
+    # they can only help where the REST pose is already clear of the body; where a limb sweeps
+    # through the sheet between two joints, no float reaches it.
+    sets = [(k, v) for k, v in (("m_jointRadius", jr), ("m_gravityPower", gp),
+                                ("m_stiffnessForce", st), ("m_dragForce", dg))
+            if v is not None]
+    OLD_IX = {"m_stiffnessForce": 1, "m_dragForce": 2, "m_gravityPower": 3, "m_jointRadius": 4}
 
     human, tf, go_tf, springs, joints, colliders, groups, world = cci.read(path)
     by_name = {s[0]: s for s in springs}
@@ -98,15 +134,17 @@ def main():
     if not want:
         die("no joint selected")
 
-    rads = sorted({round(v[5], 5) for v in want.values()})
-    gravs = sorted({round(v[4], 5) for v in want.values()})
     print("%d chain(s), %d joint(s) selected from index %d" % (len(chains), len(want), frm))
-    print("they currently carry jointRadius %s, gravityPower %s"
-          % (["%.1f mm" % (r * 1000) for r in rads], ["%.2f" % g for g in gravs]))
-    if jr is not None:
-        print("  jointRadius -> %.1f mm" % (jr * 1000))
-    if gp is not None:
-        print("  gravityPower -> %.2f" % gp)
+    print("they currently carry:")
+    for nm, ix, fmt in (("jointRadius", 5, "%.1f mm"), ("gravityPower", 4, "%.2f"),
+                        ("stiffnessForce", 2, "%.3f"), ("dragForce", 3, "%.3f")):
+        vals = sorted({round(v[ix], 5) for v in want.values()})
+        shown = [fmt % (v * 1000 if nm == "jointRadius" else v) for v in vals]
+        print("    %-15s %s" % (nm, ", ".join(shown)))
+    print("asked for:")
+    for k, v in sets:
+        print("    %-15s -> %s" % (k[2:], "%.1f mm" % (v * 1000) if k == "m_jointRadius"
+                                   else "%.3f" % v))
 
     # STATE THE REST-POSE RISK IN THE TOOL'S OWN OUTPUT, because it is the one that was
     # measured to matter: a joint whose radius now reaches a collider it used to clear will
@@ -167,10 +205,8 @@ def main():
         if o.type.name != "MonoBehaviour" or o.path_id not in want:
             continue
         t = o.read_typetree()
-        if jr is not None:
-            t["m_jointRadius"] = jr
-        if gp is not None:
-            t["m_gravityPower"] = gp
+        for k, v in sets:
+            t[k] = v
         o.save_typetree(t)
         touched += 1
     if touched != len(want):
@@ -203,24 +239,29 @@ def main():
         t = o.read_typetree()
         if o.path_id in want:
             seen += 1
-            if jr is not None and abs(t.get("m_jointRadius", -1) - jr) > 1e-7:
-                problems.append("%s[%d] radius is %s, expected %s"
-                                % (want[o.path_id][0], want[o.path_id][1],
-                                   t.get("m_jointRadius"), jr))
-            if gp is not None and abs(t.get("m_gravityPower", -1) - gp) > 1e-7:
-                problems.append("%s[%d] gravity is %s, expected %s"
-                                % (want[o.path_id][0], want[o.path_id][1],
-                                   t.get("m_gravityPower"), gp))
+            for k, v in sets:
+                if abs(t.get(k, -1.0) - v) > 1e-7:
+                    problems.append("%s[%d] %s is %s, expected %s"
+                                    % (want[o.path_id][0], want[o.path_id][1], k,
+                                       t.get(k), v))
+            # A joint we DID select must still keep the floats we were not asked to change.
+            for k, ix in OLD_IX.items():
+                if k in dict(sets):
+                    continue
+                if abs(t.get(k, 0.0) - joints[o.path_id][ix]) > 1e-7:
+                    problems.append("%s[%d] %s moved to %s from %s, and was not asked to"
+                                    % (want[o.path_id][0], want[o.path_id][1], k,
+                                       t.get(k), joints[o.path_id][ix]))
         else:
             old = joints.get(o.path_id)
             if old is None:
                 continue
-            if abs(t.get("m_jointRadius", 0.0) - old[4]) > 1e-7:
-                problems.append("an UNSELECTED joint's radius moved to %s from %s"
-                                % (t.get("m_jointRadius"), old[4]))
-            if abs(t.get("m_gravityPower", 0.0) - old[3]) > 1e-7:
-                problems.append("an UNSELECTED joint's gravity moved to %s from %s"
-                                % (t.get("m_gravityPower"), old[3]))
+            # Every float, not just the ones being written: a write that moved an unselected
+            # joint's stiffness would have gone unseen while this checked only two of four.
+            for k, ix in OLD_IX.items():
+                if abs(t.get(k, 0.0) - old[ix]) > 1e-7:
+                    problems.append("an UNSELECTED joint's %s moved to %s from %s"
+                                    % (k, t.get(k), old[ix]))
     if seen != len(want):
         problems.append("read back %d of the %d joints that were set" % (seen, len(want)))
     if problems:

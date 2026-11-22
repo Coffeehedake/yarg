@@ -12126,3 +12126,76 @@ in `.gitignore`, so reading the project could never show it and a fresh clone on
 would behave differently for reasons neither machine could see. When a build differs between two
 runs of the same code, the difference is in the state that is *not* in the repo. Enumerate that
 state and print it; do not reason about the code harder.
+
+### Stiffness and drag swept too: all four joint floats are already at their best (2026-11-22)
+
+Jay: *"it is MUCH better now, but now the cape clips into batman's gauntlets."* Gravity 0.30 had
+just cut the depth-weighted total 37% and the peak 63%; the gauntlets were what was left. So the
+two floats never tried -- `stiffnessForce` and `dragForce` -- were swept at **full clip coverage**
+(`-frames 633 -every 5`, 127 samples of the 633-frame clip), eleven arms in all, each changing
+exactly one float on joints 1..10 of the 11 cape chains.
+
+`GAUNTLET` below is depth-weighted penetration into the `blade*` forearm fins -- the fault in
+Jay's own words. Comparisons use `tools/character-pipeline/cape_probe_compare.py`, which refuses
+to line up runs of unequal coverage.
+
+**THE PROBE IS BIT-DETERMINISTIC, which is what makes the rest of this readable.** Three runs of
+the same subject -- two sessions apart, one of them a *separately repacked copy* of the same
+parameters -- agree to the digit: `ALL dw 216309, peak 102.3 mm, GAUNTLET 3148, travel 959 mm`.
+So repacking is not a confound (md5 `c8636806` vs `52c7a6bf`, identical readings) and there is no
+measurement noise to blame anything on.
+
+| stiffness (drag 0.80) | GAUNTLET | vs shipped | | drag (stiffness 0.85) | GAUNTLET | vs shipped |
+|---|---|---|---|---|---|---|
+| 0.50 | 3893 | +24% | | 0.50 | 3922 | +25% |
+| 0.70 | 3614 | +15% | | 0.65 | 3496 | +11% |
+| 0.80 | 3979 | +26% | | **0.80 shipped** | **3148** | -- |
+| **0.85 shipped** | **3148** | -- | | 0.95 | 4094 | +30% |
+| 0.90 | 4872 | +55% | | 1.00 | 2917 | **-7%** |
+| 0.95 | 6262 | +99% | | | | |
+| 1.00 | 4489 | +43% | | | | |
+
+**The shipped 0.85 is a sharp local minimum** -- 0.05 either way is 26% and 55% worse. Travel is
+the only quantity that behaves monotonically (665 -> 1071 mm across the stiffness range), which
+is also the cosmetic price tag: the softest arm cut penetration 8% overall by moving the cape 31%
+less, and a cape that barely moves is a regression the probe scores as a win.
+
+**A -7% IS NOT A RESULT ON THIS METRIC, AND THAT IS MEASURABLE.** The gauntlet total rests on
+**~90 of ~2,400 rows**, about 1.5% of all penetration, spread over 60 of 127 frames with **three
+frames carrying a quarter of it**. Any change reshuffles which frames hold a deep forearm
+contact, and that alone moves the total by tens of percent -- deterministically. So drag 1.00's
+-7%, bracketed by +30% at 0.95, was tested beside a small stiffness change instead of being
+installed:
+
+| arm | GAUNTLET | vs shipped |
+|---|---|---|
+| drag 1.00, stiffness 0.85 | 2917 | **-7%** |
+| drag 1.00, stiffness 0.80 | 3399 | **+8%** |
+
+It flipped. **Nothing was installed**, and the installed character is still `c8636806`
+(verified by md5 after the sweep). The rule this leaves behind: on a thin metric, believe a
+result only once it survives its neighbours -- one arm either side costs three minutes.
+
+**WHAT PREDICTION WAS WRONG, recorded before the run in
+`measurements/batman-stiffness-prediction-2026-11-22.md`.** I predicted stiffer would help,
+reasoning that the contact joints clear the gauntlets by 20.5 mm at rest, so holding them nearer
+rest should keep that clearance. 0.95 was 99% worse. Holding a joint near its rest *direction* is
+not holding it in its rest *place* while the clavicle it hangs from is swung by the animation.
+The only prediction that held was the dull one: travel falls with stiffness.
+
+**ALL FOUR FLOATS ARE NOW SWEPT AND ALL FOUR ARE AT THEIR BEST VALUE:** gravity 0.30 (U-curve,
+minimum exactly there, across 0.00-0.70), joint radius (inert -- 1.6% at 3x), stiffness 0.85 and
+drag 0.80 (both local minima, sharply). Two halves of the cape also want opposite values -- at
+stiffness 0.50 the body total falls 9% while the gauntlets worsen 24% -- which is a reason to
+stop looking for one float that fixes both.
+
+**So the gauntlet contact is geometry.** Collision moves a *joint*, never the sheet spanning
+between two of them, and Batman's adjacent cape chains are **236-337 mm apart laterally**: a
+forearm passes through that span without coming within reach of any joint, whatever the floats on
+those joints say. The gap table agrees on frequency and not on severity -- vertices within 20 mm
+of a joint penetrate 1.0% of the time against 8.6% beyond 150 mm, an 8.7x ratio *within one run*,
+while max depth stays flat across the bands (87.5 mm nearest, 98.8 mm furthest). Distance to a
+joint predicts **how often**, not **how deeply**; the "sharp 40 mm ceiling" of 2026-11-21 was the
+truncated window and is still withdrawn.
+
+More chains is the remaining lever, and it is a cape re-weight rather than a float.
