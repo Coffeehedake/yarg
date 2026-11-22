@@ -135,16 +135,29 @@ def main():
         # offender instead would leave a hole exactly where the body is widest, which on
         # Batman is his belt: the single most uncovered part of him.
         if "--shrink-to-fit" in sys.argv:
-            # half a millimetre of margin, because clamping exactly onto the bound leaves a
-            # clearance of zero and the gate then trips on float error rather than on anything
-            # real -- a refusal reading "0.0 mm inside" is a rounding artefact, not a fault.
+            # THE CLAMP USES THE SAME BOUND THE GATE BELOW DOES, `--allow-displace` INCLUDED.
+            # It did not until 2026-11-21: the bound was hard zero-overlap, so --allow-displace
+            # was silently dead whenever --shrink-to-fit was passed -- the clamp had already
+            # removed every overlap the flag was there to permit. Passing both looked like
+            # asking for a relaxed fit and produced the strict one.
+            #
+            # Half a millimetre of margin on top, because clamping exactly onto the bound
+            # leaves a clearance of zero and the gate then trips on float error rather than on
+            # anything real -- a refusal reading "0.0 mm inside" is a rounding artefact.
+            #
+            # WHAT allow_d BUYS AND WHAT IT COSTS. A joint that starts `d` inside a capsule is
+            # shoved to its surface on frame one: a one-off jump of `d`, and thereafter the
+            # capsule holds that joint `d` further off the body than its author drew it. So
+            # this is not free coverage -- it is coverage bought with a pop and a standoff, and
+            # both are visible. Keep it small, and measure rather than assume.
             room = min((cc.seg_dist(jp, WA, WB) - jr for _c, _b, jp, jr in jrows),
-                       default=wr) - 0.0005
+                       default=wr) + allow_d - 0.0005
             if room < wr:
+                tj = min(jrows, key=lambda t: cc.seg_dist(t[2], WA, WB) - t[3])
                 if room <= 0.005:
                     bad_d.append((bn, room - wr, "a joint is inside it whatever the radius"))
                     continue
-                shrunk.append((bn, wr, room))
+                shrunk.append((bn, wr, room, "%s/%s" % (tj[0], tj[1])))
                 wr = room
                 r = wr / ws[0]
 
@@ -188,9 +201,11 @@ def main():
                                                             for v in shapes.values()]))
     if shrunk:
         print()
-        print("%d capsule(s) CLAMPED by the no-displacement bound:" % len(shrunk))
-        for bn, was, now in sorted(shrunk, key=lambda t: t[1] - t[2], reverse=True)[:8]:
-            print("    %-26s %6.1f mm -> %6.1f mm" % (bn[:26], was * 1000, now * 1000))
+        print("%d capsule(s) CLAMPED by the displacement bound (--allow-displace %.1f mm):"
+              % (len(shrunk), allow_d * 1000))
+        for bn, was, now, who in sorted(shrunk, key=lambda t: t[1] - t[2], reverse=True)[:12]:
+            print("    %-26s %6.1f mm -> %6.1f mm   by %s"
+                  % (bn[:26], was * 1000, now * 1000, who))
     print()
     print("every capsule clears every joint of every named chain.")
     print("body skin outside every collider: %.1f%% now -> %.1f%% after"

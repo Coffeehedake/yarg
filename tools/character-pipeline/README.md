@@ -11861,3 +11861,85 @@ all three arms read 1.886 m. Alongside the "did the garment move" guard that cou
 simulation from rigid follow-through, and the penetration metric that could not tell a fault
 from authored overlap, the pattern is one kind of mistake: **checks whose failure mode is
 silence.**
+
+### Relaxing the clamp TRIPLED the penetration, and the proxy got better while doing it (2026-11-21)
+
+That was the experiment the section above pointed at, and it came back a clean negative. The
+no-displacement clamp is not a cost that was being paid for safety; it is the load-bearing part.
+
+**First, the flag was dead.** `--allow-displace` did nothing whenever `--shrink-to-fit` was also
+passed: the clamp used a hard zero-overlap bound of its own, so it had already removed every
+overlap the flag existed to permit. Passing both read as asking for a relaxed fit and produced
+the strict one. The clamp now uses the same bound the gate below it does, `--allow-displace`
+included — which is the rule this repo already keeps elsewhere: **a guard must use the solver's
+own condition.**
+
+**The recipe behind the 41 capsules was not written down, and had to be recovered from the
+artefact.** The commit recorded `--shrink-to-fit` and six of the clamps but no command line.
+Reading the installed file's 52 collider bones back and differencing them against a fresh fit
+named the four missing exclusions, and `--allow-contain 5` only reproduces against the
+`5713b63b` backup — the one that already carries the 150 mm CapeTorso, which raises the "fattest
+authored collider" baseline from 10.3% to 18.0% and is what let `spine_b` through at 22.6%. The
+reconstruction is asserted, not assumed: it reproduces all ten clamps to 0.1 mm and the 18.6%
+coverage figure. Same lesson as **a recorded command is not a recipe** — here there was no
+command at all, and the artefact was the only record.
+
+**Every one of the ten clamps is driven by a CAPE joint**, and the tool now says which:
+
+    fml_un_C_spine_d   197.8 ->  61.2 mm   by fml_un_L_cape_d_att/fml_un_L_cape_d_a
+    fml_un_C_spine_c   141.7 -> 105.0 mm   by fml_un_L_cape_d_att/fml_un_L_cape_d_a
+    fml_un_L_hip       115.1 ->  71.5 mm   by fml_un_L_cape_e_att/fml_un_L_cape_e_d
+    fml_un_L_clav      118.6 ->  94.4 mm   by fml_un_L_cape_a_att/fml_un_L_cape_a_a
+
+Not a stray bone — the second joint of a chain, resting against his back. The cape is what
+limits the body capsules, because the cape lies on the body.
+
+**Five arms, identical harness, one change each:**
+
+| arm | clamp | body uncovered | rest baseline | vertex-frames | peak | depth-weighted |
+|---|---|---|---|---|---|---|
+| A | 10 colliders only | 69.8% | 153 @ 75.9 mm | 1612 | 144.5 mm | 54331 |
+| C | 0 mm | 18.6% | 148 @ 37.1 mm | 1436 | 125.1 mm | **34588** |
+| C2 | 0 mm, re-run | 18.6% | 148 @ 37.1 mm | 1436 | 125.1 mm | **34588** |
+| D | **20 mm** | **16.1%** | 134 @ 48.6 mm | 2276 | 145.4 mm | **106066** |
+| E | **40 mm** | **14.8%** | 125 @ 47.6 mm | 2233 | 139.8 mm | **101371** |
+
+**Relaxing the clamp by 20 mm made the penetration 3.07x worse — worse than having no fitted
+capsules at all** — while body coverage, the number this whole day was steered by, *improved*
+from 18.6% to 16.1%. Going to 40 mm improved coverage again and did not recover the penetration.
+
+**The conclusion does not rest on the weighting.** Rows 256 -> 363, vertex-frames 1436 -> 2276
+and peak 125.1 -> 145.4 mm all move the same way, so it holds on any of the three. Worth saying
+because the depth-weighted figure is **not** an integral of depth: each CSV row carries a vertex
+COUNT and that group's DEEPEST reading, so the product overstates the true total. It is
+comparable between arms because the harness is identical, and it is not penetration volume.
+
+**The mechanism is in the logs, not inferred.** Garment travel across the run went 1115.1 mm (C)
+-> 1616.0 mm (D) -> 1754.4 mm (E). The fatter capsules are *driving* the cape rather than
+deflecting it: a capsule containing a resting joint shoves it to the surface on frame one, the
+spring overshoots, and the overshoot carries it through him somewhere else. `place_body_capsules`
+already said this would happen — *"a frame-one pop is a visible jump, a slightly thin capsule is
+not"* — and the measurement is what turns that from a plausible argument into a number.
+
+**The baseline moved the other way and cannot explain it.** 148 -> 134 resting vertices means
+fourteen fewer get a subtraction, so D is measured against a slightly stricter zero: at most
+14 x 48.6 mm x 13 frames ~ 8,800, and the surviving 134 subtract MORE than before (37.1 -> 48.6
+mm deepest), which pushes back. Against a rise of 71,000 the confound is bounded well under a
+seventh of it either way.
+
+**C2 is the control that matters most and it is the dullest line in the table.** The clamp-0
+build was re-measured in this session and reproduced arm C to the digit — same 1436, same
+125.1 mm, same worst pair, same baseline. Without it, "D is worse than C" would have been a
+comparison across two Unity sessions and a probe that had been edited in between.
+
+**Nothing was installed.** The relaxed builds were written to scratch and measured there; the
+character Jay has loaded is unchanged. The flag fix and the driving-joint report are kept
+because a flag should do what it says and because the report is what showed the cape limits its
+own colliders — but the measured answer is **leave the clamp at zero.**
+
+**And the day's steering metric is now suspect.** Coverage — "what fraction of his body can his
+cloth touch" — was the number behind Jay's instruction and behind the 41 capsules, and it was
+right then: 69.8% to 18.6% came with a 36% fall in penetration. It is not right as a thing to
+maximise. Beyond the point where the body is represented, more coverage buys volume that pushes,
+and pushing is the fault. Any further capsule work has to be judged on the probe, not on the
+sweep.
