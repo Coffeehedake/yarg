@@ -11760,3 +11760,52 @@ output of it is trusted: run it on a character whose cloth is known to behave an
 reports no penetration, then on Batman, who is known not to. A harness that reports zero for
 everything looks exactly like a clean result — this project has had five such zeros in one
 afternoon.
+
+#### The probe is BUILT and NOT YET VALID, and the A/B is what caught it (2026-11-21)
+
+`unity/CapeCollisionProbe.cs` runs in the scratch Unity project under `-executeMethod`, samples
+the real `VoxIdle` clip so retargeting is Unity's, steps UniVRM's own
+`Vrm10FastSpringboneRuntimeStandalone.Process(dt)`, bakes the posed meshes and measures garment
+penetration into body geometry. It reimplements nothing. **It is also not yet measuring what it
+claims to**, and that is the result worth keeping.
+
+**Three controls, three findings, in order.**
+
+1. **Control run 1 — the garment split was wrong.** Miku's deepest reading was her skirt hitting
+   her *hair*, because `-garmentMatch J_Sec` left `user_VRoid_...HairJoint-...` classified as
+   body. The probe was right; the split was mine. `--garmentMatch` now takes a comma list.
+
+2. **Control run 2 — an absolute depth is not a verdict.** With her hair counted as garment she
+   reads **103 mm of hair inside her head and 72 mm of skirt inside her hips**, and she looks
+   perfect. A VRoid scalp sits inside the hair cap by design. So the probe gained a per-vertex
+   baseline at the settled pose and subtracts it — and the baseline is real (**744 of her 7,299
+   garment vertices are inside her at rest, deepest 43.4 mm**). Her hair still goes 103 mm
+   *further* in during the idle and still looks fine, because hair around a skull is invisible
+   however deep it goes. **No threshold separates a visible fault from invisible-and-correct**,
+   so the instrument can only be used DIFFERENTIALLY: same character, same clip, two bundles.
+
+3. **The A/B — and it says the probe is not working.** Batman at `c60e0a61` (his author's ten
+   colliders, no Center) against Batman as he stands (41 fitted capsules, Center on
+   `_Character`):
+
+   | | vertex-frames inside | worst | depth-weighted |
+   |---|---|---|---|
+   | A, 10 colliders | 852 | 35.1 mm | 8796 |
+   | B, 51 colliders | **852** | **35.1 mm** | **8796** |
+
+   **Byte-identical, including the baseline count and the 288.8 mm of garment movement.** Two
+   files differing by 41 colliders cannot produce the same simulation. So the cape is not being
+   simulated at all: the 288.8 mm of "movement" is the cape being carried rigidly by the spine
+   as the clip poses the body, and my own "did the garment move" guard passed on exactly that.
+   A guard that cannot tell rigid follow-through from simulation is no guard.
+
+**The likely cause and the next step.** `Vrm10Instance` initialises its spring runtime through
+`m_springBoneRuntime.InitializeAsync(this, new ImmediateCaller())`. In edit mode that async
+initialisation may never complete, leaving `Process(dt)` stepping an empty buffer. The next
+version must **assert the buffer has the colliders it expects before it measures anything** —
+count them, print the count, and refuse to report if it is zero.
+
+> **Every absolute number this probe has produced today is void**, including Batman's "43.9 mm
+> into his upper arm" and its successor 35.1 mm. They are readings from an instrument that
+> cannot see colliders. The A/B is the only thing that established that, and it cost one extra
+> run.
