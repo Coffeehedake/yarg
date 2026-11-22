@@ -12363,3 +12363,55 @@ already walked into, and it is the reason this was not installed on the strength
 Installed `d4dc0d6d`, from `c8636806`. **The written file was then re-measured and reproduces
 the arm to the digit** (186885 / 119.7 / 2266 / 51.1 / 483). Backups and what each one actually
 holds: `character-backups/BATMAN-INDEX.md`.
+
+### Jay was right about the upper cape, and it moves the whole target (2026-11-22)
+
+Looking at 0.70 on the podium: *"the upper part of his cape may be too rigid; his arms are
+clipping through it."* Both halves of that check out, and the second one relocates the fault.
+
+**THE ARMS ARE THE FAULT, not the gauntlet fins I have been chasing.** Of 2145 penetration rows
+on the installed character, **1521 (71%) are cape-into-arm** -- upper arm, forearm, clavicle,
+hand and the blade fins together. The gauntlet metric I swept eleven arms against was 90 rows of
+that.
+
+**AND IT IS ALL AT THE TOP OF THE CAPE.** Arm contact by position along the spring chain, where
+joint 0 is the anchor that never moves and freedom grows with index:
+
+| position | arm contact (depth-weighted) | share |
+|---|---|---|
+| RIGID bone (on no chain at all) | 56285 | **38.6%** |
+| joint 1 | 46666 | **32.0%** |
+| joint 2 | 36115 | **24.8%** |
+| joint 3 | 3324 | 2.3% |
+| joints 4-5 | 2845 | 1.9% |
+| **joints 6-10** | **623** | **0.4%** |
+
+**97.6% of it is the rigid bones plus joints 1-3.** The free-hanging lower two thirds of the
+cape, which is what gravity, stiffness and drag mostly act on, contributes under half a percent.
+That is why every float came back near-inert for arm contact while visibly changing how the cape
+hangs: the sweeps were moving the part of the cape that is not in the fault.
+
+**THE RIGID PART IS REAL AND LARGE.** 30 cape bones carry skin weight and sit on no spring chain
+at all -- `capeTrap` x2, `capeClav_a..g` x2 sides, `capeEdge_a..g` x2 sides -- holding **538.9 of
+the cape's 1833.4 total weight, 29%**. They are rigidly parented to the torso and cannot move
+out of an arm's way by any amount of tuning. They take 38.6% of the arm contact while holding
+29% of the weight, so they are over-represented by about 1.3x.
+
+**AND THE RIG WILL NOT LET THEM BE SPRUNG AS IT STANDS.** Every one of those 30 is a LEAF: each
+`capeClav_a..g` is a direct child of `capeClav_att`, seven siblings radiating from one point, not
+a chain of seven. A VRM spring chain is a parent-child PATH and needs at least two bones, with
+the first as a fixed anchor -- so a lone leaf cannot be sprung, and `patch_add_springs.py`
+correctly refuses to invent one. The only chain available per attachment is `[_att, one child]`,
+and an attachment can anchor only one chain, which would free 4 bones of the 30.
+
+**WHAT THIS CHANGES.** The chain scope in `measurements/batman-cape-chains-scope-2026-11-22.md`
+costed new chains running DOWN the cape, interleaved between the existing five across its width.
+That was aimed at mid-span contact on the torso. It is the wrong axis for this fault: the
+penetration is at the TOP, in the first three joints and the rigid collar. Chains down the length
+would add bones where 0.4% of the problem is.
+
+**The untested lever that is actually aimed at it:** stiffness has only ever been set uniformly
+across joints 1..10. Joints 1-3 carry 59% of the arm contact and are the stiffest-feeling part of
+a chain simply by being near the anchor. Lowering stiffness on those three alone -- leaving the
+hang of the lower cape untouched -- has never been tried, and `set_joint_params.py` would need
+only a `--to-index` to express it.
