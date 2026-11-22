@@ -11509,3 +11509,35 @@ characters still carry the AssetBundle header.
 > and the answer was always a shape. None asked "why is the cape THERE", which is a question
 > about forces, and the picture had been answering it since the first screenshot — a cape that
 > stands out level from the shoulders is not resting against anything.
+
+#### The same field is null on 24 more characters, and only 3 of them have a `Root`
+
+| springs with no Center | characters |
+|---|---|
+| 47 | Adachi Rei |
+| 16 | Chibi Rem, Power Girl |
+| 10 | Jessica Rabbit |
+| 9 | Miku, Peach |
+| 6 | Ariel, Gadget Hackwrench, Heels, Jinx, Link, Pomni, Sayuri |
+| 5 | Prix, Xenomorph |
+| 4 | Aiko, Scott Hall, Tenna |
+| 3 | Lola Bunny |
+| 2 | Alcina Dimitrescu, Alice Ivy, Gwen Stacy, Killer Clown |
+| 1 | Yoda |
+
+**24 characters, 183 springs.** But the convention does not port as written: **only Adachi Rei,
+Link and Lola Bunny have a transform named `Root` at all.** The other 21 have none, so
+`set_spring_center.py` refuses them — correctly, since picking a node that looks close is how
+this pipeline has gone wrong before.
+
+`_Character` is the honest fallback and the measurement says so: it is the Vrm10Instance's own
+transform, it exists on every character by construction, and on all five characters sampled it
+is exactly identity — position, rotation and scale. Whatever rotates the character on the select
+turntable is `_Character` or a parent of it, so a tail stored in its space is carried along
+either way.
+
+> **A caveat on what was just written to Batman.** His `Root` is NOT the same node as Miku's.
+> Hers is identity; **his carries a 90° rotation about Y** — `rot (0.707, 0, 0.707, 0)` — which
+> is the signature of a Blender armature export. As a Center that should be harmless, because a
+> constant basis change cancels out and the node still moves with the character. It is recorded
+> because "same name" was taken as "same thing", and that assumption has not been tested.
