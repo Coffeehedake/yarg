@@ -81,6 +81,35 @@ namespace YARG.Editor
                     EditorUserBuildSettings.selectedStandaloneTarget = BuildTarget.StandaloneWindows64;
                 }
 
+                // AND THE ARCHITECTURE *WITHIN* THAT TARGET, which is a separate setting and is
+                // what actually went wrong on 2026-11-21. Unity 6 keeps the Windows x86/x64/ARM64
+                // choice in the editor's per-platform settings table rather than in the build
+                // target, so Library/EditorUserBuildSettings.asset read
+                //
+                //     Win64   Architecture   x86
+                //
+                // while every build target in sight said StandaloneWindows64. BuildPlayer then
+                // honoured both: it reported platform=StandaloneWindows64 and copied the win32
+                // playback engine, producing a 32-bit player that could load none of the 64-bit
+                // native plugins beside it. Four builds were spent looking for a missing or
+                // broken Unity install; the install was complete and had built x64 from this
+                // same project seventeen days earlier.
+                //
+                // That file is machine-local AND gitignored, so no amount of reading the repo
+                // could show it, and a fresh clone elsewhere would behave differently for
+                // reasons invisible to both. Hence pinned here rather than fixed by hand.
+                foreach (string plat in new[] { "Win64", "Win" })
+                {
+                    string had = EditorUserBuildSettings.GetPlatformSettings(plat, "Architecture");
+                    if (had != "x64")
+                    {
+                        Debug.Log($"BUILD INFO: {plat} Architecture was \"{had}\", setting it to x64");
+                        EditorUserBuildSettings.SetPlatformSettings(plat, "Architecture", "x64");
+                    }
+                    Debug.Log($"BUILD INFO: {plat} Architecture = " +
+                        $"{EditorUserBuildSettings.GetPlatformSettings(plat, "Architecture")}");
+                }
+
                 var options = new BuildPlayerOptions
                 {
                     scenes = scenes,

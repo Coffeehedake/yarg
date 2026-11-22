@@ -12064,8 +12064,12 @@ different architecture.** `-buildTarget Win64` on the command line is accepted (
 platform: Win64"). The editor's `win64_player_development_mono` payload is present and genuinely
 `PE32+ x86-64`. And the output still carries `UnityCrashHandler32.exe`, a file that exists only
 in the **win32** variation folder — so the win32 payload is being copied while Win64 is
-reported. That is the editor installation, not this project: **repair the Windows Build Support
-module from Unity Hub.** Nothing in the repo can work around it.
+reported.
+
+~~That is the editor installation, not this project: repair the Windows Build Support module
+from Unity Hub. Nothing in the repo can work around it.~~ **Withdrawn 2026-11-22 — that was a
+fifth wrong guess, and it was published as a conclusion.** The install is complete and was never
+at fault; the cause is below. Jay was told to spend a 2 GB download on it.
 
 **THE CHECK IS THE POINT.** `BuildPlayerHeadless` now reads the **PE header of the executable it
 produced** and fails the build when it is not x64, then confirms the native plugins are beside
@@ -12078,3 +12082,47 @@ reading was not worth trusting.
 **The rule, and it is the same one as the cape probe's truncated window:** a tool's report of
 what it did is not a measurement of what it produced. `summary.platform` is the build system
 describing its own intent. The PE header is the artefact. Read the artefact.
+
+### The actual cause: the architecture is not part of the build target (2026-11-22)
+
+**`Library/EditorUserBuildSettings.asset` carried a per-platform settings table, and it read:**
+
+    Win      Architecture   x86
+    Win64    Architecture   x86
+
+Unity 6 moved the Windows `x86` / `x64` / `ARM64` choice **out of the build target and into that
+table**. So `BuildPipeline.BuildPlayer` honoured both faithfully — platform
+`StandaloneWindows64`, architecture `x86` — and every value printed above is not merely
+consistent with the defect, it is *irrelevant* to it. They all describe the target. The
+architecture is no longer part of the target. Fixed by pinning it in `BuildPlayerHeadless`
+alongside the target:
+
+    EditorUserBuildSettings.SetPlatformSettings("Win64", "Architecture", "x64");
+
+**What made the install look guilty, and why that was still a guess.** `UnityCrashHandler32.exe`
+in the output really does come only from a win32 variation folder — but that is the *consequence*
+of the setting, not evidence about the install. Three measurements settle it, and none of them
+was taken before the conclusion was published:
+
+| measurement | result |
+|---|---|
+| is the win64 payload missing? | **no** — 26 variation folders are present, and both `win64_player_development_mono` and `win32_player_development_mono` hold a `UnityPlayer.dll` of the architecture their name claims (this says the needed payload is there; it does not audit the install for completeness) |
+| did the working Nov 4 build come from this same editor? | **yes** — both report `6000.3.5f2`; its `UnityPlayer.dll` is byte-identical (sha256 `ee43e31888`) to the editor's **win64** payload, and the broken one byte-identical (`44554475e7`) to its **win32** payload |
+| so what changed between them? | one string in a **gitignored, machine-local** file |
+
+One install, both payloads present and correct, two different choices seventeen days apart.
+
+**Do not read an enum ordinal as if you knew it.** The Library build profile for Windows shows
+`m_Architecture: 0`, which reads like "x86" and is not. From
+`UnityEditor.CoreModule.dll`: `UnityEditor.Build.OSArchitecture` is **`x64=0, ARM64=1,
+x64ARM64=2, x86=3`** — so that profile was correct all along, and guessing there would have
+produced a confident second wrong cause. The value that mattered was the *string* in the
+platform-settings table, not the ordinal in the profile.
+
+**The lesson that is NOT the previous section's.** The PE check caught the symptom on its first
+run and is worth every line — but a check that refuses is not a diagnosis, and the four hours
+after it fired went into guesses because the defect was **invisible to the repo**: that file is
+in `.gitignore`, so reading the project could never show it and a fresh clone on another machine
+would behave differently for reasons neither machine could see. When a build differs between two
+runs of the same code, the difference is in the state that is *not* in the repo. Enumerate that
+state and print it; do not reason about the code harder.
