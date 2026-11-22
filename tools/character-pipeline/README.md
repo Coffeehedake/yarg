@@ -11460,3 +11460,52 @@ not exist before, and the order is: look at the character, then measure, then fi
 output path in as a character file, so it ran on one row called `cov`. It was legible only
 because a character that decodes nothing prints `--` rather than a clean `0.0%`. A sweep that
 reported "0.0% uncovered" for a text file would have been believed.
+
+### The cape was FLYING, not clipping: our conversions never set a spring Center (2026-11-21)
+
+The fifth picture, after the 41 fitted capsules: *"It's better, but still not good. It collapses
+through his arms."* And the cape in it is not hanging and catching on him — it is spread wide
+and level, like a flag. **No collision shape can fix a cape that is being thrown outwards**, and
+four attempts at collision geometry is three too many to have noticed that.
+
+**The spring definition has a `Center` field and ours is null.** From
+`UpdateFastSpringBoneJob.Execute` in the shipped runtime:
+
+```csharp
+var currentTail = centerTransform.HasValue
+    ? MathHelper.MultiplyPoint3x4(centerTransform.Value.localToWorldMatrix, CurrentTail[logicIndex])
+    : CurrentTail[logicIndex];
+```
+
+With a Center, a joint's tail is stored in THAT transform's space and converted to world every
+frame, so the character's own movement carries the cloth along. Without one the tails are world
+positions: the character moves, the cloth is left behind and then yanked after it. On the
+character-select turntable that is a permanent outward fling. And every chain on this roster has
+`m_gravityPower = 0.0`, so nothing pulls it back down afterwards.
+
+**THE CONTROL IS THE ROSTER AND IT IS UNANIMOUS.** Of 432 springs across 30 installed
+characters, 237 carry a Center — and they are exactly the ones that arrived as real VRMs:
+
+| character | springs | with a Center | pointing at |
+|---|---|---|---|
+| Hatsune Miku (Retry Now ver.) | 54 | 54 | `Root` |
+| Inforder Trogen | 78 | 78 | `Root` |
+| Kaiser Aufhänger | 42 | 42 | `Root` |
+
+**174 for 174, all `Root`.** Every character our own pipeline built — Batman, Jessica, Miku,
+Peach, Link, Prix, Tenna, Yoda, Heels, Jinx, Pomni, Sayuri, Xenomorph, Power Girl, Scott Hall,
+Lola Bunny, Killer Clown — has it null. Batman HAS a `Root` transform, at y 0.000, exactly where
+Miku (Retry Now ver.) has hers. **The value was always there and the pipeline never wrote it.**
+
+So this is not an idea, it is the convention the working characters already follow;
+`set_spring_center.py` refuses outright if no transform of the given name exists rather than
+picking something that looks close.
+
+**Applied to Batman:** Center → `Root` on all twelve chains, the eleven cape ones and his hat.
+`UnityFS`, 5,592,571 bytes (+293 — one `m_PathID` per spring), md5 `701cb250`, all 65 installed
+characters still carry the AssetBundle header.
+
+> **Why four collision fixes missed it.** Every one of them asked "what is the cape touching",
+> and the answer was always a shape. None asked "why is the cape THERE", which is a question
+> about forces, and the picture had been answering it since the first screenshot — a cape that
+> stands out level from the shoulders is not resting against anything.
