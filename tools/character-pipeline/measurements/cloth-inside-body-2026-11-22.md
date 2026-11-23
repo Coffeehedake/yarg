@@ -683,3 +683,27 @@ reported as the clavicle build being worse.
 body is 6438+896+896 = **8,230** triangles. Anyone comparing `bodyTris` across splits is comparing
 one split's count three times. It does not affect the measurement, only the label beside it, and it
 should be fixed before the next sweep.
+
+### The label is fixed and verified
+
+`bodyTris` now reports each split's own body: **8230** on the COVER rows, exactly 6438+896+896, with
+`clothTris=10588`. INSIDE is unchanged at 317 and 283, which confirms the change touched the label
+and not the measurement.
+
+---
+
+# THE FINDING OF THE WEEK, which part six buried inside a comparison
+
+**79 and 55 cloth vertices sit inside Batman's left and right shoulders, in BOTH bundles, on a real
+body surface.** That is the fault Jay reported — localised to a bone and counted — for the first
+time. The bundle comparison was the question asked; this is the answer that was needed, and it was
+written up as a row in a table about something else.
+
+**Nothing measured this session says what fixes it.** The cape's parenting does not: the two builds
+differ by two vertices per side, in opposite directions. Do not read the re-parent as the cause, and
+do not read these two numbers as graded by anything yet.
+
+`cloth-inside-body-HANDOFF.md` carries what is not in this file: the five identity rules tried and
+discarded, the approaches that looked right and were not, and the instrument's ten open edges —
+including that **push mode is validated and animation mode is not**, and that three characters
+(DoomSlayer, Sayuri, AlcinaDimitrescu) have pathological component counts that were never diagnosed.

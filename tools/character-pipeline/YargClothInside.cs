@@ -2026,7 +2026,12 @@ public static class YargClothInside
                         }
                         Debug.Log($"[INSIDE] {name} f{f} {splitLabel}: CONTROL B median nearest={F3(medDist * 1000)}mm " +
                                   $"beyond-cutoff={noBody}/{clothVerts} zero-normal={flatNormal}");
-                        Debug.Log($"[INSIDE] {name} f{f} {splitLabel}: bodyTris={bodyTris} clothTris={clothTris} " +
+                        // THIS SPLIT'S OWN counts, not the weight split's. These printed the
+                        // weight tally on every row, so a COVER row read bodyTris=3486 where the
+                        // cover's body is 8,230 triangles -- one split's number shown three times,
+                        // in a column a reader would naturally compare ACROSS splits.
+                        Debug.Log($"[INSIDE] {name} f{f} {splitLabel}: bodyTris={body.TriCount} " +
+                                  $"clothTris={surf.TriCount - body.TriCount} " +
                                   $"clothVerts={clothVerts} INSIDE={inside} " +
                                   $"frac={F6(clothVerts > 0 ? (double) inside / clothVerts : 0)} " +
                                   $"medDepth={F3(medDepth * 1000)}mm deepest={F3(deepest * 1000)}mm");
