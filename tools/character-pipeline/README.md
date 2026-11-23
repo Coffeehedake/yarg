@@ -12758,7 +12758,7 @@ yoke correctly resting on the collarbone. A fat capsule swallows a yoke; a surfa
 `YargClothPenetration.cs` and `cape_weight_anchor.py` are committed as the record of what was
 tried. The first does not measure what it claims to.
 
-### The collision capsules stand proud of the skin, and the clavicle ones by 51-56 mm (2026-11-22)
+### The clavicle capsules do NOT stand 51-56 mm proud — that was their own centre's depth (2026-11-22, WITHDRAWN 2026-11-23)
 
 The hypothesis under the sign-flip instrument was that `fml_un_L_clav` reads 21.7% of all
 cape-into-body contact because the capsule is fatter than the collarbone, so a yoke resting
@@ -12789,6 +12789,52 @@ to be trusted, on a question where the sign was the whole answer.
 `capsule_overclaim.py`. Body vertices are selected through the Avatar's humanoid map, and a
 capsule with fewer than 20 body vertices near it is reported as SKIPPED rather than as a
 confident zero.
+
+#### AND ALL OF THAT IS WITHDRAWN. The number was the capsule centre's own depth.
+
+The tell was in the table above and went unread: **`C_head` reads radius 83.7 mm with "skin at
+6.4 mm", a 77 mm "over-read" on a capsule whose entire job is to fill a head.** `radius` minus
+`distance-to-the-nearest-body-vertex` is not an over-read for a capsule whose centre sits INSIDE
+the body, which a clavicle's does. Such a capsule is authored to fill the shoulder, so its radius
+exceeding the nearest surface point is expected and says nothing at all.
+
+`capsule_directional.py` asks it per direction instead: from the capsule centre, sample ~200
+directions and compare the capsule's extent against the FARTHEST body surface point within a
+12° cone, reporting a direction with no surface in its cone as **UNSEEN** rather than counting it
+as a maximal over-read.
+
+    collider            radius   proud    in  unseen   median proud / max
+    C_head (small)      55.8mm      24   175       1       6.4mm /  10.4mm   <- CONTROL: it fits
+    C_head (large)      83.7mm      71   129       0      35.3mm /  43.8mm
+    C_spine_b          111.8mm      63   121      16      62.6mm / 100.3mm
+    L_clav              94.4mm       4   109      87      14.2mm /  28.2mm
+    R_clav              94.7mm       3    90     107       8.7mm /  39.2mm
+
+**The control passes: the small head sphere is proud in 24 of 200 directions by a median 6.4 mm**,
+which is what a capsule authored to fit a head should look like, so the method is sound and the
+capsules are not uniformly fat.
+
+**The clavicles are proud in 4 and 3 directions out of 200.** They are not standing 51–56 mm off
+the skin; they are filling a shoulder. So:
+
+- **`fml_un_L_clav` reading 21.7% of all cape-into-body contact is NOT explained by capsule
+  over-read.** That hypothesis is dead, and it was the stated justification for building the
+  mesh-surface instrument and for the clavicle yoke re-weight.
+- **The yoke's remaining justification is Power Girl parity alone** — that 44% of her cape bones
+  and 44.3% of her cape weight hang beneath her clavicles against Batman's 0%. That argument is
+  untouched by this. The yoke stays installed, on Jay's decision, and remains **ungraded**.
+- `C_spine_b` at 63 of 200 directions and a median 62.6 mm **is** a genuine over-read, as is the
+  larger of the two head spheres. The collider set over-claims in places; the clavicle is not one
+  of them.
+- The claim that this was "a second and independent reason none of this week's cape numbers is as
+  clean as its table looked" is withdrawn with it. The remaining reason — the body/cloth split —
+  turned out to be worse than described, not better: on Batman the body surface is his **cowl**.
+
+What went wrong is a repeat, and the third instance in this folder: **a radius and a
+surface-distance are not the same quantity**, and subtracting one from the other produces a number
+with units and no meaning. The symmetry control caught the earlier sign error because that error
+was asymmetric; this one is symmetric, so symmetry passed it. The control that would have caught
+it is the one used here — a capsule whose answer is known in advance.
 
 ### The skin and the costume are ONE SURFACE, and that makes "cloth inside body" ill-posed (2026-11-22)
 
@@ -12838,8 +12884,10 @@ DRIVES A TRIANGLE**, and on fused skin-and-costume geometry that boundary runs t
 of one surface. Those counts stay valid as counts of dominant-weight classes; what cannot be read
 off them is that the two halves are two surfaces.
 
-Together with the capsule over-read measured the same evening, that is a second and independent
-reason that none of this week's cape numbers is as clean as its table looked.
+The capsule over-read measured the same evening was offered as a second and independent reason
+that none of this week's cape numbers is as clean as its table looked. **That one was withdrawn
+on 2026-11-23** (see the section above). This reason stands, and on Batman it is worse than
+described here: his body surface is his cowl.
 
 ---
 
