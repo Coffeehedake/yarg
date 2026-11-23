@@ -230,9 +230,17 @@ def pieces_report():
                 n = (n3 @ p.normal).normalized()
                 vol += p.area * (c - cen).dot(n) / 3.0
                 anet += n * p.area
-                rad = max(rad, (c - cen).length)
+                # R IS MEASURED TO VERTICES, NOT FACE CENTRES. The bound claims to cover every
+                # reference point INSIDE the piece, and those are bounded by its vertices --
+                # the farthest point of a triangle from anywhere is always a corner. Taking the
+                # max over face centres understates R by up to half a face diameter, which
+                # understates the uncertainty and makes the gate judge MORE than it has earned.
+                # The error ran the unsafe way, which is the only direction worth a re-run.
+                for vi in p.vertices:
+                    rad = max(rad, ((mw @ me.vertices[vi].co) - cen).length)
             unc = (anet.length * rad / 3.0 / abs(vol)) if vol != 0 else float("inf")
             e2, et = ecount[cid]
+            edge_ratio = (e2 / et) if et else 0.0
             if unc > 1.0:
                 continue                      # the sign is a choice of origin: nothing to judge
             closed_total += 1
@@ -242,11 +250,11 @@ def pieces_report():
                     if p.material_index < len(o.material_slots) and o.material_slots[p.material_index].material else "?"
                     for p in ps)
                 zs = [(mw @ p.center).z for p in ps]
-                inside_out.append((len(ps), o.name, cid, min(zs), max(zs), vol, mats.most_common(2), unc))
-    for n, on, cid, zlo, zhi, vol, mats, unc in sorted(inside_out, reverse=True):
+                inside_out.append((len(ps), o.name, cid, min(zs), max(zs), vol, mats.most_common(2), unc, edge_ratio))
+    for n, on, cid, zlo, zhi, vol, mats, unc, er in sorted(inside_out, reverse=True):
         print("VOLUME %s | %s piece %d | %d faces | z %.2f..%.2f | signed volume %+.5f m3 | "
-              "sign uncertainty %.3f | INSIDE-OUT | %s" % (
-                  name, on, cid, n, zlo, zhi, vol, unc, ", ".join("%s %d" % m for m in mats)))
+              "sign uncertainty %.3f | edge ratio %.4f (the OLD gate) | INSIDE-OUT | %s" % (
+                  name, on, cid, n, zlo, zhi, vol, unc, er, ", ".join("%s %d" % m for m in mats)))
     print("VOLSUM %s | %d pieces with a DETERMINED sign (uncertainty <= 1) | %d inside-out" % (
         name, closed_total, len(inside_out)))
 

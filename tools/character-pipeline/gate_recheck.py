@@ -162,7 +162,12 @@ for o in bpy.data.objects:
         # radius the volume is uncertain by at most (1/3)|A_net|R. Compared against |V| that is
         # dimensionless and is the quantity the gate should use.
         area_t = sum(p.area for p in ps)
-        radius = max(((mw @ p.center) - cen0).length for p in ps)
+        # vertices, not face centres -- see the note in facing_check.py. Face centres
+        # understate R, which understates the uncertainty, which judges more than earned.
+        radius = 0.0
+        for p in ps:
+            for vi in p.vertices:
+                radius = max(radius, ((mw @ me.vertices[vi].co) - cen0).length)
         m0 = collections.Counter(
             o.material_slots[p.material_index].material.name
             if p.material_index < len(o.material_slots) and o.material_slots[p.material_index].material
