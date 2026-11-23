@@ -13087,3 +13087,84 @@ Two measurements, different standing, and they must not be multiplied together:
   forcings with two quantities: the positive control above validates the push mode only, and the
   guard does not even apply in animation mode. A disagreement measured that way could not be
   divided into capsule over-read and mode.
+
+---
+
+### The split rule: the body is a GREEDY COVER OF THE SKELETON, taken by descending volume (2026-11-23)
+
+Four rules for "which geometry is the body" failed before this one — material name, nearest
+humanoid bone, triangle count, and a majority vote on bone weights, the last failing in three
+different directions on three characters. The enclosure counts are what finally separate them, and
+the rule below is written against the counts rather than proposed ahead of them.
+
+    PowerGirl  piece 0  vol 0.0635  closed 1.000  ENCLOSES 48   <- the body
+               piece 1  vol 0.0044  closed 0.997  ENCLOSES  4
+               piece 2  vol 0.0030  closed 1.000  ENCLOSES  0   <- the cape
+    Batman     piece 0  vol 0.0993  closed 0.994  ENCLOSES 41   <- the torso
+               piece 1  vol 0.0242  closed 0.989  ENCLOSES  0   <- the cape
+               piece 2  vol 0.0067  closed 1.000  ENCLOSES  3   <- a boot, 3 foot bones
+               piece 4  vol 0.0035  closed 0.990  ENCLOSES  3   <- the cowl
+    Jinx       piece 0  vol 0.0135  closed 1.000  ENCLOSES  3   <- her hips and legs
+               piece 1  vol 0.0092  closed 0.992  ENCLOSES 25   <- her torso
+
+**Count alone cannot do it, and the collision is in that table:** Jinx's legs enclose 3, Batman's
+cowl encloses 3, and his boot encloses 3. One is body and the question is open on the other two.
+**Nor can "the piece enclosing the most bones":** it takes Jinx's torso and loses her legs. **Nor
+can "the largest piece":** her largest piece by volume is her *legs*, so that loses her torso.
+
+#### The rule
+
+1. Order the pieces by **signed volume, descending**.
+2. Walk the list. A piece **joins the body set if and only if it encloses at least one humanoid
+   bone that no piece already in the set encloses.**
+3. Stop when no remaining piece can add a new bone. Everything not in the body set is cloth.
+
+That is the whole rule. It has no threshold in it, and it is a cover rather than a selection, which
+is what Jinx requires.
+
+| | by volume | joins? | why |
+|---|---|---|---|
+| Power Girl | body 48 → neck piece 4 → cape 0 | body only | the neck piece's bones are already covered; the cape encloses nothing |
+| Batman | torso 41 → cape 0 → boot 3 → cowl 3 | torso, then the cowl (and the boot only if the suit stops at the ankle) | the cowl holds head bones the torso piece does not, and a cowl **is** his head surface |
+| Jinx | legs 3 → torso 25 | **both** | the legs come first on volume, and the torso then adds 22 bones nothing else covers |
+
+#### Why descending volume, and not triangle count
+
+Because triangle count already failed here, silently and completely. Jinx's six braids are ~12,000
+triangles each and her body is **not in the top twelve by count**, so a count-ranked run never
+showed the test the thing it was being validated against and read 0 everywhere. By volume her body
+appears at once: **0.0635 m³ against a hair shell's 0.00002 m³, a factor of three thousand**, where
+their triangle counts are within 10x. **Triangle count measures how finely something was modelled;
+volume measures whether it is a solid.**
+
+Volume ordering also suppresses the known residual defect for free. Three small open shells on
+Power Girl (closed 0.481–0.689, 38–76 triangles) report 3 bones each as pure artefact — an open
+shell has no inside — but they are tiny, so by the time the walk reaches them those bones are
+covered and they fall out as cloth. **No closedness threshold is needed to exclude them**, which is
+the point: a threshold would have had to be chosen, and `closed 0.481` beside a 23,572-triangle
+shell rejected over 4 boundary edges is exactly the choice this project keeps getting wrong.
+
+#### Invariants to assert, not thresholds to tune
+
+- **A piece enclosing 0 bones can never be selected.** Structural, not statistical. Both capes read
+  0; hair reads 0. This is the guarantee that replaces four heuristics.
+- **The largest-volume piece must enclose at least one bone**, or the volume ranking has not found a
+  solid and the run is refused. That is the Jinx triangle-count failure turned into a guard.
+- **The union covers at least as many bones as any single piece** — violated only by a bug in the
+  walk.
+- **Uncovered humanoid bones are reported by name.** Not refused, because a bone can legitimately
+  sit outside every closed shell, but never silent.
+- **Closedness is printed beside every SELECTED piece**, and a selected piece below ~0.9 is flagged
+  in the report. A flag on the output, not a threshold inside the decision.
+
+#### What the rule cannot do, stated up front
+
+It finds the **outermost enclosing shell**, so a full-body outer garment over skin wins the cover
+and the skin beneath it becomes redundant and is labelled cloth. The consequence is exact:
+**penetration INTO that shell is measurable and penetration OF it is not.** For Batman that is the
+right answer — his suit is the visible silhouette and cape-into-suit is the fault being chased —
+but a character whose coat is the thing we want to test cannot be tested with this split. It is the
+same shape as the fused-surface limitation and it is not fixable by tuning.
+
+Greedy is also not optimal; a pathological model could take two medium pieces where one larger one
+would have done. For a cover whose only purpose is to define a surface set, that costs nothing.
