@@ -10,6 +10,16 @@
 > `LeftShoulder` and the caveat was filed under `Head`.** Part eight of
 > `cloth-inside-body-2026-11-22.md` has the numbers.
 
+> **ALSO CORRECTED 2026-11-23 (part ten).** Part eight's *second* headline -- "his cape is no worse
+> than Power Girl's" -- is **withdrawn too**. It compared two characters at ONE UNCHOSEN FRAME
+> each, out of a 10.55 s looping clip, and Batman's frame was his quietest (his cape runs n 46-164,
+> median 3.1-10.5 mm, max 19.5-79.6 mm over 17 frames). **Open edge 1 is now closed in part**: the
+> spring solver had never run, so every cape number before part ten described the cape where
+> skinning leaves it. With the solver on, the cover selects his CAPE as a body piece on 5 of 17
+> frames and the cape's row disappears while conservation still passes -- open edge 5 as a property
+> of a frame. **New open edge: nothing distinguishes the edit-mode solver from the engine's**, and
+> `maxLocalRot` of 178 degrees per frame says it should not be trusted until something does.
+
 Written 2026-11-23 at the end of the session that built `YargClothInside.cs`. The *results* are in
 `cloth-inside-body-2026-11-22.md` and in the commits. **This file is the part that dies with the
 context:** what was ruled out and why, what looked right and was not, and where the instrument's

@@ -154,12 +154,27 @@
 // WHERE IT HAS TO RUN, AND WHY IT IS NOT A PYTHON PASS
 // ===================================================================================
 //
-// Inside Unity, in the loop where the posed vertices already exist. The shoulder yoke is RIGIDLY
-// SKINNED -- its bones are on no spring chain -- so its animated position is pure skinning and
-// needs no solver. But the POSE still has to come from Unity's humanoid retargeter: this project
-// measured that sampling a clip directly and letting the Animator retarget it through the Avatar
-// give different results, with 0 of 120 shared frames matching. A Python pass over the bundle
-// would have to reinvent retargeting to get the pose, and would get a different one.
+// Inside Unity, in the loop where the posed vertices already exist. The POSE has to come from
+// Unity's humanoid retargeter: this project measured that sampling a clip directly and letting
+// the Animator retarget it through the Avatar give different results, with 0 of 120 shared frames
+// matching. A Python pass over the bundle would have to reinvent retargeting to get the pose, and
+// would get a different one.
+//
+// THE SOLVER IS NOT OPTIONAL FOR CLOTH, AND THIS PARAGRAPH USED TO SAY IT WAS. It read: "the
+// shoulder yoke is RIGIDLY SKINNED -- its bones are on no spring chain -- so its animated
+// position is pure skinning and needs no solver". That is TRUE, and it is about the YOKE. Sitting
+// here under "where it has to run" it read as a general licence, and eight parts of a write-up
+// took CAPE measurements with no solver on the strength of it -- describing the cape where
+// skinning leaves it, which is nowhere the game puts it, because its bones are non-humanoid
+// spring joints and the clip is 372 humanoid muscle curves that do not touch them.
+//
+// So: a subject entry's FOURTH field turns the solver on (`file|name|driver|springs`), it is OFF
+// by default so the committed numbers stay reproducible, and any statement about cloth that is
+// not rigidly skinned needs it ON. Edit mode builds no spring buffer by itself
+// (`Vrm10FastSpringboneRuntimeStandalone.InitializeAsync` only constructs when
+// `Application.isPlaying`), so an empty buffer REFUSES rather than reporting the no-solver
+// numbers under another name, and the joints' rotation relative to their parents is printed every
+// frame as proof the solver ran.
 //
 // THE BODY/CLOTH SPLIT IS THE AVATAR'S, NOT A NAME MATCH, and is byte-for-byte the split
 // YargClothPenetration used (Power Girl: bodyTris=23449 clothTris=35761) so the two instruments
@@ -188,6 +203,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UniVRM10;
 using YARG.ContentBrowser.CharacterSelect;
 using YARG.Helpers;
 using YARG.Helpers.Extensions;
@@ -916,6 +932,12 @@ public static class YargClothInside
             int frames = int.TryParse(Arg(args, "-frames"), out var ff) ? ff : 1;
             float step = float.TryParse(Arg(args, "-step"), out var ss) ? ss : 0.125f;
             float warmup = float.TryParse(Arg(args, "-warmup"), out var ww) ? ww : 1.0f;
+            // THE SIZE OF THE STEP THE ANIMATOR AND THE SOLVER TAKE, as against -step, which
+            // is the interval between MEASURED frames. They were the same quantity until the
+            // solver arrived, and for a solver they must not be: the engine runs it at 1/60,
+            // and one 0.125 s step is a different solver with a different answer.
+            float subStep = float.TryParse(Arg(args, "-substep"), out var sb) ? sb : step;
+            if (subStep <= 0f || subStep > step + 1e-6f) subStep = step;
             float yaw = float.TryParse(Arg(args, "-yaw"), out var yy) ? yy : 0f;
             float pushArm = float.TryParse(Arg(args, "-pushArm"), out var pa) ? pa : 0f;
             // WHICH BONE THE SYNTHETIC POSITIVE MOVES, and along what.
@@ -972,6 +994,16 @@ public static class YargClothInside
             // character whose head is a separate body piece any rule that admits a 1-bone piece
             // readmits the cowl. The count is evidence toward a split, not a split.
             bool enclose = Arg(args, "-enclose") != null;
+            // RUN THE COVER SPLIT ONLY. WEIGHT and COMPONENT stay in the file as the record of
+            // what was tried and how each failed, but no conclusion is drawn from either any
+            // more, and running them costs two thirds of every sweep -- which is what has been
+            // holding the sweeps to one frame of a 10.55 s idle.
+            bool coverOnly = Arg(args, "-coverOnly") != null;
+            // THE BAR THIS RUN HAS TO CLEAR TO BE A SWEEP RATHER THAN A PEEK. Fraction of the
+            // animator state's length that frames x step must cover. 0 = report only, which is
+            // the default because a one-frame diagnostic is legitimate; what is not legitimate
+            // is a one-frame run that does not say it is one.
+            float reqCov = float.TryParse(Arg(args, "-requireCoverage"), out var rcv) ? rcv : 0f;
             // An explicit push direction, so the direction can come from the census rather than
             // from a fixed axis. Power Girl's arm control failed on DIRECTION, not magnitude: her
             // cape rests on her torso beside the arm, and a radial outward push moved the deltoid
@@ -999,6 +1031,26 @@ public static class YargClothInside
                 var bits = entry.Split('|');
                 var file = bits[0].Trim();
                 var name = bits.Length > 1 ? bits[1].Trim() : Path.GetFileNameWithoutExtension(file);
+                // WHICH DRIVER PUTS THE CHARACTER IN ITS POSE. Third field of the entry.
+                //
+                //   preview  Initialize() + SetPreviewIdle() + trigger + Rebind(), which is
+                //            CharacterPreview.cs, the SETTINGS preview pane. Every number in
+                //            parts one to eight was taken under this, so it stays the default
+                //            and those numbers stay reproducible.
+                //   podium   Podium.SetCharacter verbatim: ONE trigger, no VRMCharacter calls,
+                //            no Rebind. This is the character select screen -- the podium.
+                //   raw      nothing but the warmup Update. The control: if all three poses
+                //            agree, no driver in this scene is doing anything, and the pose
+                //            is the controller default state rather than anybody idle.
+                var driver = (bits.Length > 2 ? bits[2].Trim() : "preview").ToLowerInvariant();
+                if (driver != "preview" && driver != "podium" && driver != "raw")
+                    throw new Exception("REFUSED: unknown driver " + driver);
+                // WHETHER THE SPRING SOLVER RUNS. Fourth field, default OFF so every number
+                // taken before tonight stays reproducible by the same command.
+                var springMode = (bits.Length > 3 ? bits[3].Trim() : "nosprings").ToLowerInvariant();
+                if (springMode != "springs" && springMode != "nosprings")
+                    throw new Exception("REFUSED: unknown spring mode " + springMode);
+                bool useSprings = springMode == "springs";
                 GameObject podiumGo = null;
                 AssetBundle bundle = null;
                 if (!first) json.Append(",\n");
@@ -1022,14 +1074,17 @@ public static class YargClothInside
                     ch.transform.localPosition = Vector3.zero;
                     ch.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
                     ch.SetActive(true);
-                    try
+                    if (driver == "preview")
                     {
-                        var vc = ch.GetComponent<YARG.Venue.Characters.VRMCharacter>();
-                        if (vc != null) { vc.Initialize(); vc.SetPreviewIdle(); }
-                    }
-                    catch (Exception e)
-                    {
-                        Debug.Log($"[INSIDE] {name}: VRM init skipped: {e.GetType().Name}");
+                        try
+                        {
+                            var vc = ch.GetComponent<YARG.Venue.Characters.VRMCharacter>();
+                            if (vc != null) { vc.Initialize(); vc.SetPreviewIdle(); }
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.Log($"[INSIDE] {name}: VRM init skipped: {e.GetType().Name}");
+                        }
                     }
 
                     // The humanoid map IS the split, and it is also the region naming.
@@ -1038,10 +1093,42 @@ public static class YargClothInside
                     var regionName = new List<string>();
                     if (anim != null)
                     {
-                        if (anim.HasParameter("Attract")) anim.SetTrigger("Attract");
-                        else if (anim.HasParameter("Idle")) anim.SetTrigger("Idle");
-                        anim.Rebind();
+                        bool hasAttract = anim.HasParameter("Attract");
+                        bool hasIdle = anim.HasParameter("Idle");
+                        if (driver != "raw")
+                        {
+                            if (hasAttract) anim.SetTrigger("Attract");
+                            else if (hasIdle) anim.SetTrigger("Idle");
+                        }
+                        // Rebind() belongs to the preview path and ONLY to it. It resets the
+                        // animator, so a trigger set before it may not survive -- which is
+                        // itself one of the things the three-driver comparison measures. The
+                        // podium does not call it, so neither does the podium driver.
+                        if (driver == "preview") anim.Rebind();
                         anim.Update(warmup);
+                        var ctl = anim.runtimeAnimatorController;
+                        Debug.Log($"[DRIVER] {name}: driver={driver} isHuman={anim.isHuman} " +
+                                  $"controller={(ctl == null ? "NONE" : ctl.name)} " +
+                                  $"layers={anim.layerCount} hasAttract={hasAttract} hasIdle={hasIdle} " +
+                                  $"warmup={warmup}");
+                        // WHAT IS ACTUALLY PLAYING, asked of the Animator rather than predicted
+                        // from the code that set it up. Two documented triggers have already been
+                        // found gated out on this project after being reasoned about confidently.
+                        for (int L = 0; L < anim.layerCount; L++)
+                        {
+                            var sinfo = anim.GetCurrentAnimatorStateInfo(L);
+                            var cinfo = anim.GetCurrentAnimatorClipInfo(L);
+                            var cs = new StringBuilder();
+                            for (int c = 0; c < cinfo.Length; c++)
+                                cs.Append(c == 0 ? "" : ", ")
+                                  .Append(cinfo[c].clip == null ? "<null>" : cinfo[c].clip.name)
+                                  .Append(" w=").Append(F3(cinfo[c].weight));
+                            if (cinfo.Length == 0) cs.Append("<no clip>");
+                            Debug.Log($"[DRIVER] {name}:   layer{L} {anim.GetLayerName(L)} " +
+                                      $"lw={F3(anim.GetLayerWeight(L))} " +
+                                      $"stateHash={sinfo.fullPathHash} t={F3(sinfo.normalizedTime)} " +
+                                      $"inTransition={anim.IsInTransition(L)} clips=[{cs}]");
+                        }
                         if (anim.isHuman)
                             foreach (HumanBodyBones hb in Enum.GetValues(typeof(HumanBodyBones)))
                             {
@@ -1056,7 +1143,80 @@ public static class YargClothInside
                         Debug.LogWarning($"[INSIDE] {name}: no humanoid map -- body and cloth cannot " +
                                          "be separated, so this character is UNMEASURED rather than clean.");
 
+                    // EVERY HUMANOID BONE WORLD POSITION, so two drivers can be DIFFERENCED
+                    // rather than compared by eye. A pose is the input to this whole measurement;
+                    // printing the clip name only says what was asked for, not where the bones
+                    // ended up, and the clip can be identical while the pose is not.
+                    foreach (var kv in human)
+                    {
+                        var p = kv.Key.position;
+                        Debug.Log($"[POSE] {name}|{driver}|{regionName[kv.Value]}|" +
+                                  $"{F6(p.x)}|{F6(p.y)}|{F6(p.z)}");
+                    }
+
+                    // ================================================================
+                    // THE SPRING SOLVER
+                    // ================================================================
+                    //
+                    // The sequence is CapeCollisionProbe.cs's, not a new one. Touching
+                    // vrm.Runtime with no provider component constructs
+                    // Vrm10FastSpringboneRuntimeStandalone, whose InitializeAsync reads, in
+                    // full: `if (Application.isPlaying) await ConstructSpringBoneAsync(...)`.
+                    // So in edit mode nothing is built, Process(dt) steps an empty combiner,
+                    // and the cloth comes back carried rigidly by its parents -- numbers
+                    // indistinguishable from a character with no springs at all. That is the
+                    // shape of five zeros this project has already paid for.
+                    IVrm10SpringBoneRuntime springRt = null;
+                    var springJoints = new List<Transform>();
+                    var springLocal0 = new List<Quaternion>();
+                    if (useSprings)
+                    {
+                        var vrm = ch.GetComponentInChildren<Vrm10Instance>();
+                        if (vrm == null)
+                            throw new Exception("REFUSED: -springs asked for and " + name +
+                                                " carries no Vrm10Instance, so there is no " +
+                                                "solver to step and every reading would be " +
+                                                "the no-springs reading under another name.");
+                        springRt = vrm.Runtime.SpringBone;
+                        springRt.ReconstructSpringBone();
+                        springRt.Process(step);
+                        int bufColliders = 0, bufLogics = 0, bufSprings = 0;
+                        if (springRt is Vrm10FastSpringboneRuntimeStandalone stRt &&
+                            stRt.m_bufferCombiner.Combined != null)
+                        {
+                            bufColliders = stRt.m_bufferCombiner.Combined.Colliders.Length;
+                            bufLogics = stRt.m_bufferCombiner.Combined.Logics.Length;
+                            bufSprings = stRt.m_bufferCombiner.Combined.Springs.Length;
+                        }
+                        int sceneColliders = ch.GetComponentsInChildren<VRM10SpringBoneCollider>().Length;
+                        foreach (var sp in vrm.SpringBone.Springs)
+                            foreach (var jt in sp.Joints)
+                                if (jt != null && jt.transform != null) springJoints.Add(jt.transform);
+                        Debug.Log($"[SPRING] {name}: runtime={springRt.GetType().Name} " +
+                                  $"springs={bufSprings} logics={bufLogics} colliderSlots={bufColliders} " +
+                                  $"colliderComponents={sceneColliders} joints={springJoints.Count}");
+                        if (bufLogics == 0 || bufColliders == 0 || springJoints.Count == 0)
+                            throw new Exception("REFUSED: the spring buffer is empty (" +
+                                                bufLogics + " logics, " + bufColliders +
+                                                " collider slots, " + springJoints.Count +
+                                                " joints), so nothing would be simulated and " +
+                                                "every number below would describe cloth " +
+                                                "carried rigidly by its parent bones.");
+                        // SETTLE, so frame 0 is not the transient of instantiation being read
+                        // as a finding. A settle is a bound and not a prediction -- it is run
+                        // at the solver's OWN stiffness, which is the only reason its result
+                        // is comparable with the engine's.
+                        int nSettle = Math.Max(1, (int) Math.Round(1.0f / subStep));
+                        for (int sIt = 0; sIt < nSettle; sIt++) springRt.Process(subStep);
+                        Debug.Log($"[SPRING] {name}: settled {nSettle} steps of {F3(subStep)}s " +
+                                  $"({F3(nSettle * subStep)}s) before frame 0");
+                        foreach (var jt in springJoints) springLocal0.Add(jt.localRotation);
+                    }
+
                     var perFrame = new List<string>();
+                    // THE COVER'S SELECTION ON FRAME 0, so a later frame choosing differently
+                    // is announced rather than inferred from a row that quietly vanished.
+                    string coverSig0 = null;
                     int bodyTris = 0, clothTris = 0, clothVerts = 0;
                     // A SEPARABLE GARMENT OVER A BONE THE IDLE NEVER MOVES IS NOT A CONTROL
                     // EITHER -- the synthetic displacement would be the only motion in the scene,
@@ -1070,7 +1230,76 @@ public static class YargClothInside
 
                     for (int f = 0; f < frames; f++)
                     {
-                        if (f > 0 && anim != null) anim.Update(step);
+                        if (f > 0 && anim != null)
+                        {
+                            int nsub = Math.Max(1, (int) Math.Round(step / subStep));
+                            float sdt = step / nsub;
+                            for (int sub = 0; sub < nsub; sub++)
+                            {
+                                anim.Update(sdt);
+                                // The solver steps WITH the pose, not after a jump in it.
+                                if (springRt != null) springRt.Process(sdt);
+                            }
+                        }
+
+                        // WHERE IN THE CLIP THIS FRAME IS. A looping idle sampled at one phase is
+                        // not the pose the podium shows; it is one instant of it, and the fault
+                        // being chased is something seen on a moving character.
+                        if (anim != null)
+                            for (int L = 0; L < anim.layerCount; L++)
+                            {
+                                var si = anim.GetCurrentAnimatorStateInfo(L);
+                                var ci = anim.GetCurrentAnimatorClipInfo(L);
+                                string cn = ci.Length > 0 && ci[0].clip != null ? ci[0].clip.name : "<none>";
+                                float cl = ci.Length > 0 && ci[0].clip != null ? ci[0].clip.length : 0f;
+                                Debug.Log($"[PHASE] {name} f{f} layer{L} clip={cn} len={F3(cl)}s " +
+                                          $"loop={(ci.Length > 0 && ci[0].clip != null ? ci[0].clip.isLooping : false)} " +
+                                          $"normTime={F3(si.normalizedTime)} stateLen={F3(si.length)}s");
+                                // COVERAGE, STATED WITH THE RESULT AND NOT ABOVE IT. A window
+                                // shorter than the clip is not a sparse measurement of the clip,
+                                // it is a measurement of a DIFFERENT thing, and two results have
+                                // already changed sign on this project between 38% and 100%.
+                                if (f == 0 && L == 0 && si.length > 1e-6f)
+                                {
+                                    float span = Math.Max(1, frames - 1) * step;
+                                    float cov = span / si.length;
+                                    string verdict = cov >= 0.999f ? "WHOLE STATE"
+                                        : "PARTIAL -- counts and maxima are a FLOOR, and no " +
+                                          "cross-subject comparison is valid unless both arms " +
+                                          "cover the SAME phases";
+                                    Debug.Log($"[COVERAGE] {name}: {F3(span)}s of {F3(si.length)}s " +
+                                              $"= {F3(cov * 100f)}% at {frames} frame(s) x {F3(step)}s " +
+                                              $"-- {verdict}");
+                                    if (cov < reqCov)
+                                        throw new Exception(
+                                            "REFUSED: this run covers " + F3(cov * 100f) +
+                                            "% of a " + F3(si.length) + "s state and " +
+                                            "-requireCoverage asked for " + F3(reqCov * 100f) +
+                                            "%. Pass -frames " +
+                                            (int) Math.Ceiling(reqCov * si.length / step + 1) +
+                                            " at this step, or lower the bar deliberately.");
+                                }
+                            }
+
+                        // DID THE SOLVER DO ANYTHING? World travel of a spring joint is
+                        // non-zero either way, because the joint rides an animated parent. Only
+                        // the solver can change its rotation RELATIVE to that parent, and the
+                        // clip animates humanoid muscles rather than these bones. So this reads
+                        // ~0 with springs off and non-zero with them on, and a harness that
+                        // silently simulates nothing cannot print the second.
+                        if (springJoints.Count > 0)
+                        {
+                            float maxDeg = 0f;
+                            int moved = 0;
+                            for (int j = 0; j < springJoints.Count; j++)
+                            {
+                                float d = Quaternion.Angle(springLocal0[j], springJoints[j].localRotation);
+                                if (d > maxDeg) maxDeg = d;
+                                if (d > 0.01f) moved++;
+                            }
+                            Debug.Log($"[SPRING] {name} f{f}: joints={springJoints.Count} " +
+                                      $"moved={moved} maxLocalRot={F3(maxDeg)}deg");
+                        }
 
                         foreach (var kv in human)
                         {
@@ -1795,6 +2024,30 @@ public static class YargClothInside
                                           $"vol={pvS,12:F8} closed={F3(pcS)} adds=" +
                                           $"{enclCount[c],3} bones{flag}");
                             }
+                            // IS THIS THE SAME BODY WE MEASURED ON FRAME 0?
+                            //
+                            // The greedy cover is recomputed every frame, and a piece of CLOTH
+                            // that moves far enough to enclose humanoid bones the body misses
+                            // will join it. Batman's cape does exactly that on 5 of 17 frames
+                            // once the solver runs. When it happens the cape's own row vanishes
+                            // -- not to zero, out of the category -- and the rest of the garment
+                            // is then measured against a surface that includes the cape.
+                            var sigParts = new List<int>();
+                            foreach (var cc in coverComp)
+                                for (int ci2 = 0; ci2 < byT.Count; ci2++)
+                                    if (byT[ci2].Key == cc) { sigParts.Add(byT[ci2].Value); break; }
+                            sigParts.Sort();
+                            string coverSig = string.Join("+", sigParts);
+                            if (coverSig0 == null) coverSig0 = coverSig;
+                            else if (coverSig != coverSig0)
+                                Debug.LogWarning($"[COVER] {name} f{f}: THE SELECTION CHANGED -- " +
+                                                 $"body is now pieces [{coverSig}] where frame 0 " +
+                                                 $"had [{coverSig0}]. Per-mesh rows are NOT " +
+                                                 "comparable with frame 0: a garment piece that " +
+                                                 "joins the body stops being measured as cloth " +
+                                                 "and its row disappears rather than going to " +
+                                                 "zero, while everything else is measured against " +
+                                                 "a surface that now wraps around it.");
                             int coveredN = 0;
                             for (int b = 0; b < 64; b++) if ((covered & (1UL << b)) != 0UL) coveredN++;
 
@@ -1837,6 +2090,7 @@ public static class YargClothInside
                             List<ulong> clothMask = null;
                             List<int> clothBone = null, clothMat = null;
                             if (census && sp != 2) continue;   // COVER only; see -census
+                            if (coverOnly && sp != 2) continue;
                             if (enclose && sp != 2) continue;
                             if (sp == 0)
                             {

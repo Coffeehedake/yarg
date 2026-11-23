@@ -803,3 +803,287 @@ how the two characters are built.
   idle moves bones up to 199 mm. Persistent, shallow for the cape, and not produced by the motion.
 * Everything shallow and un-dramatic is authored: `R_belt` 21 at 3.8 mm, `C_breast` 16 at 0.03 mm,
   the blades at 17 to 20 mm. A waistband inside the skin is how a waistband is built.
+
+
+---
+
+# Part nine: the pose was right all along, the WINDOW was 19% of it
+
+Date: 2026-11-23, later. Same installed bundle (`a9b26646`). `YargClothInside.cs` gained four
+things: the animation driver as an argument, the clip phase printed every frame, the real spring
+solver, and `-coverOnly`.
+
+## The driver question is answered, and it is dead
+
+Jay asked for the instrument to be pointed at "the podium pose you actually see". It already was,
+and here is why that was worth an hour rather than an assumption.
+
+The instrument drives the character the way `CharacterPreview.cs` does -- the SETTINGS preview
+pane: `Initialize()`, `SetPreviewIdle()`, a trigger, then `Rebind()`. `Podium.SetCharacter` -- the
+character select screen, the podium -- does **none** of that. It instantiates, parents, and sets
+**one** trigger. Two drivers over one clip have already been measured on this project sharing 0 of
+120 frames, so this was a live difference, not a pedantic one.
+
+So the driver became the third field of a subject entry and three of them ran in one editor
+session: `preview` (the committed behaviour), `podium` (`Podium.SetCharacter` verbatim), and `raw`
+(nothing but the warmup `Update`, as the control).
+
+**All three produced byte-identical numbers.** inside 317, LeftShoulder 79, RightShoulder 55,
+`Object_7` 71 at a 3.339 mm median, every band, every digit. And the Animator, asked rather than
+predicted, named the same thing three times:
+
+    controller=DefaultController layers=2 hasAttract=False hasIdle=True
+    layer0 "Base Layer"        VoxIdle    w=1.000  normTime=0.095
+    layer1 "Hold Microphone"   VoxMicGrab w=1.000  normTime=1.000
+
+Two reasons the drivers cannot differ here, both of which the run exposed and neither of which was
+predicted:
+
+* **`hasAttract=False`.** The podium's first branch never fires on this character; it falls through
+  to the `Idle` trigger, and `raw` sets nothing and lands in the same state, so the state is the
+  controller's default rather than anybody's trigger.
+* **`[INSIDE] Batman-preview: VRM init skipped: NullReferenceException`.** The preview driver's
+  `Initialize()` **throws**, inside a `try` that logs and continues. So the settings-preview driver
+  has never been applied either. Both named drivers were no-ops the whole time.
+
+That is what the `raw` arm was for. Without a driver that deliberately does nothing, three
+identical results read as "the driver does not matter" instead of "no driver ran".
+
+## The real defect: every number so far is ONE INSTANT of a 10.55 s idle
+
+`VoxIdle` is **10.550 s and looping**, and the single-frame runs of parts one to eight all read it
+at `normalizedTime=0.095`. 17 frames at 0.125 s covers 0.095 to 0.284: **19% of the clip.** This
+project has already published findings from 38% of an animation without saying so. This is worse
+and it is the same mistake.
+
+**The cape is not quiet across that window. It was quiet at the frame I picked.** `Object_7`, the
+cape renderer, per frame:
+
+| | n | median | max |
+|---|---|---|---|
+| f0 -- the frame every earlier part reports | **71** | **3.339 mm** | **26.228 mm** |
+| minimum over 17 frames | 46 | 3.090 mm | 19.494 mm |
+| **maximum over 17 frames** | **164** (f4) | **10.475 mm** (f3) | **79.610 mm** (f4) |
+
+f0 is at or near the bottom of all three ranges. The cape's penetration more than **doubles** in
+count and **triples** in depth within 2 s of the idle.
+
+## So part eight's second headline is WITHDRAWN TOO
+
+Part eight said: *"Batman's cape penetrates his body no more than hers does, and by median
+slightly less"* -- 71 at 3.3 mm against Power Girl's 541 at 4.3 mm and 772 at 4.3 mm.
+
+**That comparison was two single frames, one each, and neither was chosen.** Both characters were
+read at whatever phase a warmup of 1.0 s happens to land on, and on Batman that phase is his
+quietest. His max alone goes to 79.6 mm four frames later, which is more than double anything
+measured on her at one frame. The claim is not merely unsupported in its direction -- the
+quantities being compared are not comparable at all.
+
+A per-frame comparison on the **same frames** is the only version of that sentence that can stand,
+and it is running. Until it reports, the honest statement is: **we do not know whether his cape is
+worse than hers.**
+
+## Two frames where the split collapses
+
+f11 and f15 read `>40 mm = 1` where every other frame reads 87 to 107, and `Object_400`'s max falls
+from ~230 mm to ~40 mm. The deep cowl tail disappears at those two frames and comes back.
+
+That is the cover changing its mind, not the cowl moving 190 mm in an eighth of a second -- and the
+selection-changed guard added in part ten names it rather than leaving it to a guess. On both those
+frames the cover takes a **fourth piece of 2,040 and 2,044 triangles**, so that geometry becomes
+**body** and stops being measurable as cloth, which is where the deep readings go. The cape's own
+row is still there at f11 and f15 (64 and 80 vertices), so the piece that joined is **not** the
+cape, and this happens with **no solver running at all**.
+
+An earlier draft of this paragraph said the torso shell "presumably stops" enclosing the `Head`
+bone. The direction was right and the route was a guess; the guard measures the route. It is open
+edge 5 arriving as a number, and **a reason not to read any single frame of this instrument on this
+character** -- the same lesson as the section above, from the other direction.
+
+## What was blind, and is no longer: THE SOLVER NEVER RAN
+
+The cape's bones are non-humanoid spring joints. `VoxIdle` is 372 humanoid muscle curves and
+animates none of them. Unity's spring solver is what moves them -- and in edit mode
+`Vrm10FastSpringboneRuntimeStandalone.InitializeAsync` reads, in full,
+`if (Application.isPlaying) await ConstructSpringBoneAsync(...)`, so nothing is built and nothing
+is simulated.
+
+**So every cape number in parts one to nine describes the cape where SKINNING leaves it.** The
+instrument's docstring justifies skipping the solver, and the justification is true: *"the shoulder
+yoke is RIGIDLY SKINNED -- its bones are on no spring chain -- so its animated position is pure
+skinning and needs no solver."* It is about the **yoke**. It was never true of the **cape**, and it
+sat at the top of the file reading like a general licence.
+
+`CapeCollisionProbe.cs` established the edit-mode sequence months of this folder ago -- touch
+`Runtime`, take `SpringBone`, `ReconstructSpringBone()`, `Process(dt)` -- and established that an
+empty buffer must **refuse** rather than report. Both are now in `YargClothInside.cs` behind a
+fourth subject field, with `-substep` so the solver runs at 1/60 rather than taking one 0.125 s
+step, and a 1.0 s settle so frame 0 is not an instantiation transient.
+
+**The control is the joint's LOCAL rotation.** A spring joint's world position moves with the
+solver off, because it rides an animated parent; what only the solver can change is its rotation
+relative to that parent, and the clip does not touch these bones. So the solver-off arm must print
+`maxLocalRot ~0` and the solver-on arm must not. Five spring probes on this project have read zero
+for every character where the zero was the harness; this is the test that tells those apart, and it
+has both cases by construction.
+
+
+---
+
+# Part ten: the solver runs, and the SPLIT turns out to be a per-frame result
+
+Four arms in one editor session -- {Batman, Power Girl} x {solver off, solver on} -- 17 frames
+each at 0.125 s, podium driver, `-coverOnly`. Batman `a9b26646`, Power Girl `49a7c173`.
+
+The coverage statement from part nine is now printed beside the numbers it qualifies, and the
+run was gated on it:
+
+    [COVERAGE] Bat-ON: 2.000s of 10.550s = 18.957% at 17 frame(s) x 0.125s -- PARTIAL --
+               counts and maxima are a FLOOR, and no cross-subject comparison is valid
+               unless both arms cover the SAME phases
+
+`-requireCoverage 0.15` passed at 18.957% and would have refused the run above 0.19, naming the
+`-frames` to pass instead. Everything below is inside that 19%.
+
+## The solver control passes, in both directions
+
+    [SPRING] Bat-ON: runtime=Vrm10FastSpringboneRuntimeStandalone springs=5 logics=50
+                     colliderSlots=260 colliderComponents=52 joints=55
+    [SPRING] Bat-ON: settled 60 steps of 0.017s (1.002s) before frame 0
+    [SPRING] Bat-ON f1: joints=55 moved=55 maxLocalRot=178.427deg
+    [SPRING] PG-ON:  springs=16 logics=135 colliderSlots=140 joints=151
+    [SPRING] PG-ON f1: joints=151 moved=111 maxLocalRot=51.058deg
+
+The off arms print nothing, because they have no joints to report -- which is the silent half of
+the control. The buffer is non-empty on both on-arms, so the empty-buffer refusal did not fire,
+and every joint's rotation relative to its parent changes, which only a solver can do. **The
+solver is running.** That is the whole of what the control establishes, and the next section is
+why that distinction matters.
+
+## THE COVER IS NOT STABLE UNDER SIMULATION, and this is the finding
+
+On **5 of Batman's 17 frames** (f7 to f11) the greedy cover selected a **fourth** piece:
+
+    [COVER] Bat-ON: SELECT piece 1 tris=2955 vol=0.02203201 closed=0.988 adds=10 bones
+
+2,955 triangles, 0.022 m3, closed 0.988, enclosing **7 to 15 humanoid bones**. That piece is his
+**cape**. With the solver running it moved far enough around him to qualify as a body part.
+
+**Nothing in the report looks wrong when this happens**, which is what makes it expensive:
+
+* the cape stops being cloth, so its `BY MESH` row **disappears**. A missing row is not a zero
+  and reads as one.
+* the body surface now *includes* the cape shell, so the cowl and belt are measured against a
+  surface wrapped around them: **800 vertices at a 109 mm median**, where four frames earlier the
+  same character read 250 at 8 mm.
+* **the conservation control still passes** -- 800 of 800, `no_bone=0`. It checks that nothing was
+  dropped, not that the right thing was measured. A control is only ever a control of one thing.
+
+This is **open edge 5** -- *"the cover finds the outermost shell"* -- arriving in a form nobody
+predicted. It was written as a static property of a character ("a full-body coat wins the cover").
+It is also a **dynamic** property of a frame: a cape in motion is a full-body coat for an eighth of
+a second. The split was validated on three characters in static poses, and that validation does not
+carry to a moving one.
+
+`YargClothInside.cs` now pins the cover's selection on frame 0 and **warns, naming both
+signatures**, whenever a later frame chooses differently. Running it told me something I had
+already written down wrongly:
+
+    [COVER] Bat-OFF f11: THE SELECTION CHANGED -- body is now pieces [896+896+2040+6438]
+                         where frame 0 had [896+896+6438]
+    [COVER] Bat-ON  f7:  THE SELECTION CHANGED -- body is now pieces [896+896+2955+6438]
+    [COVER] Bat-ON  f11: THE SELECTION CHANGED -- body is now pieces [896+896+2040+2951+6438]
+
+**It fires twice on the solver-OFF arm, at f11 and f15.** So the cover is not merely unstable under
+*simulation* -- it is unstable across the *pose*, with no solver anywhere, and a 2,040-triangle
+piece joins the body at those two phases. That is exactly the collapse part nine recorded and
+explained with a "presumably"; the guard names it instead. **What the solver changes is how often:
+2 frames of 17 become 6, and the piece that joins is the 2,951-triangle cape rather than the
+2,040-triangle one.** At f11 with the solver both of them join.
+
+So the honest form of the finding is: the greedy cover's selection is a **per-frame** result that
+nobody was reading as one, and simulation makes it three times worse.
+
+**And the guard has its silent case, run on purpose rather than assumed.** It had fired 8 times
+across two Batman arms, and a guard that fires on everything it has been pointed at has the same
+hole as one that has never fired. Power Girl's solver-on arm is the strong accepting case -- the
+solver running, 151 joints moving up to 62 degrees, and the cover asked to stay put:
+
+    selection-changed warnings: 0
+    [COVER] PG-ON: pieces=2  x17 frames
+
+So the guard distinguishes the two states rather than reporting one of them.
+
+## Does the solver change the cape's penetration? YES, on the frames that stayed comparable
+
+Frames are comparable **between the arms** only where both chose the same pieces: f0-f6, f12-f14
+and f16 at the base 3-piece split, plus f15, where both arms took the same fourth piece. f7 to f11
+are not comparable in either direction. Twelve frames survive, and none of f11 or f15 is comparable
+with *frame 0* within its own arm. `Object_7` is the cape renderer, measured from the renderer the
+triangle was drawn with:
+
+| frame | off: n / median / max | on: n / median / max |
+|---|---|---|
+| f0 | 71 / 3.3 / 26.2 mm | 88 / 6.4 / 34.8 mm |
+| f3 | 127 / 10.5 / 51.8 mm | 142 / 16.1 / 74.9 mm |
+| f4 | 164 / 10.2 / 79.6 mm | 180 / **19.4** / 73.9 mm |
+| f5 | 109 / 5.0 / 61.4 mm | 176 / 12.1 / **100.3 mm** |
+| f6 | 70 / 3.5 / 47.8 mm | 96 / 9.7 / 69.7 mm |
+| f13 | 68 / 3.3 / 47.5 mm | 100 / 9.6 / 56.4 mm |
+
+**Count up on 12 of 12. Median up on 12 of 12** -- roughly doubled. Max up on 8, unchanged on 3,
+down on 1. Peak with the solver: **100.3 mm of cape inside his body.**
+
+## The replacement for the withdrawn comparison
+
+Same instrument, same 17 frames, same session. Her cover is stable so all 17 of hers count.
+
+| peak over the window | Batman (`Object_7`) | Power Girl (`mesh2`) |
+|---|---|---|
+| vertices inside, solver off | 164 | 775 |
+| vertices inside, solver on | 180 | **1761** |
+| median depth, solver on | **19.4 mm** | 7.8 mm |
+| **deepest, solver on** | **100.3 mm** | **52.1 mm** |
+
+**Her cape penetrates about ten times as many vertices at under half the median depth; his reaches
+twice as deep.** Broad and shallow against narrow and deep -- and narrow-and-deep is the signature
+of something going *through* rather than resting *against*. That is the first supported statement
+that his cape behaves differently from the one this project calls correctly built.
+
+Four things it is not, each of which would make it less than it sounds:
+
+1. **The medians are not comparable across differently-sized sets.** Hers includes a large shallow
+   resting contact that pulls her median down; a fraction whose denominator moves is not a
+   measurement, which this project has already paid for. Read the counts and the maxima.
+2. **Her idle barely moves.** `mesh1` reads 541 at 4.338 mm, max 20.086 mm, *identical to three
+   decimals on all 17 frames of both arms* -- it is not spring-driven at all, and her animation
+   moves little but her left hand. So this compares a moving subject with a nearly static one.
+3. **19% of the clip**, as part nine. Both arms cover the same phases, which is what makes them
+   comparable at all, but neither covers the idle.
+4. **The simulated cape may not be the game's cape.** See below.
+
+## WHY NO NUMBER ABOVE SHOULD DRIVE A CHANGE YET
+
+Two readings from the on-arm are hard to credit as cloth:
+
+* **`maxLocalRot` reaches 178.4 degrees in one measured frame** and bounces -- 178, 177, 154, 167,
+  89, 165, 86, 82, 144, 180. A joint nearly reversing relative to its parent in an eighth of a
+  second is not a cape settling. Power Girl, same solver, same session, same timestep, reads
+  **51 to 62 degrees** -- so his cape's joints swing about **three times as hard as the reference
+  character's**, which is either the fault itself or the solver misbehaving on his rig, and this
+  measurement cannot say which.
+* **The cape enclosed 7 to 15 humanoid bones.** A cape that engulfs a seventh of the skeleton has
+  not draped, it has wrapped around him.
+
+The history says this is the right thing to be suspicious of: *"The cape was FLYING, not clipping"*
+was a real diagnosis on this character, and a zero-stiffness settle on this project once predicted
+488 mm of hair travel where the engine at its real stiffness showed none. **Nothing measured here
+distinguishes the edit-mode solver from the one the engine runs.** The solver being *present and
+stepping* is not the solver being *right*, and this folder has already shipped "present is not
+working" once.
+
+So: the instrument is now faithful in its pose, faithful in its driver, and runs the real solver
+with a control that proves it ran. The next question is not about Batman. It is **whether this
+solver's output matches the engine's** -- against `CapeCollisionProbe`'s recorded travel figures on
+the same bundle, or against a render -- and until that is answered the on-arm numbers are a
+measurement of a simulation nobody has graded.

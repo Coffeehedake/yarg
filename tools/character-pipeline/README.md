@@ -13288,3 +13288,58 @@ no worse than hers** (71 at median 3.3 mm against her 541 at 4.3 mm and 772 at 4
 The attribution's own control is conservation: every inside vertex attributed, with no filter, and
 the total printed against `inside` -- 317 of 317, `no_bone=0`. An attribution that silently drops
 vertices prints the same clean shoulder as a character with none.
+
+
+### The pose was already the podium's; the window was 19% of the clip (2026-11-23)
+
+Jay asked for `YargClothInside` to be pointed at the podium pose. It already was, and three things
+fell out of establishing that.
+
+**The driver question is dead.** `CharacterPreview.cs` (the settings pane) poses a character with
+`Initialize()` + `SetPreviewIdle()` + a trigger + `Rebind()`; `Podium.SetCharacter` sets **one**
+trigger and nothing else. Three drivers ran in one session -- preview, podium, and `raw`, which
+sets nothing -- and all three gave **byte-identical** numbers, because none of them ran:
+`hasAttract=False` so the podium's branch never fires, `raw` reaches the same state so the state is
+the controller's default, and the preview arm logs `VRM init skipped: NullReferenceException` --
+its `Initialize()` throws into a `try` that logs and continues, and always has. The `raw` arm is
+what separates "the setting does not matter" from "the setting never applied".
+
+**Every number in parts one to eight is one instant of a 10.55 s looping clip** (`VoxIdle`, read at
+`normalizedTime=0.095`). Over 17 frames the cape's own row runs n 46-164, median 3.1-10.5 mm, max
+19.5-79.6 mm, and the single frame reported sits at the bottom of all three. **So part eight's
+second headline -- "his cape is no worse than Power Girl's" -- is withdrawn**: it compared two
+characters at one unchosen phase each. The instrument now prints its coverage beside the result and
+`-requireCoverage` refuses below a bar.
+
+**THE SOLVER HAD NEVER RUN.** The cape's bones are non-humanoid spring joints and `VoxIdle` is 372
+humanoid muscle curves, so every cape number ever taken with this tool described the cape where
+*skinning* leaves it. The file's own docstring licensed that, truthfully, about the rigidly-skinned
+shoulder **yoke**; it was never true of the cape. `YargClothInside` now steps
+`Vrm10FastSpringboneRuntimeStandalone` at 1/60 behind `-substep`, refuses an empty buffer the way
+`CapeCollisionProbe` does, and proves the solver ran via the one quantity only a solver can change
+-- a joint's rotation relative to its parent.
+
+**And the first thing the solver showed is that the SPLIT is not stable.** On 5 of 17 frames the
+greedy cover selected a fourth piece -- 2,955 triangles, closed 0.988, enclosing 7 to 15 humanoid
+bones -- which is his **cape**, qualifying as a body part because it moved around him. The cape's
+`BY MESH` row then **disappears** rather than going to zero, the rest of the garment is measured
+against a surface that wraps around it (800 vertices at a 109 mm median, against 250 at 8 mm four
+frames earlier), and **conservation still passes**, because it checks that nothing was dropped and
+not that the right thing was measured. That is open edge 5 as a property of a *frame* rather than of
+a character.
+
+A selection-changed warning now pins frame 0's selection and names both signatures -- and it
+immediately corrected the write-up that prompted it: **it also fires twice with the solver OFF**,
+at the two frames whose "collapse" had been explained with a *presumably*. So the cover is unstable
+across the pose with no solver anywhere, and what simulation changes is the rate -- 2 frames of 17
+become 6. Its silent case is Power Girl, whose cover held 2 pieces on all 17 frames of both arms,
+and that is checked separately rather than assumed: a guard that fires on everything it has been
+pointed at has the same hole as one that has never fired.
+
+On the 12 frames that stayed comparable the solver raises the cape's penetration count on 12 of 12
+and its median on 12 of 12, peaking at **100.3 mm**. Against Power Girl on the same frames: she
+reaches 1,761 vertices at a 7.8 mm median and 52.1 mm deepest, he reaches 180 at 19.4 mm and
+100.3 mm -- broad and shallow against narrow and deep. **No number from the solver arm should drive
+a change yet**: `maxLocalRot` reaches 178 degrees in one frame and the cape enclosed 15 humanoid
+bones, and nothing here distinguishes this solver from the engine's. Present and stepping is not
+right.
