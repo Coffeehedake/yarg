@@ -12826,7 +12826,9 @@ So:
   magnitudes.
 - **The flat response may be a TRUE NEGATIVE and cannot be distinguished from blindness.** If her
   sleeve is the same shell as her deltoid, displacing the upper arm cannot push anything through
-  anything. The separable pieces — share 0.000 — are cape, hair and boots.
+  anything. The separable pieces — share 0.000 — were called
+  cape, hair and boots from their size and height. **They were measured within the hour and
+  every one of them is hair** (next section), so that was a guess in a measurement's clothes.
 
 #### What this means for the tools already in this folder
 
@@ -12838,3 +12840,77 @@ off them is that the two halves are two surfaces.
 
 Together with the capsule over-read measured the same evening, that is a second and independent
 reason that none of this week's cape numbers is as clean as its table looked.
+
+---
+
+### Three instruments for "what IS this piece", three failures, one evening (2026-11-22)
+
+The cloth-inside-body instrument needs a positive control: a character with a separable garment
+over a limb, so that pushing the limb must drive the garment into the body and the instrument
+must say so. Finding one took three attempts at piece identity and produced none.
+
+| attempt | what it measured | how it failed |
+|---|---|---|
+| material name | the name the shader carries | **the bundle exporter had already destroyed it.** Everything is renamed `<Character>_N`, and five separate shells of Power Girl all read `mesh1 / PowerGirl_3` |
+| nearest humanoid bone to the piece centroid | where the piece sits | a braid hanging past the knee is "over the leg". Hair and a legging are indistinguishable to it |
+| separable-piece count and triangle total | how much of it there is | size says nothing about what a piece is. Jinx's hair outweighs most characters' entire wardrobes |
+
+The third ranked Jinx first — 197 separable pieces, 168,475 triangles, bones listed as
+`LeftFoot` / `LeftLowerLeg` / `LeftUpperLeg`. Six of those pieces, 73,835 triangles, are her
+**braids**, which run from her head to her ankles so every centroid lands nearest `LeftUpperLeg`.
+`bodyTris=30297` against `clothTris=175496`: 15% of her was labelled body, her legs not among it.
+**The `over_non_head` column counted hair as garment-over-limb for all 65 characters, and its
+candidate ranking is withdrawn.**
+
+#### The bug's signature was in its own table
+
+    leg push    0mm    40mm   80mm   120mm  160mm  220mm
+    INSIDE      4833   4833   4833   4833   4833   4833
+    med nearest 42.24  40.57  40.19  40.15  40.11  40.07
+
+4,833 at 0 mm and 4,833 at 220 mm. **A rigid translation that keeps growing cannot produce a
+response that asymptotes** — the distances moving while the count does not means the body moved
+past the cloth rather than through it. That is a broken subject, not a null, and it was first
+explained as loose clothing on a 42 mm clearance.
+
+#### What survives the survey, and it is worth having
+
+* **65 of 65 characters covered in one editor session, coverage asserted** so a sweep that quit
+  early could not read as a clean one.
+* **27 of 65 have no separable garment piece at all.** Their costume is fused into the skin
+  exactly as Power Girl's is, so on 42% of the roster "has this cloth crossed into the body" is
+  ill-posed in principle rather than merely hard. This is the durable finding and it does not
+  depend on the withdrawn column.
+* the per-character piece inventories themselves — height, `humanoid_share`, nearest bone,
+  triangle count.
+
+#### The idle moves almost nothing but the left hand
+
+Measured in passing and it bears on the whole week: over six frames, the ten largest bone travels
+are **all left-hand finger bones, 270–296 mm, with no limb in the top ten.** It is a guitar hand,
+which is obvious for a rhythm game in retrospect and appeared in none of the reasoning about
+which bone a control should move.
+
+**That retires a constraint this coordinator imposed and should not have.** The brief asked for a
+separable garment over "a bone the idle actually moves", which on this roster is close to the
+empty set. A displacement control does not use the idle — it pushes the bone itself — so the
+requirement was never needed, and it is what narrowed the search until nothing qualified.
+
+#### What the control actually needs, which is not identity
+
+A control does not need to know what a piece **is**. It needs a piece that **moves with the bone
+being pushed**, and that is directly measurable rather than inferred:
+
+- **Select by skin WEIGHT, not by centroid proximity.** Which bone drives a piece's vertices is
+  the author's own declaration; which bone a piece is near is a guess about it. A braid is
+  weighted to hair bones under `Head` however far down it hangs. The caution recorded above —
+  that a weight split measures *what drives a triangle*, not what it is — is not a problem here:
+  what drives it is exactly the question.
+- **Then make the harness assert the subject moved.** A run whose subject piece did not travel
+  roughly the push distance is refused, not reported. That guard would have caught all three
+  identity failures without needing identity at all, and Jinx would have refused instead of
+  producing a table that had to be withdrawn.
+
+The angular-coverage discriminator (a sleeve wraps its limb through nearly 360°, a braid occupies
+a narrow sector) is a fourth identity heuristic and remains unbuilt. If selection by weight plus
+a did-it-move guard works, identity is not needed to run the control.
