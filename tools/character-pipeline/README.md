@@ -12959,3 +12959,83 @@ and neck — different branches of the rig, the only arrangement in which both c
 comes back empty even for those, **no positive control exists on this roster for a structural
 reason in how these characters are authored**, which is a result rather than a failure to work
 around.
+
+---
+
+### The positive control PASSES, and an attribution bucket that empties as the fault grows (2026-11-22)
+
+The prediction recorded in the section above was confirmed by the census that tested it.
+
+#### The census picks the subject AND the direction
+
+Per character and per bone: cloth that **rests on** bone B (its nearest body triangle is driven by
+B or B's subtree) and is **not driven by** B. Both terms come from skin weights, so no push is
+needed and every bone is scored in one bit pass over the cloth.
+
+    65 characters, 38 control lines
+    30  at least one hostable bone
+     8  NO HOSTABLE BONE -- the anti-correlation holding absolutely
+    27  UNMEASURED, no separable cloth at all
+
+Winning bone by character count: **RightShoulder 6, LeftShoulder 4, RightUpperLeg 4, LeftUpperLeg
+3, LeftUpperArm 3, Head 2, Neck 2.** Shoulders are the most common host, exactly as predicted —
+both conditions hold together mainly where geometry hangs from one branch of the rig and rests
+against another. **Hair is included**, and is a large part of what makes 30 characters hostable at
+all; it had been excluded for being mislabelled a garment, which is a different question from what
+the control needs.
+
+**The direction has to be derived as well as the subject.** The top nominee was Jinx /
+`LeftUpperLeg` at 14,607 hostable — the same character as the failed part-two run, a *different*
+bone, and a derived direction of `0.028,-0.869,-0.494`, which is mostly **downward**. The lateral
+push chosen by hand was simply wrong.
+
+#### K-2SO / LeftUpperArm fires
+
+Nominated on 711 hostable vertices at a 12.5 mm gap, pushed along its own derived direction, with
+`RightUpperArm` (669 hostable, 12.6 mm) nominated too and deliberately left **unpushed**.
+
+| push | guard travel | inside_over_push | cloth_over_push | fraction | RightUpperArm (unpushed) |
+|---|---|---|---|---|---|
+| 5 mm | 5.000 / 5.000 asked | 45 | 901 | 5.0% | 21 |
+| 10 mm | 10.000 / 10.000 | 43 | 896 | 4.8% | 21 |
+| 20 mm | 20.000 / 20.000 | 60 | 874 | 6.9% | 21 |
+| 40 mm | 40.000 / 40.000 | 82 | 790 | **10.4%** | 21 |
+
+Three independent reasons this is a pass rather than a trend: **the unpushed arm is constant at 21
+across all five runs**, which is exact localisation measured on geometry the control never touched;
+**the onset matches an independently measured gap** — the census said 12.5 mm, nothing moves at 5
+or 10 mm, and the rise starts between 10 and 20 mm; and the fraction rises faster than the count
+because the denominator *shrinks* as the arm moves away.
+
+**Known gap: there is no 0 mm baseline**, because the guard refuses a zero push. So 45 at 5 mm is
+read as noise where it might be 45 already inside at rest. The pre-push count reported beside the
+post-push one turns that into a measured zero response below the gap, which is the stronger
+statement.
+
+#### READ THE BONE-SCOPED COUNT. NOT THE TOTAL, AND NEVER THE REGION ROW
+
+The `LeftUpperArm` **region** count **falls** — 32, 33, 32, 27, 19 — while the fault it measures
+grows. The total moves 228 → 265 with a dip.
+
+**Region is assigned by nearest body triangle, so as the arm descends, vertices that were nearest
+the arm become nearest the shoulder and leave the bucket while remaining inside.** The bone-scoped
+count uses the ancestry bitmask and is stable under that motion.
+
+This is a new failure shape for this folder and worth holding onto: **an attribution bucket empties
+as its subject moves, so a per-region count can fall while the thing it counts increases.** Anyone
+reading that row alone would conclude the control had failed. Every other instrument here that
+buckets by nearest-anything has the same exposure.
+
+#### What the Batman comparison can and cannot conclude
+
+Two measurements, different standing, and they must not be multiplied together:
+
+- **Two bundles, one instrument** (`a9b26646` installed against `f7d268e0`) grades the clavicle
+  yoke. Reading a *difference* between two bundles under one instrument cancels whatever bias the
+  instrument carries, so this is sound regardless of the instrument's absolute accuracy.
+- **Capsule against mesh** must be run on **one pose with the same cloth vertices**, tested against
+  the capsules and against the mesh surface, so that the only difference is the surface. Comparing
+  the capsule probe over an *animation* against this instrument under a *synthetic push* mixes two
+  forcings with two quantities: the positive control above validates the push mode only, and the
+  guard does not even apply in animation mode. A disagreement measured that way could not be
+  divided into capsule over-read and mode.
