@@ -13168,3 +13168,60 @@ same shape as the fused-surface limitation and it is not fixable by tuning.
 
 Greedy is also not optimal; a pathological model could take two medium pieces where one larger one
 would have done. For a cover whose only purpose is to define a surface set, that costs nothing.
+
+---
+
+### The yoke made NO measurable difference at the shoulders — and the fault is real (2026-11-23)
+
+With the cover split in place, measurement A finally runs against a body surface rather than a
+cowl: **beyond-cutoff 332 of 5540, six percent, against 86% before**, median nearest 29.6 mm.
+
+| band | clavicle `a9b26646` | spine-cape `f7d268e0` |
+|---|---|---|
+| INSIDE | 317 | 283 |
+| >5 mm | 187 | 175 |
+| >20 mm | 117 | 119 |
+| >40 mm | **100** | **100** |
+| LeftShoulder | **79** | **81** |
+| RightShoulder | **55** | **53** |
+| (non-humanoid) | 142 | 108 |
+
+**At the shoulders the two builds differ by two vertices per side, in opposite directions.** The
+shoulders are where the yoke lives, so that is indistinguishable. The aggregate gap of 34 sits
+almost entirely in `(non-humanoid)`, a region the controls do not vouch for, and the >40 mm band is
+**identical at 100** — a shared artefact tail rather than a shared fault, with the cutoff warning
+firing three times per run and `deepest=229 mm` into a shoulder, which is physically impossible.
+
+So **317 against 283 is not reported as the clavicle build being worse.** The re-parent made no
+measurable difference to cloth-into-body at the shoulders. That is weaker than either direction of
+win and it is what the data supports. The yoke stays installed, on Jay's decision and on Power Girl
+parity; its capsule-over-read justification was withdrawn separately.
+
+**And the fault Jay reported is now measured for the first time on a real body surface: 79 and 55
+cloth vertices inside his shoulders, in BOTH builds.** It is real, and it is not what the yoke
+addressed. That is the thing to fix next, and nothing measured so far says what will fix it.
+
+#### Two things the cover changed that must be carried forward
+
+- **Batman takes torso + both boots, NOT the cowl.** His torso piece reaches y=1.601 and already
+  encloses his head bone, so the cowl adds no new bone and goes to **cloth**. His cowl can therefore
+  be reported penetrating his head, and any cowl-shaped finding on him has to be read that way.
+- **A body is routinely several shells.** Power Girl is 2 — and the fixture expecting 1 was wrong,
+  mine as much as the worker's: her piece 1 is her *head*, 12,504 triangles at closed 0.997 and
+  share 0.542 where every hair shell on her reads 0.000. Jinx is 9, the extras being hands that
+  enclose finger bones at closed 1.000 and tiny volume. All three leave only finger and thumb tips
+  uncovered, printed by name. `union >= best_single` held every run: 50≥48, 42≥25, 45≥41.
+
+#### Known reporting defect
+
+`bodyTris` prints **3486** on the COVER rows, which is the WEIGHT split's tally; the cover's actual
+body is 6438+896+896 = **8,230** triangles. Wrong label on the COVER rows only — it does not affect
+the measurement, but anyone comparing `bodyTris` across splits is comparing one split's count three
+times.
+
+#### And the capsule-versus-mesh comparison is demoted
+
+It was going to confirm the 51–56 mm figure, which is withdrawn; then it became the primary
+measurement of the collider set. It now grades an instrument being replaced. With the mesh surface
+working, the useful move is to **re-measure directly** rather than calibrate the capsule probe, so
+this is worth having and is no longer on the critical path.
