@@ -12757,3 +12757,35 @@ yoke correctly resting on the collarbone. A fat capsule swallows a yoke; a surfa
 
 `YargClothPenetration.cs` and `cape_weight_anchor.py` are committed as the record of what was
 tried. The first does not measure what it claims to.
+
+### The collision capsules stand proud of the skin, and the clavicle ones by 51-56 mm (2026-11-22)
+
+The hypothesis under the sign-flip instrument was that `fml_un_L_clav` reads 21.7% of all
+cape-into-body contact because the capsule is fatter than the collarbone, so a yoke resting
+CORRECTLY on the shoulder is counted as penetration. Measured rather than assumed, and it holds:
+
+    fml_un_L_clav   radius 94.4 mm, nearest skin at 38.7 mm  ->  stands 55.7 mm proud
+    fml_un_R_clav   radius 94.7 mm, nearest skin at 43.9 mm  ->  stands 50.8 mm proud
+
+The sphere extends more than twice as far as the skin it stands for, so **anything within a
+~5 cm shell around that joint is counted as penetration without touching the body at all.** It
+is not peculiar to the shoulder either — heel 67 mm, loarm 29 mm, upleg 15 mm, uparm 10 mm. The
+whole collider set over-claims, which is a systematic over-read across every cape measurement
+this project has taken.
+
+**THE FIRST VERSION OF THIS MEASUREMENT SAID THE OPPOSITE** -- `L_clav` -41.5 mm and `R_clav`
+-110.6 mm, i.e. capsules that do not even reach the skin, which would have refuted the
+hypothesis and pulled the justification out from under the new instrument. It was wrong because
+"where the skin is" was the mean of the nearest DECILE of body vertices, and a decile over a
+dense mesh region reaches further than one over a sparse one. Taking the nearest five instead
+moved `L_clav` from -41.5 mm to +55.7 mm.
+
+**A SYMMETRY CONTROL IS WHAT CAUGHT IT**, and nothing else would have: the body is symmetric, so
+paired left/right capsules must agree, and -41.5 against -110.6 is 69 mm apart on two sides of
+one collarbone. After the fix, 18 of 20 pairs agree within 15 mm and the clavicles sit 4.9 mm
+apart. The control did not tell me the number was wrong by a little; it told me the SIGN was not
+to be trusted, on a question where the sign was the whole answer.
+
+`capsule_overclaim.py`. Body vertices are selected through the Avatar's humanoid map, and a
+capsule with fewer than 20 body vertices near it is reported as SKIPPED rather than as a
+confident zero.
