@@ -13225,3 +13225,35 @@ It was going to confirm the 51–56 mm figure, which is withdrawn; then it becam
 measurement of the collider set. It now grades an instrument being replaced. With the mesh surface
 working, the useful move is to **re-measure directly** rather than calibrate the capsule probe, so
 this is worth having and is no longer on the critical path.
+
+---
+
+### Where the cloth-inside-body work stopped, and the three characters that must not be swept (2026-11-23)
+
+The durable record of what is **not** in the measurement files is
+`measurements/cloth-inside-body-HANDOFF.md` — the five identity rules tried and discarded (four of
+the five returned hair), the approaches that looked right and were not, and ten open edges ranked by
+how likely each is to mislead someone. Read that before extending any of this.
+
+The two entries most likely to bite:
+
+- **Push mode is validated. Animation mode is not.** The K-2SO control validates *synthetic
+  displacement only*, and the subject-moved guard does not even apply without a push. This project
+  has already measured those as different forcings — **0 of 120 matching frames** between sampling a
+  clip directly and letting the Animator retarget it. An animation-mode reading needs its own
+  control, and a future run will be tempted to skip it because "the instrument is validated".
+- **Three characters' geometry does not weld.** `DoomSlayer` reports **87,527** connected
+  components, `Sayuri` **47,995**, `AlcinaDimitrescu` **24,062**, on meshes of ordinary size.
+  Welding at 1e-5 m is failing to connect their geometry, so almost every triangle is its own
+  component and **the cover cannot work on them at all.** This was visible in the first census and
+  never followed up. **Do not sweep those three before someone understands why**, and treat any
+  per-piece result on them as meaningless rather than small.
+
+`bodyTris` reported the WEIGHT split's tally on COVER rows and now reports each split's own: 8230 on
+COVER, exactly 6438+896+896. **Verified by a run, not off the edit** — `INSIDE` is unchanged at 317
+and 283, which is what shows the change touched the label and not the measurement.
+
+And one methodological note worth keeping: the cover uses a 32-piece window with a coverage guard
+that warns if a piece outside the window carries more than 1% of the largest volume. **It has never
+fired, and that is not evidence the window is right** — a guard with no case that makes it fire is
+indistinguishable from a guard that cannot.
