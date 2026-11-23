@@ -246,7 +246,11 @@ public static class YargClothInside
         // column cannot say which piece a verdict is about.
         public readonly List<int> Mat = new List<int>();
 
-        public void AddTriangle(Vector3 a, Vector3 b, Vector3 c, int region, int humanVote, int mat)
+        /// The bone that drives this triangle, by name-table id. See VertDomBone.
+        public readonly List<int> Bone = new List<int>();
+
+        public void AddTriangle(Vector3 a, Vector3 b, Vector3 c, int region, int humanVote, int mat,
+                                int bone = -1)
         {
             int ia = Add(a), ib = Add(b), ic = Add(c);
             if (ia == ib || ib == ic || ia == ic) return;   // degenerate after welding
@@ -254,6 +258,7 @@ public static class YargClothInside
             Region.Add(region);
             HumanVote.Add(humanVote);
             Mat.Add(mat);
+            Bone.Add(bone);
             // Area-weighted: the cross product's LENGTH is twice the area, so accumulating the
             // un-normalised cross product weights each face by its own area without a second
             // pass. Large faces should dominate a vertex normal; a fan of slivers should not.
@@ -284,7 +289,7 @@ public static class YargClothInside
             {
                 if (!keep(t)) continue;
                 s.AddTriangle(V[T[t * 3]], V[T[t * 3 + 1]], V[T[t * 3 + 2]],
-                              Region[t], HumanVote[t], Mat[t]);
+                              Region[t], HumanVote[t], Mat[t], Bone[t]);
             }
             s.Finish();
             return s;
@@ -608,6 +613,108 @@ public static class YargClothInside
         return res;
     }
 
+    /// WHICH BONE DRIVES EACH VERTEX, by name, humanoid or not.
+    ///
+    /// This replaces locating a piece by the humanoid bone nearest its centroid, which failed on
+    /// Jinx: her braids run from her head to her ankles, so each 12,000-triangle braid reported as
+    /// being over LeftUpperLeg, and the roster ranking built on that counted hair as garment. The
+    /// bone that DRIVES a piece is the author's own declaration and does not care how far the
+    /// piece hangs -- a braid is weighted to hair bones under Head at any length, a legging to the
+    /// leg. Distance is a guess about a piece; weight is a statement about it.
+    ///
+    /// The earlier caution stands and does not bite here: a weight test measures what DRIVES a
+    /// triangle rather than what it IS, and what drives it is exactly the question being asked.
+    private static int[] VertDomBone(SkinnedMeshRenderer smr, List<string> names,
+                                     Dictionary<string, int> index)
+    {
+        var mesh = smr.sharedMesh;
+        var res = new int[mesh.vertexCount];
+        for (int i = 0; i < res.Length; i++) res[i] = -1;
+        var bones = smr.bones;
+        if (bones == null || bones.Length == 0) return res;
+        var ids = new int[bones.Length];
+        for (int i = 0; i < bones.Length; i++)
+        {
+            if (bones[i] == null) { ids[i] = -1; continue; }
+            var nm = bones[i].name;
+            if (!index.TryGetValue(nm, out var id))
+            {
+                id = names.Count; index[nm] = id; names.Add(nm);
+            }
+            ids[i] = id;
+        }
+        var per = mesh.GetBonesPerVertex();
+        var w = mesh.GetAllBoneWeights();
+        try
+        {
+            int c = 0;
+            for (int v = 0; v < mesh.vertexCount && v < per.Length; v++)
+            {
+                int cnt = per[v];
+                float best = -1f; int bb = -1;
+                for (int k = 0; k < cnt; k++)
+                {
+                    var bw = w[c + k];
+                    if (bw.weight > best) { best = bw.weight; bb = bw.boneIndex; }
+                }
+                c += cnt;
+                if (bb >= 0 && bb < ids.Length) res[v] = ids[bb];
+            }
+        }
+        finally
+        {
+            if (per.IsCreated) per.Dispose();
+            if (w.IsCreated) w.Dispose();
+        }
+        return res;
+    }
+
+    /// True for each vertex dominantly weighted to one of `targets` OR to any bone beneath one of
+    /// them in the transform hierarchy. Descendants are included because pushing a lower leg also
+    /// carries the foot, and skin near the ankle is weighted to the foot.
+    private static bool[] VertDrivenBy(SkinnedMeshRenderer smr, HashSet<Transform> targets)
+    {
+        var mesh = smr.sharedMesh;
+        var res = new bool[mesh.vertexCount];
+        var bones = smr.bones;
+        if (bones == null || bones.Length == 0 || targets.Count == 0) return res;
+        var hit = new bool[bones.Length];
+        for (int i = 0; i < bones.Length; i++)
+        {
+            var t = bones[i];
+            int guard = 0;
+            while (t != null && guard++ < 200)
+            {
+                if (targets.Contains(t)) { hit[i] = true; break; }
+                t = t.parent;
+            }
+        }
+        var per = mesh.GetBonesPerVertex();
+        var w = mesh.GetAllBoneWeights();
+        try
+        {
+            int c = 0;
+            for (int v = 0; v < mesh.vertexCount && v < per.Length; v++)
+            {
+                int cnt = per[v];
+                float best = -1f; int bb = -1;
+                for (int k = 0; k < cnt; k++)
+                {
+                    var bw = w[c + k];
+                    if (bw.weight > best) { best = bw.weight; bb = bw.boneIndex; }
+                }
+                c += cnt;
+                if (bb >= 0 && bb < hit.Length) res[v] = hit[bb];
+            }
+        }
+        finally
+        {
+            if (per.IsCreated) per.Dispose();
+            if (w.IsCreated) w.Dispose();
+        }
+        return res;
+    }
+
     /// Region -1 is real under the component split and is not an error: a body-labelled piece
     /// keeps all of its triangles, and some of those have no humanoid vertex to name them.
     private static string RegionLabel(List<string> names, int r)
@@ -768,6 +875,71 @@ public static class YargClothInside
                     {
                         if (f > 0 && anim != null) anim.Update(step);
 
+                        foreach (var kv in human)
+                        {
+                            var pos = kv.Key.position;
+                            if (!boneStart.ContainsKey(kv.Key)) boneStart[kv.Key] = pos;
+                            float tv = (pos - boneStart[kv.Key]).magnitude;
+                            boneTravel.TryGetValue(kv.Key, out var ov);
+                            if (tv > ov) boneTravel[kv.Key] = tv;
+                        }
+
+                        // ================================================================
+                        // THE SUBJECT-MOVED GUARD
+                        // ================================================================
+                        //
+                        // A displacement control that silently fails to displace anything
+                        // produces a flat table, and a flat table is indistinguishable from a
+                        // clean character. Three runs were lost to that tonight. So the harness
+                        // asserts its own forcing rather than assuming it:
+                        //
+                        //   pushed_verts    skin vertices driven by the pushed bone or its
+                        //                   descendants -- 0 means the bone drives no geometry
+                        //   pushed_travel   how far they actually moved, which must be about the
+                        //                   push distance. A rigid translation that keeps growing
+                        //                   cannot produce an effect that SATURATES, and Jinx's
+                        //                   did (42.24 -> 40.57 -> 40.19 -> 40.15 -> 40.11 ->
+                        //                   40.07 mm), which was the tell that the forcing never
+                        //                   reached the measured quantity
+                        //   pushed_on_body  how many of them lie ON the body surface being
+                        //                   queried. This is the one that catches Jinx: her leg
+                        //                   vertices exist and moved, and NONE of them was in the
+                        //                   body surface, because her legs were labelled cloth.
+                        //                   The body moved past the cloth rather than through it
+                        //
+                        // Requires baking twice: once before the push as a reference, once after.
+                        // That is the cost of a run being able to state that it measured anything.
+                        //
+                        // ORDER IS LOAD-BEARING AND WAS WRONG ONCE. The reference bake must happen
+                        // BEFORE the displacement is applied; with the push block above it, both
+                        // bakes were post-push, travel read 0.000mm on every character, and the
+                        // guard refused the case it was built to pass. The push is applied just
+                        // below this loop for that reason -- do not move it back up.
+                        var refWorld = new Dictionary<SkinnedMeshRenderer, Vector3[]>();
+                        var pushTargets = new HashSet<Transform>();
+                        if (Math.Abs(pushArm) > 1e-6f && anim != null && anim.isHuman)
+                        {
+                            foreach (var bn in pushBones)
+                            {
+                                HumanBodyBones hb2;
+                                if (!Enum.TryParse(bn.Trim(), true, out hb2)) continue;
+                                var bt = anim.GetBoneTransform(hb2);
+                                if (bt != null) pushTargets.Add(bt);
+                            }
+                            foreach (var smr0 in ch.GetComponentsInChildren<SkinnedMeshRenderer>())
+                            {
+                                if (!smr0.enabled || smr0.sharedMesh == null) continue;
+                                var b0 = new Mesh();
+                                smr0.BakeMesh(b0, true);
+                                var m0 = Matrix4x4.TRS(smr0.transform.position,
+                                                       smr0.transform.rotation, Vector3.one);
+                                var v0 = b0.vertices;
+                                var w0 = new Vector3[v0.Length];
+                                for (int i = 0; i < v0.Length; i++) w0[i] = m0.MultiplyPoint3x4(v0[i]);
+                                refWorld[smr0] = w0;
+                            }
+                        }
+
                         // After Update, before baking: the Animator rewrites bone transforms every
                         // frame, so the displacement has to be re-applied each frame or it
                         // silently only affects frame 0. That mistake was made and caught once
@@ -815,16 +987,35 @@ public static class YargClothInside
                             }
                         }
 
-                        foreach (var kv in human)
-                        {
-                            var pos = kv.Key.position;
-                            if (!boneStart.ContainsKey(kv.Key)) boneStart[kv.Key] = pos;
-                            float tv = (pos - boneStart[kv.Key]).magnitude;
-                            boneTravel.TryGetValue(kv.Key, out var ov);
-                            if (tv > ov) boneTravel[kv.Key] = tv;
-                        }
+
+                        // Every bone AT OR BENEATH a pushed bone, by name, so a triangle can
+                        // be asked whether the body being displaced is what drives it.
+                        var pushedBoneNames = new HashSet<string>();
+                        foreach (var pt in pushTargets)
+                            foreach (var tr in pt.GetComponentsInChildren<Transform>())
+                                pushedBoneNames.Add(tr.name);
 
                         var surf = new Surface();
+                        var pushedWorld = new List<Vector3>();
+                        var pushedTravel = new List<float>();
+                        // THE FIFTH NUMBER, and on this evidence the only one that decides whether
+                        // a bone can host the control at all.
+                        //
+                        // cloth_over_push came back NON-ZERO on both subjects -- Jinx 10,838,
+                        // Power Girl 2,234 under the weight split -- while both tables stayed
+                        // flat. So "there is cloth over the limb" is not the condition either.
+                        // The cloth over a limb is usually SKINNED TO THAT LIMB, so it travels
+                        // with the push and nothing ever changes side. A fault needs the body to
+                        // move and the garment to STAY, which is exactly what spring-driven cloth
+                        // does in the game and what rigidly-skinned cloth never does.
+                        //
+                        // So: vertices NOT driven by the pushed bone, which stayed put while the
+                        // bone moved its full distance, and which sit near that bone. That is the
+                        // population a displacement control can actually cross. Zero means this
+                        // bone cannot host the control on this character, whatever else is true.
+                        int staticNearPush = 0, movingNearPush = 0;
+                        var boneNames = new List<string>();
+                        var boneIndex = new Dictionary<string, int>();
                         bodyTris = clothTris = 0;
                         // WHICH RENDERERS THE TWO HALVES COME FROM, because that decides whether
                         // the local-to-world convention below can hurt the answer at all. Body and
@@ -850,6 +1041,7 @@ public static class YargClothInside
                                                         smr.transform.rotation, Vector3.one);
                             var bv = baked.vertices;
                             var reg = VertRegion(smr, human);
+                            var dom = VertDomBone(smr, boneNames, boneIndex);
                             var world = new Vector3[bv.Length];
                             for (int i = 0; i < bv.Length; i++) world[i] = toWorld.MultiplyPoint3x4(bv[i]);
 
@@ -884,9 +1076,41 @@ public static class YargClothInside
                                     // have either.
                                     int rg = reg[i0] >= 0 ? reg[i0]
                                            : (reg[i1] >= 0 ? reg[i1] : reg[i2]);
-                                    surf.AddTriangle(world[i0], world[i1], world[i2], rg, vote, matId);
+                                    surf.AddTriangle(world[i0], world[i1], world[i2], rg, vote,
+                                                     matId, dom[i0]);
                                 }
                             }
+                            // The guard's measurement, per renderer.
+                            if (refWorld.Count > 0 && refWorld.TryGetValue(smr, out var w0))
+                            {
+                                var driven = VertDrivenBy(smr, pushTargets);
+                                for (int i = 0; i < world.Length && i < w0.Length
+                                                && i < driven.Length; i++)
+                                {
+                                    float tv = (world[i] - w0[i]).magnitude;
+                                    if (driven[i])
+                                    {
+                                        pushedWorld.Add(world[i]);
+                                        pushedTravel.Add(tv);
+                                        continue;
+                                    }
+                                    // Not driven by the pushed bone. Is it NEAR it, and did it
+                                    // stay put? 250 mm of the joint is generous on purpose -- this
+                                    // is a census of what a control could cross, not a verdict,
+                                    // and both the static and the moving counts are printed so the
+                                    // reader sees the split rather than a filtered half of it.
+                                    float nd = float.MaxValue;
+                                    foreach (var pt in pushTargets)
+                                    {
+                                        float dd = (pt.position - world[i]).magnitude;
+                                        if (dd < nd) nd = dd;
+                                    }
+                                    if (nd > 0.25f) continue;
+                                    if (tv < 0.25f * Math.Abs(pushArm)) staticNearPush++;
+                                    else movingNearPush++;
+                                }
+                            }
+
                             var tp = smr.transform.position;
                             smrLog.Append("\n          ").Append(smr.name)
                                   .Append("  body=").Append(bodyTris - bBefore)
@@ -1054,23 +1278,34 @@ public static class YargClothInside
                                 }
                                 if (pn == 0) continue;
                                 pc /= pn;
-                                string nb = "?"; float nd = float.MaxValue;
-                                foreach (var hk in human)
+                                // THE DRIVING BONE, by majority over the piece's triangles. The
+                                // centroid-proximity version of this line is what ranked Jinx's
+                                // braids as garment over her legs; a braid is driven by hair bones
+                                // however far it hangs. Reported as the author's bone NAME so a
+                                // reader can see "hair" or "skirt" and is not taking my word for
+                                // a category.
+                                var bh = new Dictionary<int, int>();
+                                for (int t = 0; t < surf.TriCount; t++)
                                 {
-                                    float dd = (hk.Key.position - pc).magnitude;
-                                    if (dd < nd) { nd = dd; nb = regionName[hk.Value]; }
+                                    if (surf.Comp[t] != kv.Key) continue;
+                                    if (surf.Bone[t] < 0) continue;
+                                    bh.TryGetValue(surf.Bone[t], out var bc);
+                                    bh[surf.Bone[t]] = bc + 1;
                                 }
-                                // "Over a limb" means over anything that is not the head or a
-                                // fixed trunk bone -- the places a garment can be left behind by
-                                // a moving body. Reported as the bone name too, so the reader is
-                                // not taking my word for the category.
-                                if (nb != "Head" && nb != "Neck" && nb != "Hips") sepOverLimb++;
+                                string nb = "?";
+                                int bbest = -1;
+                                foreach (var b in bh) if (b.Value > bbest) { bbest = b.Value; nb = boneNames[b.Key]; }
                                 overBones.Add(nb);
                             }
                             var obs = new List<string>(overBones); obs.Sort();
+                            // NO over_non_head COLUMN. The previous one counted any hair
+                            // hanging below the head as garment-over-limb, for all 65 characters,
+                            // and the ranking built on it was withdrawn. The driving-bone names
+                            // are printed raw instead, with no category derived from them, because
+                            // three derived categories in one evening were all wrong.
                             Debug.Log($"[INVENTORY] {name}: parts={compTri.Count} " +
                                       $"separable_pieces={sepPieces} separable_tris={sepTris} " +
-                                      $"over_non_head={sepOverLimb} bones=[{string.Join(" ", obs)}]");
+                                      $"driving_bones=[{string.Join(" ", obs)}]");
                             perFrame.Add("{\"frame\": " + f + ", \"inventory\": true" +
                                          ", \"separable_pieces\": " + sepPieces +
                                          ", \"separable_tris\": " + sepTris +
@@ -1115,10 +1350,81 @@ public static class YargClothInside
                         var surfRef = body;
                         var grid = new Grid(body, gridTarget);
 
+                        // ---- THE GUARD, asserted against THIS split's body surface -----------
+                        if (Math.Abs(pushArm) > 1e-6f)
+                        {
+                            int onBody = 0;
+                            for (int i = 0; i < pushedWorld.Count; i++)
+                            {
+                                float gd; Vector3 gq, gn; int gt2;
+                                // 1 mm: a vertex OF the body surface sits on it to within the
+                                // welding quantum, so this asks membership and not nearness.
+                                if (grid.Nearest(pushedWorld[i], 0.001f, out gd, out gq, out gn, out gt2))
+                                    onBody++;
+                            }
+                            var tcopy = new List<float>(pushedTravel);
+                            double medTravel = Median(tcopy);
+                            Debug.Log($"[INSIDE] {name} f{f} {splitLabel}: GUARD pushed_verts=" +
+                                      $"{pushedWorld.Count} pushed_travel={F3(medTravel * 1000)}mm " +
+                                      $"(asked {F3(pushArm * 1000)}mm) pushed_on_body={onBody}");
+                            Debug.Log($"[INSIDE] {name} f{f} {splitLabel}: GUARD " +
+                                      $"static_near_push={staticNearPush} " +
+                                      $"moving_near_push={movingNearPush}");
+                            if (staticNearPush == 0)
+                                Debug.LogWarning($"[INSIDE] {name} f{f} {splitLabel}: NOTHING THIS " +
+                                                 "BONE CAN CROSS -- every vertex near the pushed " +
+                                                 "bone that it does not drive travels WITH it, so a " +
+                                                 "flat result was guaranteed before the run and is " +
+                                                 "not evidence about the instrument.");
+                            bool moved = pushedWorld.Count > 0 && medTravel > 0.5 * pushArm;
+                            if (!moved)
+                                Debug.LogError($"[INSIDE] {name} f{f} {splitLabel}: GUARD REFUSED -- " +
+                                               "the pushed bone drives no geometry, or it did not " +
+                                               "move. This run measured NOTHING and its table must " +
+                                               "not be read as a null.");
+                            else if (onBody == 0)
+                                Debug.LogError($"[INSIDE] {name} f{f} {splitLabel}: GUARD REFUSED -- " +
+                                               $"{pushedWorld.Count} vertices driven by the pushed " +
+                                               "bone moved correctly and NONE of them is on the body " +
+                                               "surface, so the body moved PAST the cloth rather " +
+                                               "than through it. Flat is expected here and is not a " +
+                                               "null. This is the Jinx failure.");
+                            if (!moved || onBody == 0)
+                            {
+                                perFrame.Add("{\"frame\": " + f + ", \"split\": \"" + splitLabel +
+                                             "\", \"measurable\": false, \"guard\": \"refused\"" +
+                                             ", \"pushed_verts\": " + pushedWorld.Count +
+                                             ", \"pushed_on_body\": " + onBody + "}");
+                                continue;
+                            }
+                        }
+
                         // ---- the measurement ------------------------------------------------
                         var dists = new List<float>(clothVerts);   // nearest distance, every vertex
                         var depths = new List<float>();            // depth of the inside ones
                         int noBody = 0, inside = 0, flatNormal = 0;
+                        // THE FOURTH ASSERTION, and the one that was missing.
+                        //
+                        // The guard establishes that the forcing LANDED: the pushed bone drives
+                        // geometry, that geometry moved the full distance, and it is part of the
+                        // body surface being queried. All three hold on Jinx -- 40.000mm of
+                        // 40.000mm asked, 8,164 vertices on the body surface -- and her count
+                        // still does not move. So the three are NECESSARY AND NOT SUFFICIENT.
+                        // (They also corrected me: I read her flat as her legs being absent from
+                        // the body surface, and the guard's own numbers say they are in it.)
+                        //
+                        // What they do not establish is that there was ANYTHING TO CROSS.
+                        // Displacing a shin through a body surface carrying no garment moves a
+                        // great deal of geometry and crosses nothing. That is a true negative and
+                        // it reads exactly like a blind instrument.
+                        //
+                        // This counts cloth vertices whose nearest body triangle is driven by the
+                        // pushed bone: how much cloth sits over the thing being pushed. It needs
+                        // no garment-versus-hair discrimination, which is why it is preferable to
+                        // the angular measure I was about to build -- a braid hanging beside a leg
+                        // is not OVER the leg here, because its nearest body triangle is whatever
+                        // it actually rests against. Zero means flat was guaranteed in advance.
+                        int clothOverPush = 0, insideOverPush = 0;
                         // The same count restricted to vertices whose nearest body triangle lies
                         // in a component with NO boundary edge -- the only vertices on which the
                         // sign means what the docstring says it means.
@@ -1151,6 +1457,10 @@ public static class YargClothInside
                                 continue;
                             }
                             dists.Add(d);
+                            bool overPush = pushedBoneNames.Count > 0 && surfRef.Bone[tri] >= 0
+                                            && surfRef.Bone[tri] < boneNames.Count
+                                            && pushedBoneNames.Contains(boneNames[surfRef.Bone[tri]]);
+                            if (overPush) clothOverPush++;
                             int ncomp = surfRef.Comp[tri];
                             nearByComp.TryGetValue(ncomp, out var nbc); nearByComp[ncomp] = nbc + 1;
                             bool onClosed = surfRef.IsClosed(ncomp);
@@ -1167,6 +1477,7 @@ public static class YargClothInside
                             float signed = Vector3.Dot(cloth[i] - q, nrm);
                             if (signed >= 0f) continue;
                             inside++;
+                            if (overPush) insideOverPush++;
                             // Depth is the true distance to the surface, not the projection of it.
                             // Where the nearest point is an edge or a vertex the projection is
                             // shorter than the distance, and reporting the shorter one would make
@@ -1218,6 +1529,19 @@ public static class YargClothInside
                                   $"clothVerts={clothVerts} INSIDE={inside} " +
                                   $"frac={F6(clothVerts > 0 ? (double) inside / clothVerts : 0)} " +
                                   $"medDepth={F3(medDepth * 1000)}mm deepest={F3(deepest * 1000)}mm");
+                        if (pushedBoneNames.Count > 0)
+                        {
+                            // With the results rather than with the guard, because it decides what
+                            // the verdict MEANS rather than whether there is one.
+                            Debug.Log($"[INSIDE] {name} f{f} {splitLabel}: cloth_over_push=" +
+                                      $"{clothOverPush} inside_over_push={insideOverPush}");
+                            if (clothOverPush == 0)
+                                Debug.LogWarning($"[INSIDE] {name} f{f} {splitLabel}: NOTHING TO " +
+                                                 "CROSS -- no cloth vertex sits over the bone being " +
+                                                 "pushed, so a flat result was guaranteed in advance " +
+                                                 "and is not evidence about the instrument. Pick a " +
+                                                 "different bone or a different character.");
+                        }
                         Debug.Log($"[INSIDE] {name} f{f} {splitLabel}: ON CLOSED PARTS ONLY  near={nearClosed} " +
                                   $"inside={insideClosed} " +
                                   $"frac={F6(nearClosed > 0 ? (double) insideClosed / nearClosed : 0)} " +

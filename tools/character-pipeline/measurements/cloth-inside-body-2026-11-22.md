@@ -247,3 +247,80 @@ point-to-segment machinery. Not built, not measured.
 * **The `over_non_head` ranking is withdrawn.** The three survey counts that survive are 27 of 65
   with no separable piece, 65 of 65 coverage, and the per-character piece inventories themselves.
 * Batman was not run, and should not be until a positive control passes somewhere.
+
+---
+
+# Part three: the guard, and the condition a displacement control actually requires
+
+The angular garment-versus-hair discriminator was **declined** rather than built: every piece
+confirmed so far is hair, so it could have been shown to reject hair and never shown to accept a
+sleeve, which is the standing of the three heuristics it would have replaced. What replaced it
+needs no identity at all.
+
+## The guard caught its own ordering bug on its first run
+
+Built as: bake the character twice, before and after the displacement, and assert the forcing
+landed. Its first run refused **both** cases, including the one built to pass, reporting
+`pushed_travel=0.000mm` everywhere — because the reference bake sat *after* the push was applied,
+so both bakes were post-push and identical. A guard tested only against the case it should refuse
+would have looked perfect. Reordered, it reads `pushed_travel=40.000mm (asked 40.000mm)` on both
+characters.
+
+## It then refused neither — and that is the result
+
+| | pushed_verts | travel | pushed_on_body | static_near_push | moving_near_push | cloth_over_push | inside_over_push |
+|---|---|---|---|---|---|---|---|
+| Jinx, lower legs | 25,651 | 40.000 mm | 8,164 | 160 | 84 | 10,838 | 237 |
+| Power Girl, upper arms (WEIGHT) | 5,217 | 40.000 mm | 3,092 | 10,907 | 159 | 2,234 | 746 |
+| Power Girl, upper arms (COMPONENT) | 5,217 | 40.000 mm | 5,217 | 10,907 | 159 | 104 | 0 |
+
+**Two corrections to earlier parts of this document, both forced by these numbers.**
+
+1. I wrote that Jinx's legs were **not in the body surface at all**, inferring it from
+   `bodyTris=30297` against `clothTris=175496`. Wrong: 8,164 of her lower-leg vertices are on the
+   component body surface and all of them moved the full 40 mm.
+2. I then wrote that the condition was **nothing to cross**. Also wrong:
+   `cloth_over_push=10,838` on Jinx. There is a great deal of cloth over her legs.
+
+## The condition is cloth that STAYS while the body moves
+
+Jinx's 10,838 cloth vertices over her legs are **skinned to those legs**, so they travel with the
+push and nothing ever changes side: `static_near_push=160` against `moving_near_push=84` is all the
+crossable population she has there, out of 89,743 cloth vertices. A rigidly-skinned garment cannot
+be penetrated by displacing the bone that drives it, at any magnitude. That is why 0 mm and 220 mm
+both read 4,833.
+
+Power Girl is the opposite shape and still cannot host it. She has **10,907 static vertices near
+her upper arm** — her cape, which is spring-driven and does not follow the arm — and only **104**
+whose *nearest body triangle* is the arm. The cape hangs **beside** the arm, resting against her
+torso. A radial outward push moves the deltoid *away* from where the cape actually is, so no
+magnitude and no character property would make that control fire; the push direction is wrong for
+the geometry, and the two counts together are what say so.
+
+So a bone can host this control only where there is cloth that
+
+* is **not driven** by that bone (it stays put — `static_near_push`), **and**
+* **rests against** that bone (`cloth_over_push`, nearest-body attribution, not proximity).
+
+Both are now measured, neither needs to know what a piece is, and hair is excluded for free: a
+braid hanging beside a leg has its nearest body triangle wherever it actually rests.
+
+## What that makes the next measurement
+
+Not a choice between characters, which is what I have been guessing at all evening. A census, per
+character and **per bone**, of static cloth whose nearest body triangle that bone drives —
+maximised over bones. That picks the control subject from the data rather than from my suspicion
+about boots, and it is the same two numbers above computed for every bone instead of one.
+Not built.
+
+## STATE
+
+* `YargClothInside.cs`: compiles clean, 15 of 15 Unity runs clean. Carries the two splits, the
+  piece inventory, piece location by driving bone, `-pushBones` / `-pushAxis`, `-inventory`, and
+  the five-number guard.
+* **Still no passing positive control, and now a measured reason rather than a suspicion.** The two
+  subjects fail for opposite reasons: Jinx's leg cloth moves with the leg, Power Girl's arm-adjacent
+  cloth rests on her torso rather than her arm.
+* Batman not run.
+* The `over_non_head` ranking remains withdrawn. The inventory now prints raw driving-bone names
+  with no category derived from them, because three derived categories in one evening were wrong.
