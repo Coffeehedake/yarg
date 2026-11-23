@@ -173,14 +173,17 @@ for obj in [o for o in bpy.data.objects if o.type == "MESH"]:
         rows.append(r)
 
 print("")
-print("PIECE                        faces      area m2   vol(centroid)      vol(origin)   solidity  flat  closed  z range")
+print("PIECE         faces      area m2   vol(centroid)      vol(origin)   solidity  flat  closed  z range        material")
 for r in sorted(rows, key=lambda r: r["solidity"]):
     mark = ""
     if WANT_MAT and r["mat"] == WANT_MAT:
         mark = "  <-- asked for"
-    print("%-12s %-14s %5d  %11.8f %+15.10f %+15.10f  %8.5f %5.3f %5.1f%%  %.3f..%.3f%s"
-          % (r["obj"][:12], r["mat"][:14], r["faces"], r["area"], r["vol"], r["vol_origin"],
-             r["solidity"], r["flat"], 100 * r["closed"], r["zlo"], r["zhi"], mark))
+    # FULL material name, never truncated. Three of Scott Hall's materials share the first
+    # fourteen characters -- Mouth, Teeth and Tongue all begin "Scott_Hall_OGs" -- so a
+    # truncated column cannot say which piece a verdict is about.
+    print("%-12s %5d  %11.8f %+15.10f %+15.10f  %8.5f %5.3f %5.1f%%  %.3f..%.3f  %s%s"
+          % (r["obj"][:12], r["faces"], r["area"], r["vol"], r["vol_origin"],
+             r["solidity"], r["flat"], 100 * r["closed"], r["zlo"], r["zhi"], r["mat"], mark))
 
 if rows:
     ctrl = max(rows, key=lambda r: r["faces"])
