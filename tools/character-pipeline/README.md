@@ -12686,3 +12686,25 @@ thin-metric trap this project has already paid for twice.
 call from the render, not mine from a number.** `f7d268e0` is backed up and restoring it is one
 command. Nothing about this change is hard to undo, which is the only reason it is installed
 while still unproven.
+
+**KEPT.** Jay's call, 2026-11-22, having looked at the render sheet: the clavicle-anchored yoke
+stays. So `a9b26646` is the installed Batman and `f7d268e0` is the rollback. The change remains
+structurally justified and visually unproven, and that is recorded rather than resolved — the
+instrument that could resolve it does not exist yet, which is the real open item below.
+
+### The gap this leaves: we cannot measure the fault Jay can see
+
+Every cape instrument built this week measures GARMENT VERTICES INSIDE BODY CAPSULES. That is
+the right quantity for a cape being flung through an arm, and it is the wrong one for a yoke
+resting on a shoulder, which is inside the shoulder capsule by design and should be. The fault
+reported — body geometry drawing in FRONT of cloth that should cover it — is a rendering
+relationship, not a distance, and nothing here measures it.
+
+Consequences already paid: an "arm clipping" total of which 21.7% was the cape correctly lying
+on the clavicle; a soft-top arm that improved the proxy by damping the cape; and a re-parent
+whose effect cannot be graded either way. Three changes, one unmeasurable goal.
+
+What would actually answer it is a per-pixel comparison from the game's own camera: render the
+character, render it with the cape hidden, and count pixels where BODY shows through in the
+first but the cape covers that pixel in a cape-only pass. That is an occlusion question and it
+has a yes/no answer per pixel, which "how deep is this vertex inside a capsule" never did.
