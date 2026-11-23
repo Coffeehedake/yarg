@@ -1,5 +1,15 @@
 # Handoff: what is NOT in the cloth-inside-body files
 
+> **CORRECTED 2026-11-23, read this first.** The section below titled "THE FINDING THAT MATTERS
+> MOST" is **withdrawn**. Those 79 and 55 vertices were attributed per vertex and **108 of the 134
+> are his cowl and neck in the body mesh**, not cape: `fml_un_C_head` at a 198 mm median,
+> `fml_un_C_neck_a`/`_b` at 57 to 90 mm. Only 19 left and 7 right are cape, at 0.1 to 11.4 mm, and
+> the cape's whole penetration anywhere on him is 71 vertices at a 3.3 mm median -- no worse than
+> Power Girl's. **Open edge 2 (the 229 mm tail) is now diagnosed** and is the same cowl geometry.
+> **Open edge 4 predicted all of it and did not fire, because the finding was labelled
+> `LeftShoulder` and the caveat was filed under `Head`.** Part eight of
+> `cloth-inside-body-2026-11-22.md` has the numbers.
+
 Written 2026-11-23 at the end of the session that built `YargClothInside.cs`. The *results* are in
 `cloth-inside-body-2026-11-22.md` and in the commits. **This file is the part that dies with the
 context:** what was ruled out and why, what looked right and was not, and where the instrument's

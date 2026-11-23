@@ -707,3 +707,99 @@ do not read these two numbers as graded by anything yet.
 discarded, the approaches that looked right and were not, and the instrument's ten open edges —
 including that **push mode is validated and animation mode is not**, and that three characters
 (DoomSlayer, Sayuri, AlcinaDimitrescu) have pathological component counts that were never diagnosed.
+
+
+---
+
+# Part eight: the 134 is attributed, and the headline is WITHDRAWN
+
+Date: 2026-11-23. Same instrument, same installed bundle (`a9b26646`), one frame and four frames,
+plus Power Girl in the same editor session. `YargClothInside.cs` gained a per-vertex attribution.
+
+## What was wrong with the headline
+
+Part seven reported **79 and 55 cloth vertices inside Batman's left and right shoulders** as the
+fault Jay reported, localised and counted. "Inside LeftShoulder" names **where a vertex LANDED** --
+the region is the humanoid bone of its nearest *body* triangle. It does not name **what put it
+there**. The two are different quantities and only the second one can be fixed.
+
+So the instrument now carries the dominant bone and source mesh of every welded vertex, and
+attributes the inside set with no filter of any kind. **Conservation is the control:** attributed
+317 of inside 317, `no_bone=0`, on every run. An attribution that drops vertices prints the same
+clean shoulder as a character that has none.
+
+## The 134, named
+
+| region | driving bone | n | median depth | max | mesh |
+|---|---|---|---|---|---|
+| LeftShoulder | `fml_un_C_neck_b` | 28 | 88.7 mm | 127.3 mm | Object_400 |
+| LeftShoulder | `fml_un_C_head` | 20 | **198.2 mm** | 225.1 mm | Object_400 |
+| LeftShoulder | `fml_un_C_neck_a` | 12 | 79.0 mm | 92.2 mm | Object_400 |
+| LeftShoulder | `fml_un_L_cape_a_a` | 6 | 6.4 mm | 11.7 mm | Object_7 |
+| LeftShoulder | `fml_un_L_capeTrap` | 6 | 5.1 mm | 18.6 mm | Object_7 |
+| LeftShoulder | `fml_un_C_cape_a` | 6 | 4.0 mm | 6.0 mm | Object_7 |
+| LeftShoulder | `fml_un_C_cape_b` | 1 | 1.6 mm | 1.6 mm | Object_7 |
+| RightShoulder | `fml_un_C_neck_b` | 21 | 89.6 mm | 129.9 mm | Object_400 |
+| RightShoulder | `fml_un_C_neck_a` | 14 | 56.9 mm | 96.4 mm | Object_400 |
+| RightShoulder | `fml_un_C_head` | 13 | 177.6 mm | 229.0 mm | Object_400 |
+| RightShoulder | `fml_un_R_capeTrap` | 4 | 11.4 mm | 18.8 mm | Object_7 |
+| RightShoulder | `fml_un_C_cape_a` | 2 | 3.2 mm | 3.2 mm | Object_7 |
+| RightShoulder | `fml_un_R_cape_a_a` | 1 | 0.1 mm | 0.1 mm | Object_7 |
+
+**108 of the 134 are his COWL AND NECK, in the body mesh.** 19 of the left 79 and 7 of the right 55
+are cape, at medians of 0.1 to 11.4 mm.
+
+The two meshes, measured rather than named -- `Object_400` carries body, cowl, belt and blades,
+`Object_7` is the cape:
+
+    Object_400  n=246  median  17.434mm  max 229.028mm
+    Object_7    n= 71  median   3.339mm  max  26.228mm     <- THE CAPE, all of it, whole character
+
+## The 229 mm deep tail is diagnosed
+
+Open edge 2 of the handoff recorded `deepest=229 mm` into a shoulder as physically impossible and
+never diagnosed. It is `fml_un_C_head` at a median of 177.6 to 198.2 mm: **the cowl's head
+geometry.** His torso shell reaches y=1.601 and already encloses the `Head` bone, so the cowl falls
+out of the cover as cloth and sits genuinely inside the body shell, while its nearest *body*
+triangle is 229 mm away at the shoulder. The depth is correct. The instrument is correct.
+
+**Open edge 4 predicted this exactly** -- "his cowl is now measured AS CLOTH, so it can be reported
+penetrating his head" -- and it still cost a headline, because the finding arrived labelled
+**LeftShoulder** and the caveat was written against **Head**. A caveat keyed to one name does not
+fire when the artefact appears under another.
+
+## Against the reference cape: Batman is not worse
+
+Power Girl in the same editor session, same instrument, same pose source. She is the character this
+project treats as correctly built and her cape is parented under her clavicles.
+
+| | Batman | Power Girl |
+|---|---|---|
+| inside, total | 317 | 1,318 |
+| `>20 mm` band | 117 | 17 |
+| `>40 mm` band | 100 | **0** |
+| LeftShoulder / RightShoulder | 79 / 55 | **1 / 1** |
+| cape mesh | 71 @ median 3.3 mm, max 26.2 mm | 541 @ 4.3 mm, max 20.1 mm and 772 @ 4.3 mm, max 35.3 mm |
+
+Read the last row first: **Batman's cape penetrates his body no more than hers does, and by median
+slightly less.** A few millimetres at the contact patch is how both capes are built, which is the
+case the instrument's own docstring warns is not a defect.
+
+**The shoulder rows are NOT comparable between them, and that is the confound.** The cover selected
+Power Girl's HEAD as a body piece (12,504 triangles) and did not select Batman's cowl, so her
+equivalent head shell is on the body side where it cannot be counted as cloth and his is on the
+cloth side where it must be. 134 against 2 is mostly a difference in what the cover chose, not in
+how the two characters are built.
+
+## What this leaves
+
+* **The headline of part seven is withdrawn as a measurement of the reported fault.** It was not
+  wrong about any number. It was wrong about what the numbers were of.
+* **This instrument, in this pose, does not distinguish Batman's cape from the reference cape.**
+  That is not the same as Jay seeing nothing -- he reported it from the podium in the game, and
+  animation mode is still unvalidated (open edge 1). It means the fault is not where this
+  measurement was pointed.
+* Shoulder counts across four frames of the idle: left 79, 69, 67, and right 55, 52 -- while the
+  idle moves bones up to 199 mm. Persistent, shallow for the cape, and not produced by the motion.
+* Everything shallow and un-dramatic is authored: `R_belt` 21 at 3.8 mm, `C_breast` 16 at 0.03 mm,
+  the blades at 17 to 20 mm. A waistband inside the skin is how a waistband is built.

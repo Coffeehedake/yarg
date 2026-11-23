@@ -13257,3 +13257,34 @@ And one methodological note worth keeping: the cover uses a 32-piece window with
 that warns if a piece outside the window carries more than 1% of the largest volume. **It has never
 fired, and that is not evidence the window is right** — a guard with no case that makes it fire is
 indistinguishable from a guard that cannot.
+
+
+### The 134 cloth vertices in Batman's shoulders are mostly his COWL (2026-11-23)
+
+`YargClothInside.cs` reported 79 and 55 cloth vertices inside his left and right shoulders, and
+that was written up as the reported cape fault, localised and counted. A per-vertex attribution
+retracts it. **A region names where a vertex LANDED** -- it is the humanoid bone of the nearest
+*body* triangle -- **and not what put it there.**
+
+**108 of the 134 are `fml_un_C_head`, `fml_un_C_neck_a` and `fml_un_C_neck_b` in the body mesh:
+his cowl and neck, at medians of 57 to 198 mm.** 19 left and 7 right are cape, at 0.1 to 11.4 mm.
+By mesh, the cape's entire penetration anywhere on him is 71 vertices at a median of 3.3 mm.
+
+This also diagnoses the `deepest=229 mm` tail that was flagged as physically impossible and never
+explained: it is the cowl's head geometry. His torso shell encloses the `Head` bone, so the cowl
+falls out of the cover as cloth and is genuinely inside the body shell, with its nearest *body*
+triangle 229 mm away at the shoulder. The depth is right.
+
+**The caveat for this was already written down and did not fire.** Open edge 4 of the handoff said
+"Batman's cowl is cloth, so it can be reported penetrating his head". The finding arrived labelled
+**LeftShoulder**, so nobody reached for a caveat filed under **Head**. A documented limitation keyed
+to one name is invisible when the artefact turns up under another.
+
+Against the reference: Power Girl reads 1/1 at the shoulders and **0** in the `>40 mm` band against
+Batman's 100 -- but the cover chose her head as a *body* piece and did not choose his cowl, so those
+rows are not comparable. The row that is comparable is the cape mesh, and there **Batman's cape is
+no worse than hers** (71 at median 3.3 mm against her 541 at 4.3 mm and 772 at 4.3 mm).
+
+The attribution's own control is conservation: every inside vertex attributed, with no filter, and
+the total printed against `inside` -- 317 of 317, `no_bone=0`. An attribution that silently drops
+vertices prints the same clean shoulder as a character with none.

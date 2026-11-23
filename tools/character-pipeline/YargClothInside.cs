@@ -244,6 +244,8 @@ public static class YargClothInside
             V.Add(p);
             N.Add(Vector3.zero);
             VMask.Add(0UL);
+            VBone.Add(-1);
+            VMat.Add(-1);
             return i;
         }
 
@@ -275,8 +277,16 @@ public static class YargClothInside
         /// The same, per welded vertex: the OR over every triangle meeting there.
         public readonly List<ulong> VMask = new List<ulong>();
 
+        /// THE DRIVING BONE AND SOURCE MATERIAL PER WELDED VERTEX, first writer wins.
+        /// `Bone` above is the FIRST CORNER's dominant bone, held per triangle -- enough to
+        /// label a neighbourhood, which is what it is for, and NOT enough to attribute a single
+        /// penetrating vertex to the thing that carried it in. A verdict that a yoke is inside a
+        /// shoulder has to name the bone that moved it, so each corner's own bone is kept here.
+        public readonly List<int> VBone = new List<int>();
+        public readonly List<int> VMat = new List<int>();
+
         public void AddTriangle(Vector3 a, Vector3 b, Vector3 c, int region, int humanVote, int mat,
-                                int bone = -1, ulong mask = 0UL)
+                                int bone = -1, ulong mask = 0UL, int boneB = -1, int boneC = -1)
         {
             int ia = Add(a), ib = Add(b), ic = Add(c);
             if (ia == ib || ib == ic || ia == ic) return;   // degenerate after welding
@@ -287,6 +297,15 @@ public static class YargClothInside
             Bone.Add(bone);
             Mask.Add(mask);
             VMask[ia] |= mask; VMask[ib] |= mask; VMask[ic] |= mask;
+            // First writer wins. A welded vertex shared by triangles from two bones is genuinely
+            // ambiguous and this does not pretend otherwise; it is the seam between two pieces
+            // and both answers are true of it.
+            if (VBone[ia] < 0) VBone[ia] = bone;
+            if (VBone[ib] < 0) VBone[ib] = boneB >= 0 ? boneB : bone;
+            if (VBone[ic] < 0) VBone[ic] = boneC >= 0 ? boneC : bone;
+            if (VMat[ia] < 0) VMat[ia] = mat;
+            if (VMat[ib] < 0) VMat[ib] = mat;
+            if (VMat[ic] < 0) VMat[ic] = mat;
             // Area-weighted: the cross product's LENGTH is twice the area, so accumulating the
             // un-normalised cross product weights each face by its own area without a second
             // pass. Large faces should dominate a vertex normal; a fan of slivers should not.
@@ -317,7 +336,8 @@ public static class YargClothInside
             {
                 if (!keep(t)) continue;
                 s.AddTriangle(V[T[t * 3]], V[T[t * 3 + 1]], V[T[t * 3 + 2]],
-                              Region[t], HumanVote[t], Mat[t], Bone[t], Mask[t]);
+                              Region[t], HumanVote[t], Mat[t], Bone[t], Mask[t],
+                              VBone[T[t * 3 + 1]], VBone[T[t * 3 + 2]]);
             }
             s.Finish();
             return s;
@@ -352,6 +372,33 @@ public static class YargClothInside
                     if (!seen.Add(vi)) continue;
                     outv.Add(V[vi]);
                     masks.Add(VMask[vi]);
+                }
+            }
+            return outv;
+        }
+
+        /// The same again, with the driving bone and source material of each vertex. Used by
+        /// the attribution report, which has to name what carried a vertex rather than what it
+        /// landed in.
+        public List<Vector3> VertsOf(Func<int, bool> keep, out List<ulong> masks,
+                                     out List<int> vbones, out List<int> vmats)
+        {
+            var seen = new HashSet<int>();
+            var outv = new List<Vector3>();
+            masks = new List<ulong>();
+            vbones = new List<int>();
+            vmats = new List<int>();
+            for (int t = 0; t < TriCount; t++)
+            {
+                if (!keep(t)) continue;
+                for (int e = 0; e < 3; e++)
+                {
+                    int vi = T[t * 3 + e];
+                    if (!seen.Add(vi)) continue;
+                    outv.Add(V[vi]);
+                    masks.Add(VMask[vi]);
+                    vbones.Add(VBone[vi]);
+                    vmats.Add(VMat[vi]);
                 }
             }
             return outv;
@@ -1264,7 +1311,8 @@ public static class YargClothInside
                                            : (reg[i1] >= 0 ? reg[i1] : reg[i2]);
                                     surf.AddTriangle(world[i0], world[i1], world[i2], rg, vote,
                                                      matId, dom[i0],
-                                                     anc[i0] | anc[i1] | anc[i2]);
+                                                     anc[i0] | anc[i1] | anc[i2],
+                                                     dom[i1], dom[i2]);
                                 }
                             }
                             // The guard's measurement, per renderer.
@@ -1787,6 +1835,7 @@ public static class YargClothInside
                             Surface body;
                             List<Vector3> cloth;
                             List<ulong> clothMask = null;
+                            List<int> clothBone = null, clothMat = null;
                             if (census && sp != 2) continue;   // COVER only; see -census
                             if (enclose && sp != 2) continue;
                             if (sp == 0)
@@ -1804,7 +1853,7 @@ public static class YargClothInside
                             {
                                 body = surf.Subset(t => coverComp.Contains(surf.Comp[t]));
                                 cloth = surf.VertsOf(t => !coverComp.Contains(surf.Comp[t]),
-                                                     out clothMask);
+                                                     out clothMask, out clothBone, out clothMat);
                             }
                             clothVerts = cloth.Count;
 
@@ -1929,6 +1978,12 @@ public static class YargClothInside
                         var bandCount = new int[BANDS.Length];
                         var insideByRegion = new Dictionary<int, int>();
                         var deepestByRegion = new Dictionary<int, float>();
+                        // ATTRIBUTION: (region, driving bone) -> the depths of every inside
+                        // vertex in it. No filter of any kind, so the totals are checkable
+                        // against `inside` below.
+                        var attrib = new Dictionary<long, List<float>>();
+                        var attribMat = new Dictionary<long, int>();
+                        int attribTotal = 0, attribNoBone = 0;
 
                         for (int i = 0; i < cloth.Count; i++)
                         {
@@ -1999,6 +2054,21 @@ public static class YargClothInside
                             insideByRegion[rg] = rc + 1;
                             deepestByRegion.TryGetValue(rg, out var rd);
                             if (depth > rd) deepestByRegion[rg] = depth;
+                            if (clothBone != null && i < clothBone.Count)
+                            {
+                                int vb = clothBone[i];
+                                if (vb < 0) attribNoBone++;
+                                long ak = ((long) (rg + 1) << 20) | (uint) (vb + 1);
+                                if (!attrib.TryGetValue(ak, out var lst))
+                                {
+                                    lst = new List<float>();
+                                    attrib[ak] = lst;
+                                    attribMat[ak] = (clothMat != null && i < clothMat.Count)
+                                                    ? clothMat[i] : -1;
+                                }
+                                lst.Add(depth);
+                                attribTotal++;
+                            }
                         }
 
                         // ---- report ---------------------------------------------------------
@@ -2124,6 +2194,71 @@ public static class YargClothInside
                             Debug.Log($"[INSIDE] {name} f{f} {splitLabel}:   region " +
                                       $"{RegionLabel(regionName, regs[ri].Key),-18} " +
                                       $"inside={regs[ri].Value,6} deepest={F3(rdp * 1000)}mm");
+                        }
+
+                        // ---- ATTRIBUTION: which bone carried each inside vertex in ----------
+                        //
+                        // The region says where a vertex LANDED. This says what MOVED IT, which
+                        // is the half that decides whether a fix exists at all: a rigidly-skinned
+                        // bone is reachable only through weights or geometry, and a sprung one is
+                        // reachable through stiffness, drag and colliders.
+                        //
+                        // CONSERVATION IS THE CONTROL. Every inside vertex is attributed, and the
+                        // total is printed against `inside`. An attribution that quietly drops
+                        // vertices prints the same clean shoulder as a character with none.
+                        if (attrib.Count > 0)
+                        {
+                            Debug.Log($"[ATTRIB] {name} f{f} {splitLabel}: CONTROL attributed=" +
+                                      $"{attribTotal} of inside={inside} " +
+                                      $"({(attribTotal == inside ? "CONSERVED" : "LEAKING -- the rows below are NOT the inside set")})" +
+                                      $" no_bone={attribNoBone} keys={attrib.Count}");
+                            // WHICH MESH each penetrating vertex belongs to, which is the
+                            // structural form of "is this the cape". Measured from the renderer
+                            // and material the triangle was drawn with, not from its bone's name.
+                            var byMat = new Dictionary<int, List<float>>();
+                            foreach (var kv in attrib)
+                            {
+                                attribMat.TryGetValue(kv.Key, out var mi2);
+                                if (!byMat.TryGetValue(mi2, out var ml))
+                                {
+                                    ml = new List<float>();
+                                    byMat[mi2] = ml;
+                                }
+                                ml.AddRange(kv.Value);
+                            }
+                            int matSum = 0;
+                            var bm = new List<KeyValuePair<int, List<float>>>(byMat);
+                            bm.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
+                            foreach (var kv in bm)
+                            {
+                                var ds2 = new List<float>(kv.Value);
+                                ds2.Sort();
+                                matSum += ds2.Count;
+                                Debug.Log($"[ATTRIB] {name} f{f} {splitLabel}: BY MESH  " +
+                                          $"{(kv.Key >= 0 && kv.Key < matNames.Count ? matNames[kv.Key] : "(no material)"),-34} " +
+                                          $"n={ds2.Count,5} median={F3(ds2[ds2.Count / 2] * 1000),8}mm " +
+                                          $"max={F3(ds2[ds2.Count - 1] * 1000),8}mm");
+                            }
+                            Debug.Log($"[ATTRIB] {name} f{f} {splitLabel}: BY MESH total={matSum} " +
+                                      $"of inside={inside} " +
+                                      $"({(matSum == inside ? "CONSERVED" : "LEAKING")})");
+
+                            var ak2 = new List<KeyValuePair<long, List<float>>>(attrib);
+                            ak2.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
+                            for (int q = 0; q < ak2.Count && q < 64; q++)
+                            {
+                                int rgA = (int) (ak2[q].Key >> 20) - 1;
+                                int vbA = (int) (ak2[q].Key & 0xFFFFF) - 1;
+                                var ds = new List<float>(ak2[q].Value);
+                                ds.Sort();
+                                float medA = ds[ds.Count / 2], maxA = ds[ds.Count - 1];
+                                attribMat.TryGetValue(ak2[q].Key, out var mi);
+                                Debug.Log($"[ATTRIB] {name} f{f} {splitLabel}:   " +
+                                          $"{RegionLabel(regionName, rgA),-16} <- " +
+                                          $"{(vbA >= 0 && vbA < boneNames.Count ? boneNames[vbA] : "(no bone)"),-34} " +
+                                          $"n={ds.Count,5} median={F3(medA * 1000),8}mm max={F3(maxA * 1000),8}mm  " +
+                                          $"{(mi >= 0 && mi < matNames.Count ? matNames[mi] : "(no material)")}");
+                            }
                         }
 
                         // ---- CONTROL E: left/right symmetry ---------------------------------
