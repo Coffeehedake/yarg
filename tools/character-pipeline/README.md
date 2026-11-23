@@ -12591,3 +12591,47 @@ with 52 humanoid bones, 2 skinned meshes, 573 bones and `humanoid=True` on both.
 **Spring work over the day: 124 joints stepped per frame down to 55, a 55.6% cut**, with no
 measurable change of any kind to what the character does. The 55% figure I was quoting this
 morning for six chains was wrong for six and turns out to be right for seven.
+
+### True positives of the geometry test that are not faults (2026-11-22)
+
+A category with two measured members, named because the next one will arrive looking exactly
+like a finding.
+
+| character | what the instrument said | what the piece IS |
+|---|---|---|
+| **Doom Slayer** | 1.0000 face occlusion — 100% of the head region covered, attributed to `Doomslayer_Default8` | his **helmet** |
+| **Scott Hall** and **The Rock** | 616-face piece at head height, signed volume −0.00022, solidity ~0.89, `INSIDE-OUT` | the **mouth cavity lining**, whose surface faces inward by design — and **one shared asset in two characters**, not two faults |
+
+Both instruments were right. Face occlusion really was total; the signed volume really was
+negative. **The geometry is also right.** What is missing from every instrument here is the
+question *what IS this piece*, and that probably cannot be put into one.
+
+**So before a geometric verdict enters the fault register, name the part.** The full material
+name and a render of the piece alone answer it in about two minutes
+(`piece_render.py <vrm> <faces> <zlo> <zhi> <out.png> [res] [solo|back|left|right|top]`); a face
+count and a z range never will.
+
+**And watch for two characters producing near-identical numbers.** Scott Hall's and The Rock's
+pieces share face count, z range, solidity and volume to three figures. Written up separately
+they would have entered the register as two faults, been chased twice, and then *agreed with
+each other* in a way that reads as corroboration.
+
+#### A name collision worth knowing about
+
+`piece_volume.py` and `gate_recheck.py` use **openness** and **solidity** for different
+quantities from the exporter's sheet detection documented above:
+
+| name | exporter (sheet detection) | `piece_volume.py` (sign reliability) |
+|---|---|---|
+| **openness** | `boundary_length / sqrt(area)`; a flat disc is 3.5 | `abs(sum(area*normal)) / sum(area)`; exactly 0 closed, 1 for a flat sheet |
+| **solidity** | `abs(signed volume) / area^1.5`; a sphere is 0.094 | `abs(V)` over the volume a sphere of that area would enclose; a sphere is 1.0 |
+
+Same words, different formulas and different scales. The exporter's pair decides whether to draw
+a material double-sided; the second pair decides whether a signed volume's **sign** can be
+trusted at all.
+
+Worth recording that the exporter's rule above already contains the lesson the sign-uncertainty
+gate had to rediscover: *"what solidity rejects is the piece that is open but still voluminous"*.
+Gating on openness alone refuses Alastor's coat skirt — a real solid with one small hole,
+measured at −0.00301 m³, flipped and shipped. Two different tests, the same trap, found twice
+independently.
