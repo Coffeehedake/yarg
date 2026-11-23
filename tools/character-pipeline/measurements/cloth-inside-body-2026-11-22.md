@@ -584,3 +584,102 @@ discount them, which is the same discipline as printing driving-bone names raw.
 * Measurement A still ungraded; measurement B still blocked, and now also no longer confirming a
   prior figure, since the 51-56 mm claim is withdrawn.
 * Nothing committed. No character, bundle or backup written.
+
+---
+
+# Part seven: the greedy cover, and one fixture that was wrong
+
+## The rule
+
+1. order the pieces by signed volume, descending
+2. a piece joins the body set **iff** it encloses at least one humanoid bone no selected piece encloses
+3. stop when nothing can add a new bone; the rest is cloth
+
+No threshold, and a COVER rather than a selection. Both failures of a single-piece rule are now on
+record: ranking by triangle count loses Jinx's body entirely (not in the top twelve), and
+"largest-volume piece" loses her torso, because her largest piece is her legs.
+
+**Triangle count measures how finely a thing was modelled. Volume measures whether it is a solid.**
+
+## Fixture results
+
+    PowerGirl  pieces=2  covered=50/52  best_single=48   expected 1  -> FIXTURE WRONG, see below
+    Jinx       pieces=9  covered=42/52  best_single=25   expected >=2  OK
+    Batman     pieces=3  covered=45/52  best_single=41   expected >=2  OK
+
+**The Power Girl fixture encoded a wrong expectation and I am correcting the expectation, not
+relaxing the assertion.** The hand-check assumed her body piece already covered Neck and Head, so
+the second piece would be redundant. It does not: piece 0 encloses 48 bones and piece 1 adds
+`Neck Head LeftShoulder RightShoulder`. Piece 1 is **her head** — 12,504 triangles, closed 0.997,
+`share=0.542` where every hair shell on her reads 0.000, spanning y=1.471..1.789 above her body's
+1.577. Selecting it is correct. Her body is two shells, as Jinx's is nine.
+
+(That identification is inferred from weight share, enclosure and extent, not from a name: the
+bundle exporter destroys material names, so all five of her hair shells read `PowerGirl_3`.)
+
+## Two divergences from the predicted walk, both worth knowing
+
+**Batman takes torso + both boots, NOT the cowl.** His torso piece reaches y=1.601 and already
+encloses his head bone, so the cowl adds nothing new and falls out as cloth. The predicted walk had
+the cowl joining. Consequence to carry forward: his cowl is now measured AS CLOTH, so it can be
+reported penetrating his head, and a cowl-shaped finding on Batman should be read with that in mind.
+
+**Jinx takes 9 pieces**, and the extras are structurally right rather than noise: pieces 13 and 16
+add 9 bones each at closed 1.000 and tiny volume — hands, enclosing finger bones. Two pieces carry
+the OPEN-SHELL flag at closed 0.875 and add 2 bones each.
+
+## The five assertions, all live
+
+* **A piece enclosing 0 bones can never be selected.** Structural, not statistical. Both capes read
+  0; every hair shell measured reads 0. This single invariant replaces four identity heuristics that
+  each came back with hair.
+* **The largest-volume piece must enclose a bone or the run is REFUSED** — the triangle-count
+  failure turned into a guard, since that run reported 0 everywhere and looked like a finding.
+* **The union covers at least as many bones as the best single piece** — checked every run
+  (50>=48, 42>=25, 45>=41).
+* **Uncovered bones are reported BY NAME, never silently.** All three characters leave finger and
+  thumb tips uncovered, which is legitimate: a fingertip bone can sit outside every closed shell.
+* **Closedness is flagged beside every selected piece, below 0.9** — a flag on the report, not a
+  threshold in the decision.
+
+## The limitation, stated before it bites
+
+This finds the **outermost enclosing shell**. A full-body outer garment over skin wins the cover and
+the skin beneath it becomes cloth, so penetration INTO that shell is measurable and penetration OF
+it is not. Right for Batman, whose suit is the visible silhouette and whose cape-into-suit is the
+fault being chased; wrong for any character whose coat is the thing to be tested. Same shape as the
+fused-surface limit and not fixable by tuning. No later run may quietly assume otherwise.
+
+## Measurement A on the cover split: measured, and it does NOT grade the yoke
+
+Two bundles, one instrument, no forcing, one pose. Both verified by MD5.
+
+The body surface is real now: **beyond-cutoff 332/5540, six percent**, against 86% on the component
+split, median nearest 29.6 mm.
+
+| band | clavicle `a9b26646` | spinecape `f7d268e0` |
+|---|---|---|
+| INSIDE | 317 | 283 |
+| >5 mm | 187 | 175 |
+| >20 mm | 117 | 119 |
+| >40 mm | **100** | **100** |
+| LeftShoulder | 79 | 81 |
+| RightShoulder | 55 | 53 |
+| (non-humanoid) | 142 | 108 |
+
+**At the shoulders the two builds differ by two vertices per side, in opposite directions.** That is
+indistinguishable, and the shoulders are where the yoke lives. The aggregate gap of 34 sits almost
+entirely in `(non-humanoid)`, which the controls do not vouch for; the >40 mm band is **identical at
+100**, a shared artefact tail rather than a shared fault; the cutoff warning fired three times per
+run; and `deepest=229 mm` into a shoulder is physically impossible.
+
+So **the re-parent made no measurable difference to cloth-into-body at the shoulders.** That is
+weaker than either direction of win and it is what the data supports. 317 against 283 is not
+reported as the clavicle build being worse.
+
+### A reporting defect, found while reading this and not yet fixed
+
+`bodyTris` prints **3486** on the COVER rows, which is the WEIGHT split's tally. The cover's actual
+body is 6438+896+896 = **8,230** triangles. Anyone comparing `bodyTris` across splits is comparing
+one split's count three times. It does not affect the measurement, only the label beside it, and it
+should be fixed before the next sweep.

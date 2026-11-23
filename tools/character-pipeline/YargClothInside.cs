@@ -1500,64 +1500,65 @@ public static class YargClothInside
                             continue;
                         }
 
-                        if (enclose)
+                        // RANKED BY VOLUME, NOT BY TRIANGLE COUNT, and that is not a
+                        // presentation choice -- it is why the Jinx case read 0 everywhere.
+                        // Her six braids are ~12,000 triangles each and her BODY is not in the
+                        // top twelve by count, so the test never saw the thing it was being
+                        // validated against. Power Girl separates the two cleanly: her body
+                        // piece is 0.0635 m3 and a hair shell is 0.00002 m3, a factor of about
+                        // three thousand, while their triangle counts are within 10x. Triangle
+                        // count measures how finely a thing was modelled; volume measures
+                        // whether it is a solid. A body is a solid.
+                        var pieceVol = new Dictionary<int, double>();
+                        var pieceHalf = new Dictionary<int, float>();
                         {
-                            // RANKED BY VOLUME, NOT BY TRIANGLE COUNT, and that is not a
-                            // presentation choice -- it is why the Jinx case read 0 everywhere.
-                            // Her six braids are ~12,000 triangles each and her BODY is not in the
-                            // top twelve by count, so the test never saw the thing it was being
-                            // validated against. Power Girl separates the two cleanly: her body
-                            // piece is 0.0635 m3 and a hair shell is 0.00002 m3, a factor of about
-                            // three thousand, while their triangle counts are within 10x. Triangle
-                            // count measures how finely a thing was modelled; volume measures
-                            // whether it is a solid. A body is a solid.
-                            var pieceVol = new Dictionary<int, double>();
-                            var pieceHalf = new Dictionary<int, float>();
+                            var acc = new Dictionary<int, Vector3>();
+                            var cnt2 = new Dictionary<int, int>();
+                            for (int t = 0; t < surf.TriCount; t++)
                             {
-                                var acc = new Dictionary<int, Vector3>();
-                                var cnt2 = new Dictionary<int, int>();
-                                for (int t = 0; t < surf.TriCount; t++)
+                                int c2 = surf.Comp[t];
+                                acc.TryGetValue(c2, out var av);
+                                cnt2.TryGetValue(c2, out var cv);
+                                for (int e = 0; e < 3; e++) av += surf.V[surf.T[t * 3 + e]];
+                                acc[c2] = av; cnt2[c2] = cv + 3;
+                            }
+                            var cenOf = new Dictionary<int, Vector3>();
+                            foreach (var kv2 in acc) cenOf[kv2.Key] = kv2.Value / Math.Max(1, cnt2[kv2.Key]);
+                            var lo2 = new Dictionary<int, Vector3>();
+                            var hi2 = new Dictionary<int, Vector3>();
+                            for (int t = 0; t < surf.TriCount; t++)
+                            {
+                                int c2 = surf.Comp[t];
+                                var ce = cenOf[c2];
+                                var a3 = surf.V[surf.T[t * 3]] - ce;
+                                var b3 = surf.V[surf.T[t * 3 + 1]] - ce;
+                                var c3 = surf.V[surf.T[t * 3 + 2]] - ce;
+                                pieceVol.TryGetValue(c2, out var vv);
+                                pieceVol[c2] = vv + Vector3.Dot(a3, Vector3.Cross(b3, c3)) / 6.0;
+                                for (int e = 0; e < 3; e++)
                                 {
-                                    int c2 = surf.Comp[t];
-                                    acc.TryGetValue(c2, out var av);
-                                    cnt2.TryGetValue(c2, out var cv);
-                                    for (int e = 0; e < 3; e++) av += surf.V[surf.T[t * 3 + e]];
-                                    acc[c2] = av; cnt2[c2] = cv + 3;
-                                }
-                                var cenOf = new Dictionary<int, Vector3>();
-                                foreach (var kv2 in acc) cenOf[kv2.Key] = kv2.Value / Math.Max(1, cnt2[kv2.Key]);
-                                var lo2 = new Dictionary<int, Vector3>();
-                                var hi2 = new Dictionary<int, Vector3>();
-                                for (int t = 0; t < surf.TriCount; t++)
-                                {
-                                    int c2 = surf.Comp[t];
-                                    var ce = cenOf[c2];
-                                    var a3 = surf.V[surf.T[t * 3]] - ce;
-                                    var b3 = surf.V[surf.T[t * 3 + 1]] - ce;
-                                    var c3 = surf.V[surf.T[t * 3 + 2]] - ce;
-                                    pieceVol.TryGetValue(c2, out var vv);
-                                    pieceVol[c2] = vv + Vector3.Dot(a3, Vector3.Cross(b3, c3)) / 6.0;
-                                    for (int e = 0; e < 3; e++)
-                                    {
-                                        var v3 = surf.V[surf.T[t * 3 + e]];
-                                        if (!lo2.ContainsKey(c2)) { lo2[c2] = v3; hi2[c2] = v3; }
-                                        lo2[c2] = Vector3.Min(lo2[c2], v3);
-                                        hi2[c2] = Vector3.Max(hi2[c2], v3);
-                                    }
-                                }
-                                foreach (var kv2 in lo2)
-                                {
-                                    var ext = hi2[kv2.Key] - kv2.Value;
-                                    pieceHalf[kv2.Key] = 0.5f * Mathf.Max(ext.x, Mathf.Max(ext.y, ext.z));
+                                    var v3 = surf.V[surf.T[t * 3 + e]];
+                                    if (!lo2.ContainsKey(c2)) { lo2[c2] = v3; hi2[c2] = v3; }
+                                    lo2[c2] = Vector3.Min(lo2[c2], v3);
+                                    hi2[c2] = Vector3.Max(hi2[c2], v3);
                                 }
                             }
-                            var byT = new List<KeyValuePair<int, int>>(compTri);
-                            byT.Sort((x, y) =>
+                            foreach (var kv2 in lo2)
                             {
-                                pieceVol.TryGetValue(x.Key, out var vx);
-                                pieceVol.TryGetValue(y.Key, out var vy);
-                                return Math.Abs(vy).CompareTo(Math.Abs(vx));
-                            });
+                                var ext = hi2[kv2.Key] - kv2.Value;
+                                pieceHalf[kv2.Key] = 0.5f * Mathf.Max(ext.x, Mathf.Max(ext.y, ext.z));
+                            }
+                        }
+                        var byT = new List<KeyValuePair<int, int>>(compTri);
+                        byT.Sort((x, y) =>
+                        {
+                            pieceVol.TryGetValue(x.Key, out var vx);
+                            pieceVol.TryGetValue(y.Key, out var vy);
+                            return Math.Abs(vy).CompareTo(Math.Abs(vx));
+                        });
+
+                        if (enclose)
+                        {
                             Debug.Log($"[ENCLOSE] {name}: parts={compTri.Count} humanoid_bones=" +
                                       $"{regionName.Count}  (counts are RAW -- nothing is labelled " +
                                       "from them)");
@@ -1633,23 +1634,176 @@ public static class YargClothInside
                             continue;
                         }
 
-                        var splitNames = new[] { "WEIGHT", "COMPONENT" };
-                        for (int sp = 0; sp < 2; sp++)
+                        // ====================================================================
+                        // THE BODY IS A GREEDY COVER OF THE SKELETON, TAKEN BY DESCENDING VOLUME
+                        // ====================================================================
+                        //
+                        //   1. order the pieces by signed volume, descending
+                        //   2. a piece joins the body set IFF it encloses at least one humanoid
+                        //      bone that no piece already in the set encloses
+                        //   3. stop when no remaining piece can add a new bone; the rest is cloth
+                        //
+                        // No threshold anywhere, and a COVER rather than a selection -- which is
+                        // what the data forced. On Jinx, ranking by triangle COUNT loses her legs
+                        // (her braids outrank her body and her body is not even in the top twelve),
+                        // and "largest piece by volume" loses her TORSO, because her largest piece
+                        // is her legs. Only a cover gets both.
+                        //
+                        // THE ONE INVARIANT THAT REPLACES FOUR HEURISTICS: a piece enclosing ZERO
+                        // bones can never be selected. That is structural, not statistical. Both
+                        // capes read 0, and so does every hair shell measured -- the four identity
+                        // heuristics that each came back with hair are all answered by it.
+                        //
+                        // VOLUME, NOT TRIANGLE COUNT. Triangle count measures how finely a thing
+                        // was modelled; volume measures whether it is a solid. A body piece is
+                        // 0.0635 m3 against a hair shell's 0.00002 m3 -- a factor of three
+                        // thousand -- where their triangle counts sit within 10x of each other.
+                        //
+                        // AND VOLUME ORDERING RETIRES THE OPEN-SHELL ARTEFACT WITH NO CUTOFF. The
+                        // three small open shells beside Power Girl's neck report 3 bones each; by
+                        // the time the descending walk reaches them those bones are covered, so
+                        // they fall out as cloth on their own. A closedness cutoff is exactly the
+                        // kind of exact-but-wrong gate that threw out a 23,572-triangle shell over
+                        // 4 boundary edges in 59,341, so closedness is FLAGGED on the report and
+                        // kept out of the decision.
+                        //
+                        // THE LIMITATION, STATED BEFORE IT BITES: this finds the OUTERMOST
+                        // enclosing shell. A full-body outer garment over skin wins the cover and
+                        // the skin beneath it becomes cloth, so penetration INTO that shell is
+                        // measurable and penetration OF it is not. That is the right answer for
+                        // Batman, whose suit is the visible silhouette and whose cape-into-suit is
+                        // the fault being chased, and the wrong answer for a character whose coat
+                        // is the thing to be tested. Not fixable by tuning, and no later run may
+                        // quietly assume otherwise.
+                        var enclMask = new Dictionary<int, ulong>();
+                        var enclCount = new Dictionary<int, int>();
+                        var pieceClosed = new Dictionary<int, double>();
+                        {
+                            int looked = 0;
+                            double biggestVol = 0.0;
+                            for (int ci = 0; ci < byT.Count && ci < 32; ci++)
+                            {
+                                int c = byT[ci].Key;
+                                pieceVol.TryGetValue(c, out var pv2);
+                                if (ci == 0) biggestVol = Math.Abs(pv2);
+                                var piece = surf.Subset(t => surf.Comp[t] == c);
+                                if (piece.TriCount == 0) continue;
+                                double pcl2; int pe2, pm2;
+                                piece.Closedness(out pcl2, out pe2, out pm2);
+                                pieceClosed[c] = pcl2;
+                                var pg2 = new Grid(piece, 24);
+                                pieceHalf.TryGetValue(c, out var half2);
+                                ulong em = 0UL;
+                                int ec = 0;
+                                foreach (var hk in human)
+                                {
+                                    float bd2; Vector3 bq2, bn3; int bt3;
+                                    if (!pg2.Nearest(hk.Key.position, 1.0f, out bd2, out bq2, out bn3, out bt3))
+                                        continue;
+                                    if (bn3 == Vector3.zero) continue;
+                                    if (half2 > 0f && bd2 > half2) continue;
+                                    if (Vector3.Dot(hk.Key.position - bq2, bn3) >= 0f) continue;
+                                    if (hk.Value < 64) { em |= 1UL << hk.Value; ec++; }
+                                }
+                                enclMask[c] = em;
+                                enclCount[c] = ec;
+                                looked++;
+                            }
+                            // COVERAGE GUARD on the 32-piece window: if a piece outside it still
+                            // carries real volume, the window is too small and the cover may be
+                            // missing a body part.
+                            for (int ci = 32; ci < byT.Count; ci++)
+                            {
+                                pieceVol.TryGetValue(byT[ci].Key, out var pv3);
+                                if (biggestVol > 0 && Math.Abs(pv3) > 0.01 * biggestVol)
+                                {
+                                    Debug.LogWarning($"[COVER] {name}: piece {ci} carries " +
+                                                     $"{F3(100 * Math.Abs(pv3) / biggestVol)}% of the " +
+                                                     "largest volume and sits OUTSIDE the 32-piece " +
+                                                     "window -- raise the window before trusting " +
+                                                     "this cover.");
+                                    break;
+                                }
+                            }
+                        }
+
+                        var coverComp = new HashSet<int>();
+                        ulong covered = 0UL;
+                        int bestSingle = 0;
+                        {
+                            for (int ci = 0; ci < byT.Count; ci++)
+                            {
+                                int c = byT[ci].Key;
+                                if (!enclMask.TryGetValue(c, out var em)) continue;
+                                if (em == 0UL) continue;            // INVARIANT: 0 bones never joins
+                                if (enclCount[c] > bestSingle) bestSingle = enclCount[c];
+                                if ((em & ~covered) == 0UL) continue;   // adds nothing new
+                                coverComp.Add(c);
+                                covered |= em;
+                                pieceVol.TryGetValue(c, out var pvS);
+                                pieceClosed.TryGetValue(c, out var pcS);
+                                var flag = pcS < 0.9 ? "  OPEN-SHELL FLAG" : "";
+                                Debug.Log($"[COVER] {name}: SELECT piece {ci} tris={byT[ci].Value,6} " +
+                                          $"vol={pvS,12:F8} closed={F3(pcS)} adds=" +
+                                          $"{enclCount[c],3} bones{flag}");
+                            }
+                            int coveredN = 0;
+                            for (int b = 0; b < 64; b++) if ((covered & (1UL << b)) != 0UL) coveredN++;
+
+                            // ASSERTION: the largest-volume piece must enclose at least one bone,
+                            // or the ranking has not found a solid. This is the triangle-count
+                            // failure turned into a guard -- that run reported 0 everywhere and
+                            // looked like a finding.
+                            int topC = byT.Count > 0 ? byT[0].Key : -1;
+                            enclCount.TryGetValue(topC, out var topEncl);
+                            if (byT.Count > 0 && topEncl == 0)
+                            {
+                                Debug.LogError($"[COVER] {name}: REFUSED -- the largest-volume piece " +
+                                               "encloses NO humanoid bone, so the ranking has not " +
+                                               "found a solid and this cover is not a body.");
+                                perFrame.Add("{\"frame\": " + f + ", \"cover\": \"refused\"}");
+                                continue;
+                            }
+                            // ASSERTION: the union covers at least as much as any single piece.
+                            if (coveredN < bestSingle)
+                                Debug.LogError($"[COVER] {name}: REFUSED -- the union covers " +
+                                               $"{coveredN} bones, FEWER than the best single piece " +
+                                               $"at {bestSingle}. The greedy walk is wrong.");
+                            // Uncovered bones by NAME. Not a refusal: a bone can legitimately sit
+                            // outside every closed shell. Never silent, though.
+                            var missing = new List<string>();
+                            foreach (var hk in human)
+                                if (hk.Value < 64 && (covered & (1UL << hk.Value)) == 0UL)
+                                    missing.Add(regionName[hk.Value]);
+                            Debug.Log($"[COVER] {name}: pieces={coverComp.Count} covered={coveredN}" +
+                                      $"/{regionName.Count} best_single={bestSingle} " +
+                                      $"uncovered=[{string.Join(" ", missing)}]");
+                        }
+
+                        var splitNames = new[] { "WEIGHT", "COMPONENT", "COVER" };
+                        for (int sp = 0; sp < 3; sp++)
                         {
                             string splitLabel = splitNames[sp];
                             Surface body;
                             List<Vector3> cloth;
                             List<ulong> clothMask = null;
-                            if (census && sp == 0) continue;   // COMPONENT only; see -census
+                            if (census && sp != 2) continue;   // COVER only; see -census
+                            if (enclose && sp != 2) continue;
                             if (sp == 0)
                             {
                                 body = surf.Subset(t => surf.HumanVote[t] == 3);
                                 cloth = surf.VertsOf(t => surf.HumanVote[t] != 3);
                             }
-                            else
+                            else if (sp == 1)
                             {
                                 body = surf.Subset(t => bodyComp.Contains(surf.Comp[t]));
                                 cloth = surf.VertsOf(t => !bodyComp.Contains(surf.Comp[t]),
+                                                     out clothMask);
+                            }
+                            else
+                            {
+                                body = surf.Subset(t => coverComp.Contains(surf.Comp[t]));
+                                cloth = surf.VertsOf(t => !coverComp.Contains(surf.Comp[t]),
                                                      out clothMask);
                             }
                             clothVerts = cloth.Count;
