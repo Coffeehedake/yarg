@@ -12635,3 +12635,54 @@ gate had to rediscover: *"what solidity rejects is the piece that is open but st
 Gating on openness alone refuses Alastor's coat skirt — a real solid with one small hole,
 measured at −0.00301 m³, flipped and shipped. Two different tests, the same trap, found twice
 independently.
+
+### Batman's cape yoke moved from the spine to the clavicles, and I cannot show that it helped (2026-11-22)
+
+Jay: "the upper part is still clipping through his shoulders", then "do the re-weight the same
+way Power Girl's is". Both done. The change is installed as `a9b26646` and I am not claiming it
+as a fix, because no instrument I have shows the reported fault improving.
+
+**THE DIAGNOSIS IS SOLID AND IS THE DURABLE PART.** Batman's cape carries bones named and
+POSITIONED for the shoulder — `capeClav_att` sits 102 mm from his clavicle, the whole capeClav
+fan stays within ±16 mm of clavicle height, `capeTrap` is 132 mm from his upper arm — and every
+one of them hung off `C_cape_root <- C_spine_d`, a sibling branch of the arm. His cape root is
+11 mm from his clavicle and driven by a spine joint 141 mm away. So the clavicle rotates, the
+deltoid swings, and the part of the cape authored to sit on that shoulder does not follow it.
+
+**POWER GIRL IS THE REFERENCE AND IT IS PARENTING, NOT WEIGHTING.** Two independent reads agree:
+44% of her cape BONES are parented beneath her clavicles (hierarchy survey) and 44.3% of her cape
+WEIGHT arrives through those bones (weight measurement on her cape mesh), against 3.2% weighted
+directly to a clavicle. Batman read 0% both ways. Different quantities, separately derived, same
+number — so "the same way Power Girl's is" means RE-PARENTING.
+
+`reparent_bones.py` does it without moving anything, by re-deriving each bone's local transform
+as `world(newparent)^-1 . world(bone)`. Six roots moved — `L/R_capeClav_att`, `L/R_capeEdge_att`,
+`L/R_capeTrap` — carrying 34 bones. **All 596 bones hold their rest-pose world transform to
+within 0.011 mm**, and `YargCharLoadTest` reads both files as 52 humanoid bones, 2 skinned
+meshes, 573 bones, humanoid=True.
+
+#### What the measurements actually say, which is: nothing
+
+| | ALL dw | ARM dw | arm peak | travel |
+|---|---|---|---|---|
+| spine-anchored `f7d268e0` | 186885 | 145858 | 117.5mm | 483mm |
+| clavicle-anchored `a9b26646` | 187619 | 144771 (**-1%**) | 117.5mm | 483mm |
+
+**THE PROBE IS PROBABLY THE WRONG INSTRUMENT HERE, and that is worth more than the null.** It
+measures garment vertices inside body capsules, and the biggest single contributor is
+`fml_un_L_clav` at 21.7%. But a cape yoke that RESTS ON the shoulder is inside the shoulder's
+capsule by design — so that number largely measures the cape lying on the body, not the shoulder
+coming through the cape. The fault Jay reports is visual, and capsule penetration is a poor
+proxy for it. The earlier "41.3% of shoulder contact is unsprung" figure inherits the same doubt.
+
+The renders differ at every frame, so the change is not inert. But on a brightness proxy I
+invented for the purpose — how much bare suit shows at the shoulder, subject pixel count constant
+at 202,487 as the control — three frames disagree: 10.18%->7.39%, 4.34%->**5.65%**, 7.37%->7.13%.
+One frame moves the wrong way by 30%, on a metric that cannot separate "arm through the cape"
+from "arm legitimately beside the cape". That is not evidence, and three frames is the same
+thin-metric trap this project has already paid for twice.
+
+**So: the structural defect is real and now corrected; whether it fixes what Jay sees is HIS
+call from the render, not mine from a number.** `f7d268e0` is backed up and restoring it is one
+command. Nothing about this change is hard to undo, which is the only reason it is installed
+while still unproven.
