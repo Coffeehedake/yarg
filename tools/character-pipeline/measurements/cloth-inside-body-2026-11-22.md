@@ -157,3 +157,93 @@ character, a perfect clean sweep from a dead instrument. Caught by re-reading th
 would also have been caught by control D, which must *rise*: a dead offset is flat at zero, and
 flat is a failure. The control set covered the thing its author was afraid of, from a different
 direction.
+
+---
+
+# Part two: two more attempts at a positive control, both defeated by hair
+
+Continued the same evening. The instrument's geometry held up throughout; what follows is entirely
+about failing to find a character on which its positive control can be run.
+
+## Power Girl cannot host the control
+
+Piece identity, measured rather than assumed, on the installed bundle:
+
+    piece 3  tris=2237  share=0.000  y=1.558..1.598  nearest=Head@82mm
+    piece 4  tris=2202  share=0.000  y=1.565..1.620  nearest=Head@74mm
+    piece 5  tris= 602  share=0.000  y=1.569..1.604  nearest=Head@66mm
+    piece 6  tris= 528  share=0.000  y=1.636..1.676  nearest=Head@111mm
+    piece 7  tris= 528  share=0.000  y=1.634..1.673  nearest=Head@112mm
+
+**Every separable piece she has is hair.** No boots, no gloves; her costume is fused into pieces 0
+and 1. The proposed lower-leg control would have been run against hair and returned a flat
+indistinguishable from the flat already in hand. Confirming identity first is what stopped that.
+
+**MATERIAL NAMES CANNOT IDENTIFY A PIECE IN A BUNDLE.** The exporter renames every material to
+`<Character>_N`, and pieces 3, 4, 5, 6 and 7 all come back as `mesh1 / PowerGirl_3` — one name over
+five separate shells. Identity had to come from geometry.
+
+Also measured, and unexpected: **the idle moves almost nothing but the left hand.** Over six frames
+the ten largest bone travels are all left-hand finger bones at 270–296 mm. No limb in the top ten.
+It is a guitar hand, which is obvious in retrospect for a rhythm game and was not in any of my
+reasoning about which bone a control should move.
+
+## The roster survey, 65 of 65 characters, one editor session
+
+    characters with NO separable garment piece at all        27 of 65
+    characters with a separable piece over a limb bone        20 of 65   <-- WRONG, see below
+    characters with a separable piece over a hand             7 of 65
+
+**27 of 65 characters have no separable garment piece at all.** On those, "is the cloth inside the
+body" is ill-posed in principle, exactly as on Power Girl. That number is the most durable thing on
+this page and it does not depend on the broken column beside it.
+
+## THE RANKING IS WITHDRAWN. IT RANKED HAIR.
+
+The survey ranked Jinx first: 197 separable pieces, 168,475 separable triangles, bones listed as
+LeftFoot, LeftLowerLeg, LeftUpperLeg, RightFoot. A lateral lower-leg sweep on her went flat — 4,833
+inside vertices at 0 mm **and 4,833 at 220 mm**, with the response saturating (median nearest
+42.24 → 40.57 → 40.19 → 40.15 → 40.11 → 40.07 mm). A 220 mm shin displacement putting a shin
+entirely outside a trouser cannot leave the count unchanged, so that was a bug signature, not a
+null.
+
+It was not loose clothing, which is what I said first. Her pieces:
+
+    piece 0  tris=12779  share=0.000  y=0.172..1.527  nearest=LeftUpperLeg@200mm  mats=hair_base / Jinx_0
+    piece 1  tris=12696  share=0.000  y=0.171..1.552  nearest=LeftUpperLeg@203mm  mats=hair_base / Jinx_0
+    piece 2  tris=12649  share=0.000  y=0.177..1.533  nearest=LeftUpperLeg@213mm  mats=hair_base / Jinx_0
+    ... six such pieces, 73,835 triangles in all
+
+**Her braids.** They run from her head to her ankles, so each one's centroid lands nearest
+`LeftUpperLeg`, and `bodyTris=30297` against `clothTris=175496` means only 15% of her was labelled
+body — her legs are not in the body surface at all. Displacing them moved a great deal of *cloth*
+and created no crossing, which is why distances changed while the inside set did not.
+
+So **`over_non_head` counted any hair that hangs below the head as garment-over-limb**, and it did
+so for all 65 characters. The candidate list it produced must not be used.
+
+## What this costs, and the one pattern behind all three
+
+Three attempts at piece identity, three failures, each a plausible instrument answering a slightly
+different question:
+
+1. **Material name** — the bundle exporter had already destroyed it.
+2. **Nearest humanoid bone to the piece centroid** — a braid hanging past the knee is "over the
+   leg" by that measure. Hair and a legging are indistinguishable to it.
+3. **Separable-piece count and triangle totals** — size says nothing about what a piece is, and
+   Jinx's hair outweighs most characters' entire wardrobes.
+
+A discriminator that would work, offered as a direction and not a claim: a garment **wraps** its
+limb and hair **hangs beside** it, so the test is angular coverage around the nearest bone's axis —
+near 360° for a sleeve or a legging, a narrow sector for a braid. `cloth_collide.py` already has the
+point-to-segment machinery. Not built, not measured.
+
+## STATE AT THE END OF PART TWO
+
+* The instrument is sound where it can be pointed: closedness 0.981 on Jinx and 0.960 on Power
+  Girl, physically plausible depths, no crash, 11 of 11 Unity runs clean.
+* **It still has no passing positive control on any character**, because no character has yet been
+  shown to carry a separable garment over a limb. Two candidates were examined and both were hair.
+* **The `over_non_head` ranking is withdrawn.** The three survey counts that survive are 27 of 65
+  with no separable piece, 65 of 65 coverage, and the per-character piece inventories themselves.
+* Batman was not run, and should not be until a positive control passes somewhere.

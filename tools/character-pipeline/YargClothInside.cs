@@ -237,13 +237,23 @@ public static class YargClothInside
         /// triangle, and the component split wants the vote SUMMED over a whole connected piece.
         public readonly List<int> HumanVote = new List<int>();
 
-        public void AddTriangle(Vector3 a, Vector3 b, Vector3 c, int region, int humanVote)
+        // WHICH MATERIAL EACH TRIANGLE CAME FROM, which is the only thing in the file that can
+        // say what a piece IS. A piece at humanoid_share 0.000 with ~2,200 triangles is equally
+        // consistent with a boot, a glove, a hair clump and a shoulder pad, and a control run
+        // against hair comes back flat for a reason indistinguishable from the flat already in
+        // hand. Names are printed IN FULL and never truncated: three of Scott Hall's materials
+        // share their first fourteen characters -- Mouth, Teeth and Tongue -- so a truncated
+        // column cannot say which piece a verdict is about.
+        public readonly List<int> Mat = new List<int>();
+
+        public void AddTriangle(Vector3 a, Vector3 b, Vector3 c, int region, int humanVote, int mat)
         {
             int ia = Add(a), ib = Add(b), ic = Add(c);
             if (ia == ib || ib == ic || ia == ic) return;   // degenerate after welding
             T.Add(ia); T.Add(ib); T.Add(ic);
             Region.Add(region);
             HumanVote.Add(humanVote);
+            Mat.Add(mat);
             // Area-weighted: the cross product's LENGTH is twice the area, so accumulating the
             // un-normalised cross product weights each face by its own area without a second
             // pass. Large faces should dominate a vertex normal; a fan of slivers should not.
@@ -274,7 +284,7 @@ public static class YargClothInside
             {
                 if (!keep(t)) continue;
                 s.AddTriangle(V[T[t * 3]], V[T[t * 3 + 1]], V[T[t * 3 + 2]],
-                              Region[t], HumanVote[t]);
+                              Region[t], HumanVote[t], Mat[t]);
             }
             s.Finish();
             return s;
@@ -629,8 +639,41 @@ public static class YargClothInside
             float warmup = float.TryParse(Arg(args, "-warmup"), out var ww) ? ww : 1.0f;
             float yaw = float.TryParse(Arg(args, "-yaw"), out var yy) ? yy : 0f;
             float pushArm = float.TryParse(Arg(args, "-pushArm"), out var pa) ? pa : 0f;
+            // WHICH BONE THE SYNTHETIC POSITIVE MOVES, and along what.
+            //
+            // The upper arms were the right choice while the question was a deltoid through a
+            // mantle. They are the WRONG choice on Power Girl once her sleeve turns out to be the
+            // same connected shell as her deltoid: there is no separable garment over that bone,
+            // so no displacement of it can push anything through anything, and the control comes
+            // back flat for a reason that has nothing to do with the instrument.
+            //
+            // So the bone is an argument. A control needs a separable garment piece -- one at
+            // humanoid_share 0.000 -- sitting over a bone the idle actually moves.
+            //
+            // `radial` keeps the committed arm behaviour, (bone - chest) normalised, so the
+            // earlier numbers stay comparable. `x`/`y`/`z` push along a world axis signed by which
+            // side of the hips the bone sits on, so both sides move OUTWARD rather than both
+            // moving left. For a boot over a shin, lateral is the honest analogue of a deltoid
+            // through a mantle; radial on a lower leg points mostly downward and would drive it
+            // through the sole instead of the wall.
+            var pushBones = (Arg(args, "-pushBones") ?? "LeftUpperArm,RightUpperArm")
+                            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            string pushAxis = (Arg(args, "-pushAxis") ?? "radial").ToLowerInvariant();
             float cutoff = float.TryParse(Arg(args, "-maxDepth"), out var md) ? md : 0.25f;
             int gridTarget = int.TryParse(Arg(args, "-grid"), out var gt) ? gt : 48;
+            // INVENTORY MODE: the piece table and the idle bone travel, and NOT the two
+            // measurement passes. It exists because choosing a control character is a different
+            // question from measuring one, and it needs none of the expensive part.
+            //
+            // The question it answers, for every character on the roster: is there a SEPARABLE
+            // garment piece -- humanoid_share 0.000, a shell of its own -- sitting over a bone
+            // the idle actually moves? Power Girl has none. Her five separable pieces are all
+            // hair at y=1.56..1.68 nearest Head, her costume is fused into two half-skin shells,
+            // and the only thing her idle moves appreciably is her left hand (fingers travelling
+            // 270-296 mm over six frames). So the arm control could never have worked on her, and
+            // a lower-leg control would have been run against hair and come back flat for a
+            // reason indistinguishable from the flat already in hand.
+            bool inventory = Arg(args, "-inventory") != null;
 
             EditorSceneManager.OpenScene("Assets/Scenes/CharacterSelect.unity", OpenSceneMode.Single);
             var dm = UnityEngine.Object.FindFirstObjectByType<CharacterDisplayManager>();
@@ -711,6 +754,15 @@ public static class YargClothInside
 
                     var perFrame = new List<string>();
                     int bodyTris = 0, clothTris = 0, clothVerts = 0;
+                    // A SEPARABLE GARMENT OVER A BONE THE IDLE NEVER MOVES IS NOT A CONTROL
+                    // EITHER -- the synthetic displacement would be the only motion in the scene,
+                    // which tests the probe against a pose the game never shows. So record, per
+                    // humanoid bone, how far it travels across the sampled frames with NO
+                    // synthetic push applied, and print it beside the pieces.
+                    var boneStart = new Dictionary<Transform, Vector3>();
+                    var boneTravel = new Dictionary<Transform, float>();
+                    var matNames = new List<string>();
+                    var matIndex = new Dictionary<string, int>();
 
                     for (int f = 0; f < frames; f++)
                     {
@@ -725,14 +777,51 @@ public static class YargClothInside
                             var chest = anim.GetBoneTransform(HumanBodyBones.UpperChest)
                                         ?? anim.GetBoneTransform(HumanBodyBones.Chest)
                                         ?? anim.GetBoneTransform(HumanBodyBones.Spine);
-                            foreach (var hb in new[] { HumanBodyBones.LeftUpperArm,
-                                                       HumanBodyBones.RightUpperArm })
+                            var hips = anim.GetBoneTransform(HumanBodyBones.Hips);
+                            foreach (var bn in pushBones)
                             {
+                                HumanBodyBones hb;
+                                if (!Enum.TryParse(bn.Trim(), true, out hb))
+                                {
+                                    if (f == 0)
+                                        Debug.LogError($"[INSIDE] {name}: -pushBones named '{bn}', " +
+                                                       "which is not a HumanBodyBones value -- the " +
+                                                       "positive control did NOT move.");
+                                    continue;
+                                }
                                 var t = anim.GetBoneTransform(hb);
-                                if (t == null || chest == null) continue;
-                                var dir = (t.position - chest.position).normalized;
+                                if (t == null)
+                                {
+                                    if (f == 0)
+                                        Debug.LogError($"[INSIDE] {name}: {hb} is not in this rig's " +
+                                                       "humanoid map -- the positive control did NOT move.");
+                                    continue;
+                                }
+                                Vector3 dir;
+                                if (pushAxis == "radial")
+                                {
+                                    if (chest == null) continue;
+                                    dir = (t.position - chest.position).normalized;
+                                }
+                                else
+                                {
+                                    var axis = pushAxis == "y" ? Vector3.up
+                                             : pushAxis == "z" ? Vector3.forward : Vector3.right;
+                                    var o = hips != null ? hips.position : Vector3.zero;
+                                    float side = Vector3.Dot(t.position - o, axis);
+                                    dir = axis * (side < 0f ? -1f : 1f);
+                                }
                                 t.position += dir * pushArm;
                             }
+                        }
+
+                        foreach (var kv in human)
+                        {
+                            var pos = kv.Key.position;
+                            if (!boneStart.ContainsKey(kv.Key)) boneStart[kv.Key] = pos;
+                            float tv = (pos - boneStart[kv.Key]).magnitude;
+                            boneTravel.TryGetValue(kv.Key, out var ov);
+                            if (tv > ov) boneTravel[kv.Key] = tv;
                         }
 
                         var surf = new Surface();
@@ -767,6 +856,19 @@ public static class YargClothInside
                             for (int s = 0; s < baked.subMeshCount; s++)
                             {
                                 var tri = baked.GetTriangles(s);
+                                // Submesh s is drawn with sharedMaterials[s]. Guarded because a
+                                // renderer may carry fewer materials than it has submeshes.
+                                var sm = smr.sharedMaterials;
+                                string mname = smr.name + " / " +
+                                    ((sm != null && s < sm.Length && sm[s] != null)
+                                     ? sm[s].name : "<none>");
+                                int matId;
+                                if (!matIndex.TryGetValue(mname, out matId))
+                                {
+                                    matId = matNames.Count;
+                                    matIndex[mname] = matId;
+                                    matNames.Add(mname);
+                                }
                                 for (int i = 0; i + 2 < tri.Length; i += 3)
                                 {
                                     int i0 = tri[i], i1 = tri[i + 1], i2 = tri[i + 2];
@@ -782,7 +884,7 @@ public static class YargClothInside
                                     // have either.
                                     int rg = reg[i0] >= 0 ? reg[i0]
                                            : (reg[i1] >= 0 ? reg[i1] : reg[i2]);
-                                    surf.AddTriangle(world[i0], world[i1], world[i2], rg, vote);
+                                    surf.AddTriangle(world[i0], world[i1], world[i2], rg, vote, matId);
                                 }
                             }
                             var tp = smr.transform.position;
@@ -868,10 +970,112 @@ public static class YargClothInside
                             int allHuman = 0;
                             for (int t = 0; t < surf.TriCount; t++)
                                 if (surf.Comp[t] == c && surf.HumanVote[t] == 3) allHuman++;
+                            var mh = new Dictionary<int, int>();
+                            for (int t = 0; t < surf.TriCount; t++)
+                                if (surf.Comp[t] == c)
+                                {
+                                    mh.TryGetValue(surf.Mat[t], out var mc);
+                                    mh[surf.Mat[t]] = mc + 1;
+                                }
+                            var mlist = new List<KeyValuePair<int, int>>(mh);
+                            mlist.Sort((x, y) => y.Value.CompareTo(x.Value));
+                            var msb = new StringBuilder();
+                            for (int mi = 0; mi < mlist.Count && mi < 3; mi++)
+                                msb.Append(mi > 0 ? " + " : "").Append(matNames[mlist[mi].Key])
+                                   .Append("(").Append(mlist[mi].Value).Append(")");
+                            // WHERE THE PIECE IS, because its NAME cannot say what it is.
+                            //
+                            // The bundle exporter renames every material to <Character>_N, and on
+                            // Power Girl pieces 3, 4, 5, 6 and 7 all come back as
+                            // "mesh1 / PowerGirl_3" -- one name over five separate shells. The
+                            // authored names exist only in the .vrm, and mapping those back by
+                            // position is the numeric-suffix trap that already cost a near-miss on
+                            // Scott Hall. So identity comes from GEOMETRY, which is in the file in
+                            // front of me: the piece's height range, and which humanoid bone its
+                            // centroid is nearest. A boot sits at ankle height over a lower leg; a
+                            // hair clump sits at head height over the head. That distinction is
+                            // the whole question for choosing a control bone, and it needs no name.
+                            var cen = Vector3.zero;
+                            float ylo = float.MaxValue, yhi = float.MinValue;
+                            int cn = 0;
+                            for (int t = 0; t < surf.TriCount; t++)
+                            {
+                                if (surf.Comp[t] != c) continue;
+                                for (int e = 0; e < 3; e++)
+                                {
+                                    var v = surf.V[surf.T[t * 3 + e]];
+                                    cen += v; cn++;
+                                    if (v.y < ylo) ylo = v.y;
+                                    if (v.y > yhi) yhi = v.y;
+                                }
+                            }
+                            if (cn > 0) cen /= cn;
+                            string nearBone = "?";
+                            float nearD = float.MaxValue;
+                            foreach (var kv in human)
+                            {
+                                float dd = (kv.Key.position - cen).magnitude;
+                                if (dd < nearD) { nearD = dd; nearBone = regionName[kv.Value]; }
+                            }
                             Debug.Log($"[INSIDE] {name} f{f}:   piece {ci} tris={n,6} " +
-                                      $"humanoid_share={F3(share)} " +
-                                      $"-> {(share > 0.5 ? "BODY " : "cloth")}  " +
-                                      $"weight-split-would-call-body={allHuman,6}");
+                                      $"share={F3(share)} -> {(share > 0.5 ? "BODY " : "cloth")}  " +
+                                      $"y={F3(ylo)}..{F3(yhi)}  nearest={nearBone}@{F3(nearD * 1000)}mm  " +
+                                      $"wsplit_body={allHuman,6}  mats={msb}");
+                        }
+
+                        if (frames > 1)
+                        {
+                            var mv = new List<KeyValuePair<Transform, float>>(boneTravel);
+                            mv.Sort((x, y) => y.Value.CompareTo(x.Value));
+                            var tsb = new StringBuilder();
+                            for (int bi = 0; bi < mv.Count && bi < 10; bi++)
+                                tsb.Append("\n          ").Append(regionName[human[mv[bi].Key]])
+                                   .Append(" ").Append(F3(mv[bi].Value * 1000)).Append("mm");
+                            Debug.Log($"[INSIDE] {name} f{f}: idle bone travel over {frames} " +
+                                      $"frames, largest first{tsb}");
+                        }
+
+                        if (inventory)
+                        {
+                            // One line per character that a reader can rank on: how much
+                            // separable garment there is, and where it sits.
+                            int sepPieces = 0, sepTris = 0, sepOverLimb = 0;
+                            var overBones = new HashSet<string>();
+                            foreach (var kv in compTri)
+                            {
+                                double sh = compVote[kv.Key] / (3.0 * kv.Value);
+                                if (sh > 1e-9) continue;
+                                sepPieces++; sepTris += kv.Value;
+                                var pc = Vector3.zero; int pn = 0;
+                                for (int t = 0; t < surf.TriCount; t++)
+                                {
+                                    if (surf.Comp[t] != kv.Key) continue;
+                                    for (int e = 0; e < 3; e++) { pc += surf.V[surf.T[t * 3 + e]]; pn++; }
+                                }
+                                if (pn == 0) continue;
+                                pc /= pn;
+                                string nb = "?"; float nd = float.MaxValue;
+                                foreach (var hk in human)
+                                {
+                                    float dd = (hk.Key.position - pc).magnitude;
+                                    if (dd < nd) { nd = dd; nb = regionName[hk.Value]; }
+                                }
+                                // "Over a limb" means over anything that is not the head or a
+                                // fixed trunk bone -- the places a garment can be left behind by
+                                // a moving body. Reported as the bone name too, so the reader is
+                                // not taking my word for the category.
+                                if (nb != "Head" && nb != "Neck" && nb != "Hips") sepOverLimb++;
+                                overBones.Add(nb);
+                            }
+                            var obs = new List<string>(overBones); obs.Sort();
+                            Debug.Log($"[INVENTORY] {name}: parts={compTri.Count} " +
+                                      $"separable_pieces={sepPieces} separable_tris={sepTris} " +
+                                      $"over_non_head={sepOverLimb} bones=[{string.Join(" ", obs)}]");
+                            perFrame.Add("{\"frame\": " + f + ", \"inventory\": true" +
+                                         ", \"separable_pieces\": " + sepPieces +
+                                         ", \"separable_tris\": " + sepTris +
+                                         ", \"over_non_head\": " + sepOverLimb + "}");
+                            continue;
                         }
 
                         var splitNames = new[] { "WEIGHT", "COMPONENT" };
