@@ -42,6 +42,29 @@ NAME = SRC.replace("\\", "/").split("/")[-1]
 bpy.ops.wm.read_homefile(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=SRC)
 
+
+def openness_of(ps, n3, mw):
+    """|sum(area * normal)| / sum(area). EXACTLY zero for a closed surface, 1 for a flat sheet.
+
+    This is the reference-point-agreement criterion in closed form. For a surface S the volume
+    measured about a point p is V(p) = (1/3) * integral over S of (x - p) . n dA, so for two
+    reference points
+
+        V(p) - V(q) = -(1/3) * (p - q) . integral of n dA
+
+    Every reference point therefore agrees IF AND ONLY IF the net area vector is zero, and that
+    is the definition of a closed surface. So this measures closedness directly, with no
+    reference points to choose and no second volume to compare -- and unlike the 95% manifold
+    edge ratio it is a statement about the GEOMETRY rather than about the edge bookkeeping.
+    """
+    av = Vector((0.0, 0.0, 0.0))
+    at = 0.0
+    for p in ps:
+        a = p.area
+        av += (n3 @ p.normal).normalized() * a
+        at += a
+    return (av.length / at) if at > 0 else 1.0
+
 moved_in = []
 moved_out = []
 same = 0
@@ -118,6 +141,40 @@ for o in bpy.data.objects:
         n2, nt = new[cid]
         old_ok = ot > 0 and o2 / ot >= 0.95
         new_ok = nt > 0 and n2 / nt >= 0.95
+
+        cen0 = Vector((0.0, 0.0, 0.0))
+        for p in ps:
+            cen0 += mw @ p.center
+        cen0 /= len(ps)
+        v0 = 0.0
+        for p in ps:
+            v0 += p.area * ((mw @ p.center) - cen0).dot((n3 @ p.normal).normalized()) / 3.0
+        opn = openness_of(ps, n3, mw)
+        # AREA and RADIUS, so the volume's UNCERTAINTY can be formed downstream.
+        #
+        # Openness alone is the wrong gate and the data says so: Alastor's coat skirt -- a piece
+        # this project MEASURED, flipped and shipped -- has openness 5.6e-4 and would be refused
+        # a verdict by any bound at the noise floor. It is a real closed shell with a small hole,
+        # and it encloses -0.00301 m3, so its sign is not in doubt at all.
+        #
+        # What actually decides whether a sign can be trusted is how much the volume could MOVE:
+        # V(p) - V(q) = -(1/3)(p - q) . A_net, so over reference points within the piece's own
+        # radius the volume is uncertain by at most (1/3)|A_net|R. Compared against |V| that is
+        # dimensionless and is the quantity the gate should use.
+        area_t = sum(p.area for p in ps)
+        radius = max(((mw @ p.center) - cen0).length for p in ps)
+        m0 = collections.Counter(
+            o.material_slots[p.material_index].material.name
+            if p.material_index < len(o.material_slots) and o.material_slots[p.material_index].material
+            else "?" for p in ps).most_common(1)[0][0]
+        zs0 = [(mw @ p.center).z for p in ps]
+        # EVERY piece, not only the movers: the bound for an openness gate has to be derived
+        # from the whole population, and a dump of only the interesting rows cannot show a gap.
+        print("PIECE %s | %s | %s | %d faces | manifold %.4f | openness %.8f | vol %+.10f | "
+              "area %.8f | radius %.6f | z %.3f..%.3f"
+              % (NAME, o.name, m0, len(ps), (n2 / nt if nt else 0.0), opn, v0,
+                 area_t, radius, min(zs0), max(zs0)))
+
         if old_ok == new_ok:
             same += 1
             continue

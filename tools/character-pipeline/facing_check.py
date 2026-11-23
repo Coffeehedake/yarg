@@ -192,28 +192,63 @@ def pieces_report():
         for cid, ps in byc.items():
             if len(ps) < 100:
                 continue
-            e2, et = ecount[cid]
-            if et == 0 or e2 / et < 0.95:
-                continue                      # not a closed shell: no volume to judge
-            closed_total += 1
+            # GATE ON WHETHER THE SIGN CAN BE TRUSTED, not on how closed the piece looks.
+            #
+            # The old gate was "95% of edges shared by exactly two faces". That is a statement
+            # about edge bookkeeping, and pieces pass it whose volume is still meaningless: The
+            # Rock's Object002 sits at 97.0% and its volume changes SIGN depending on where it
+            # is measured from. A closed surface cannot do that.
+            #
+            # The exact statement is in the divergence theorem. For two reference points,
+            #
+            #     V(p) - V(q) = -(1/3) (p - q) . A_net,     A_net = sum of area * normal
+            #
+            # and A_net is exactly zero for a closed surface. So moving the reference anywhere
+            # within the piece's own radius R moves the volume by at most (1/3)|A_net|R, and
+            #
+            #     uncertainty = (1/3) |A_net| R / |V|
+            #
+            # is dimensionless. BELOW 1 NO REFERENCE POINT INSIDE THE PIECE CAN MOVE THE VOLUME
+            # PAST ZERO, so the sign is determined; above 1 the sign is a choice of origin. The
+            # bound is not a number picked to get an answer -- 1 is where the sign stops being
+            # a choice.
+            #
+            # OPENNESS ALONE WAS TRIED FIRST AND IS WRONG. It refuses Alastor's coat skirt --
+            # measured at -0.00301 m3, flipped and shipped, and the worked example this whole
+            # test was built around -- because the skirt has one small hole (openness 5.6e-4).
+            # It is a real solid with a hole, not a sheet, and the ratio above sees that where
+            # openness cannot: the skirt reads uncertainty 0.017, Pomni's flat patch reads 45.
             cen = Vector((0.0, 0.0, 0.0))
             for p in ps:
                 cen += mw @ p.center
             cen /= len(ps)
             vol = 0.0
+            anet = Vector((0.0, 0.0, 0.0))
+            rad = 0.0
             for p in ps:
-                vol += p.area * ((mw @ p.center) - cen).dot((n3 @ p.normal).normalized()) / 3.0
+                c = mw @ p.center
+                n = (n3 @ p.normal).normalized()
+                vol += p.area * (c - cen).dot(n) / 3.0
+                anet += n * p.area
+                rad = max(rad, (c - cen).length)
+            unc = (anet.length * rad / 3.0 / abs(vol)) if vol != 0 else float("inf")
+            e2, et = ecount[cid]
+            if unc > 1.0:
+                continue                      # the sign is a choice of origin: nothing to judge
+            closed_total += 1
             if vol < 0:
                 mats = collections.Counter(
                     o.material_slots[p.material_index].material.name
                     if p.material_index < len(o.material_slots) and o.material_slots[p.material_index].material else "?"
                     for p in ps)
                 zs = [(mw @ p.center).z for p in ps]
-                inside_out.append((len(ps), o.name, cid, min(zs), max(zs), vol, mats.most_common(2)))
-    for n, on, cid, zlo, zhi, vol, mats in sorted(inside_out, reverse=True):
-        print("VOLUME %s | %s piece %d | %d faces | z %.2f..%.2f | signed volume %+.5f m3 | INSIDE-OUT | %s" % (
-            name, on, cid, n, zlo, zhi, vol, ", ".join("%s %d" % m for m in mats)))
-    print("VOLSUM %s | %d closed pieces of 100+ faces measured | %d inside-out" % (name, closed_total, len(inside_out)))
+                inside_out.append((len(ps), o.name, cid, min(zs), max(zs), vol, mats.most_common(2), unc))
+    for n, on, cid, zlo, zhi, vol, mats, unc in sorted(inside_out, reverse=True):
+        print("VOLUME %s | %s piece %d | %d faces | z %.2f..%.2f | signed volume %+.5f m3 | "
+              "sign uncertainty %.3f | INSIDE-OUT | %s" % (
+                  name, on, cid, n, zlo, zhi, vol, unc, ", ".join("%s %d" % m for m in mats)))
+    print("VOLSUM %s | %d pieces with a DETERMINED sign (uncertainty <= 1) | %d inside-out" % (
+        name, closed_total, len(inside_out)))
 
 
 pieces_report()
