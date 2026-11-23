@@ -64,20 +64,35 @@
 // fix (Baerentzen & Aanaes) and is EXACT for a closed surface, which is why this file measures
 // whether the body mesh is closed instead of assuming it (control A below).
 //
-// AGAINST THE REAL BODY MESH, NOT CAPSULES, and that substitution is now measured rather than
-// assumed. A sibling session measured the authored spring colliders against the skin they stand
-// for, rest pose, on the bundle:
+// AGAINST THE REAL BODY MESH, NOT CAPSULES -- AND THE REASON ORIGINALLY GIVEN FOR THAT IS
+// WITHDRAWN. This file was written citing a measurement that the clavicle capsules stood 51-56 mm
+// proud of the skin they stand for, which would have meant anything inside a ~5 cm shell of that
+// joint was counted as penetration without touching the body. That figure was retracted on
+// 2026-11-23 by the session that produced it, and the retraction is not a detail:
 //
-//      fml_un_L_clav   radius 94.4 mm, nearest skin at 38.7 mm  ->  stands 55.7 mm proud
-//      fml_un_R_clav   radius 94.7 mm, nearest skin at 43.9 mm  ->  stands 50.8 mm proud
-//      heel 67 mm, loarm 29 mm, upleg 15 mm, uparm 10 mm proud
+//      radius MINUS distance-to-nearest-body-vertex IS NOT AN OVER-READ when the capsule's
+//      centre sits INSIDE the body, which a clavicle's does.
 //
-// So anything within a ~5 cm shell of that joint was being counted as penetration WITHOUT
-// TOUCHING THE BODY. That is the mechanism behind fml_un_L_clav owning 21.7% of all recorded
-// cape-into-body contact, and it is why a yoke resting correctly on a collarbone read as a
-// fault. A surface does not have that failure mode. (That measurement itself nearly came out
-// with the opposite sign -- it was a left/right SYMMETRY control that caught it, which is the
-// reason control E exists below.)
+// Re-measured directionally, ~200 samples per collider against the FARTHEST surface point in a
+// 12 degree cone, with no-surface-in-cone reported as UNSEEN rather than as zero:
+//
+//      C_head (small)   55.8 mm   proud in  24/200 directions   median  6.4 mm   <- CONTROL, fits a head
+//      C_head (large)   83.7 mm   proud in  71/200              median 35.3 mm
+//      C_spine_b       111.8 mm   proud in  63/200              median 62.6 mm
+//      L_clav           94.4 mm   proud in   4/200              median 14.2 mm
+//      R_clav           94.7 mm   proud in   3/200              median  8.7 mm
+//
+// The clavicles are proud in 3 and 4 directions out of 200: they FILL a shoulder rather than
+// standing off the skin. So fml_un_L_clav owning 21.7% of recorded cape contact is NOT capsule
+// over-read, and "a fat capsule swallows a yoke, a surface does not" is not a true statement about
+// that capsule. C_spine_b and the larger head sphere ARE genuinely proud, so the collider set
+// over-claims in places -- the clavicle is not one of them.
+//
+// THIS INSTRUMENT STILL EARNS ITS PLACE, on its own control rather than on that argument: a
+// synthetic displacement on K-2SO / LeftUpperArm moves the count 45 -> 45 -> 43 -> 60 -> 82 with
+// the unpushed arm flat at 21 throughout, and the onset matching an independently measured 12.5 mm
+// gap. A surface test and a capsule test remain different measurements worth comparing; what is
+// gone is the claim about which way the difference runs at the clavicle.
 //
 // THE DENOMINATOR IS MEASURED INDEPENDENTLY OF THE NUMERATOR. Numerator: cloth vertices whose
 // signed offset is negative. Denominator: ALL cloth vertices. Neither term is derived from the
@@ -895,6 +910,21 @@ public static class YargClothInside
             // control, and nominate the best. Runs the COMPONENT split only -- the one with a
             // valid closed surface -- so a 65-character sweep costs one measurement pass each.
             bool census = Arg(args, "-census") != null;
+            // ENCLOSURE MODE: for each piece, HOW MANY HUMANOID BONE POSITIONS LIE INSIDE IT.
+            //
+            // Printed as RAW DATA and nothing is labelled from it. That is deliberate and it is the
+            // discipline that should have applied to the previous four identity heuristics: three
+            // derived categories in one evening were all wrong, so the counts go out first and the
+            // decision rule gets written against them afterwards, by a reader who can see them.
+            //
+            // WHAT IT DOES WITH A 1-BONE PIECE, stated as design rather than discovered later:
+            // NOTHING. It reports 1 and stops. Enclosure identifies "wraps a bone", which is true
+            // of a body AND of every tight garment -- a cowl encloses Head, a boot encloses toes, a
+            // glove encloses fingers. So no rule here admits or rejects a piece on its count, and
+            // in particular "the piece enclosing the most bones" is NOT implemented, because on a
+            // character whose head is a separate body piece any rule that admits a 1-bone piece
+            // readmits the cowl. The count is evidence toward a split, not a split.
+            bool enclose = Arg(args, "-enclose") != null;
             // An explicit push direction, so the direction can come from the census rather than
             // from a fixed axis. Power Girl's arm control failed on DIRECTION, not magnitude: her
             // cape rests on her torso beside the arm, and a radial outward push moved the deltoid
@@ -1467,6 +1497,139 @@ public static class YargClothInside
                                          ", \"separable_pieces\": " + sepPieces +
                                          ", \"separable_tris\": " + sepTris +
                                          ", \"over_non_head\": " + sepOverLimb + "}");
+                            continue;
+                        }
+
+                        if (enclose)
+                        {
+                            // RANKED BY VOLUME, NOT BY TRIANGLE COUNT, and that is not a
+                            // presentation choice -- it is why the Jinx case read 0 everywhere.
+                            // Her six braids are ~12,000 triangles each and her BODY is not in the
+                            // top twelve by count, so the test never saw the thing it was being
+                            // validated against. Power Girl separates the two cleanly: her body
+                            // piece is 0.0635 m3 and a hair shell is 0.00002 m3, a factor of about
+                            // three thousand, while their triangle counts are within 10x. Triangle
+                            // count measures how finely a thing was modelled; volume measures
+                            // whether it is a solid. A body is a solid.
+                            var pieceVol = new Dictionary<int, double>();
+                            var pieceHalf = new Dictionary<int, float>();
+                            {
+                                var acc = new Dictionary<int, Vector3>();
+                                var cnt2 = new Dictionary<int, int>();
+                                for (int t = 0; t < surf.TriCount; t++)
+                                {
+                                    int c2 = surf.Comp[t];
+                                    acc.TryGetValue(c2, out var av);
+                                    cnt2.TryGetValue(c2, out var cv);
+                                    for (int e = 0; e < 3; e++) av += surf.V[surf.T[t * 3 + e]];
+                                    acc[c2] = av; cnt2[c2] = cv + 3;
+                                }
+                                var cenOf = new Dictionary<int, Vector3>();
+                                foreach (var kv2 in acc) cenOf[kv2.Key] = kv2.Value / Math.Max(1, cnt2[kv2.Key]);
+                                var lo2 = new Dictionary<int, Vector3>();
+                                var hi2 = new Dictionary<int, Vector3>();
+                                for (int t = 0; t < surf.TriCount; t++)
+                                {
+                                    int c2 = surf.Comp[t];
+                                    var ce = cenOf[c2];
+                                    var a3 = surf.V[surf.T[t * 3]] - ce;
+                                    var b3 = surf.V[surf.T[t * 3 + 1]] - ce;
+                                    var c3 = surf.V[surf.T[t * 3 + 2]] - ce;
+                                    pieceVol.TryGetValue(c2, out var vv);
+                                    pieceVol[c2] = vv + Vector3.Dot(a3, Vector3.Cross(b3, c3)) / 6.0;
+                                    for (int e = 0; e < 3; e++)
+                                    {
+                                        var v3 = surf.V[surf.T[t * 3 + e]];
+                                        if (!lo2.ContainsKey(c2)) { lo2[c2] = v3; hi2[c2] = v3; }
+                                        lo2[c2] = Vector3.Min(lo2[c2], v3);
+                                        hi2[c2] = Vector3.Max(hi2[c2], v3);
+                                    }
+                                }
+                                foreach (var kv2 in lo2)
+                                {
+                                    var ext = hi2[kv2.Key] - kv2.Value;
+                                    pieceHalf[kv2.Key] = 0.5f * Mathf.Max(ext.x, Mathf.Max(ext.y, ext.z));
+                                }
+                            }
+                            var byT = new List<KeyValuePair<int, int>>(compTri);
+                            byT.Sort((x, y) =>
+                            {
+                                pieceVol.TryGetValue(x.Key, out var vx);
+                                pieceVol.TryGetValue(y.Key, out var vy);
+                                return Math.Abs(vy).CompareTo(Math.Abs(vx));
+                            });
+                            Debug.Log($"[ENCLOSE] {name}: parts={compTri.Count} humanoid_bones=" +
+                                      $"{regionName.Count}  (counts are RAW -- nothing is labelled " +
+                                      "from them)");
+                            for (int ci = 0; ci < byT.Count && ci < 12; ci++)
+                            {
+                                int c = byT[ci].Key, tn = byT[ci].Value;
+                                double share = compVote[c] / (3.0 * tn);
+                                var piece = surf.Subset(t => surf.Comp[t] == c);
+                                if (piece.TriCount == 0) continue;
+                                double pcl; int pe, pm;
+                                piece.Closedness(out pcl, out pe, out pm);
+                                var pg = new Grid(piece, 24);
+                                float ylo2 = float.MaxValue, yhi2 = float.MinValue;
+                                foreach (var v in piece.V)
+                                {
+                                    if (v.y < ylo2) ylo2 = v.y;
+                                    if (v.y > yhi2) yhi2 = v.y;
+                                }
+                                int encl = 0;
+                                var names2 = new List<string>();
+                                foreach (var hk in human)
+                                {
+                                    float bd; Vector3 bq, bn2; int bt2;
+                                    // 1 m: only ~50 queries per piece, so the search can afford to
+                                    // be generous rather than risk a deep bone reading as outside
+                                    // because the surface was further than a tighter cutoff.
+                                    if (!pg.Nearest(hk.Key.position, 1.0f, out bd, out bq, out bn2, out bt2))
+                                        continue;
+                                    if (bn2 == Vector3.zero) continue;
+                                    // A POINT INSIDE A SHELL CANNOT BE FURTHER FROM ITS SURFACE
+                                    // THAN THE SHELL'S OWN LARGEST HALF-EXTENT. That is a
+                                    // geometric necessity, not a tuned threshold, and it is what
+                                    // the first version lacked: a 163 mm-tall hair shell reported
+                                    // 46 of 52 bones enclosed, including hips roughly 0.65 m away.
+                                    // My first explanation for that was inverted winding, and the
+                                    // signed volumes DISPROVED it -- piece 11 came back at
+                                    // +0.00016 m3, positive, like almost every other piece. The
+                                    // real defect is that an open or distant sign test answers
+                                    // fluently for points nowhere near the piece.
+                                    pieceHalf.TryGetValue(c, out var halfExt);
+                                    if (halfExt > 0f && bd > halfExt) continue;
+                                    if (Vector3.Dot(hk.Key.position - bq, bn2) < 0f)
+                                    {
+                                        encl++;
+                                        if (names2.Count < 6) names2.Add(regionName[hk.Value]);
+                                    }
+                                }
+                                // SIGNED VOLUME, about the piece's own centroid, to test the one
+                                // hypothesis that explains the absurd counts: a piece whose winding
+                                // is inverted has normals pointing INWARD, so a bone anywhere
+                                // outside it reads as inside and the count approaches the whole
+                                // skeleton. 46 of 52 on a 92-triangle shell is not a geometry
+                                // result, it is a sign result. facing_check.py finds inside-out
+                                // pieces by exactly this quantity.
+                                var pcen = Vector3.zero;
+                                foreach (var v in piece.V) pcen += v;
+                                if (piece.V.Count > 0) pcen /= piece.V.Count;
+                                double pvol = 0.0;
+                                for (int t = 0; t < piece.TriCount; t++)
+                                {
+                                    var a2 = piece.V[piece.T[t * 3]] - pcen;
+                                    var b2 = piece.V[piece.T[t * 3 + 1]] - pcen;
+                                    var c2 = piece.V[piece.T[t * 3 + 2]] - pcen;
+                                    pvol += Vector3.Dot(a2, Vector3.Cross(b2, c2)) / 6.0;
+                                }
+                                Debug.Log($"[ENCLOSE] {name}:   piece {ci} tris={tn,6} " +
+                                          $"share={F3(share)} closed={F3(pcl)} " +
+                                          $"vol={pvol,12:F8} half={F3(pieceHalf.ContainsKey(c) ? pieceHalf[c] : 0f)} " +
+                                          $"y={F3(ylo2)}..{F3(yhi2)} " +
+                                          $"ENCLOSES={encl,3}  [{string.Join(" ", names2)}]");
+                            }
+                            perFrame.Add("{\"frame\": " + f + ", \"enclose\": true}");
                             continue;
                         }
 

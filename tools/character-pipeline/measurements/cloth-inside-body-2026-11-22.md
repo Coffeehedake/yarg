@@ -487,3 +487,100 @@ return a large disagreement that means nothing.
 * 23 of 23 Unity runs clean; two of them announced their own invalidity, which is the system working.
 * Nothing committed by me. No character, bundle or backup written. The `f7d268e0` backup was opened
   read-only and its MD5 re-verified after the run.
+
+---
+
+# Part six: the enclosure counts, and the capsule justification withdrawn
+
+## First, this file's own rationale is withdrawn
+
+`YargClothInside.cs` was written citing a measurement that the clavicle capsules stood 51-56 mm
+proud of the skin, which would have meant anything inside a ~5 cm shell of that joint counted as
+penetration without touching the body. **That figure was retracted on 2026-11-23 by the session that
+produced it**, and the docstring has been corrected rather than left citing it. Radius minus
+distance-to-nearest-body-vertex is not an over-read when the capsule's centre sits inside the body,
+which a clavicle's does. Re-measured directionally, ~200 samples per collider against the farthest
+surface point in a 12 degree cone:
+
+    C_head (small)   55.8 mm  proud in  24/200  median  6.4 mm   <- CONTROL, it fits a head
+    C_head (large)   83.7 mm  proud in  71/200  median 35.3 mm
+    C_spine_b       111.8 mm  proud in  63/200  median 62.6 mm
+    L_clav           94.4 mm  proud in   4/200  median 14.2 mm
+    R_clav           94.7 mm  proud in   3/200  median  8.7 mm
+
+The clavicles are proud in 3 and 4 directions of 200: they FILL a shoulder. So `fml_un_L_clav`
+owning 21.7% of recorded cape contact is **not** capsule over-read, and "a fat capsule swallows a
+yoke, a surface does not" is not true of that capsule. The instrument keeps its place on its own
+control — K-2SO at 45, 45, 43, 60, 82 with the unpushed arm flat at 21 — and not on that argument.
+
+## Three directions of error is why the 0.5 cannot be tuned
+
+| character | share of its body piece | effect of "share > 0.5 per piece" |
+|---|---|---|
+| Power Girl | 0.568 | **over**-labels: skin and costume are one fused shell, the sleeve is swallowed |
+| Jinx | — | **under**-labels: 15% of her is body |
+| Batman | 0.355 | **under**-labels: only the cowl is body, so the body surface is a head |
+
+One rule failing in three directions is not a calibration problem.
+
+## The enclosure counts, raw
+
+Per piece: how many humanoid bone POSITIONS lie inside it. **Nothing is labelled from this.**
+
+    PowerGirl  piece 0  vol 0.0635  closed 1.000  ENCLOSES 48   <- the body
+               piece 1  vol 0.0044  closed 0.997  ENCLOSES  4   [Neck Head shoulders]
+               piece 2  vol 0.0030  closed 1.000  ENCLOSES  0   <- the cape
+    Batman     piece 0  vol 0.0993  closed 0.994  ENCLOSES 41   <- the torso
+               piece 1  vol 0.0242  closed 0.989  ENCLOSES  0   <- the cape
+               piece 4  vol 0.0035  closed 0.990  ENCLOSES  3   <- the cowl
+               piece 2  vol 0.0067  closed 1.000  ENCLOSES  3   <- a boot, enclosing foot bones
+    Jinx       piece 1  vol 0.0092  closed 0.992  ENCLOSES 25   <- her torso
+               piece 0  vol 0.0135  closed 1.000  ENCLOSES  3   <- her hips and legs
+
+All three solved cases reproduce: the body ranks first or near-first and encloses most of the
+skeleton, both capes read **0**, and the cowl reads 3 against a torso's 41.
+
+## Two corrections the data forced, neither of them my first guess
+
+**My inverted-winding hypothesis was wrong.** The first run had a 92-triangle shell reporting 46 of
+52 bones enclosed, and I predicted inverted normals. Signed volumes **disproved** it: that piece is
++0.00016 m3, positive, like almost every other piece, and the one negative piece reported an
+unremarkable 5. The real defect was that a sign test answers fluently for points nowhere near the
+piece — the hips are ~0.65 m from a 163 mm-tall hair shell. Fixed with a geometric necessity rather
+than a threshold: **a point inside a shell cannot be further from its surface than the shell's own
+largest half-extent.**
+
+**Ranking by triangle count hid the Jinx case entirely.** Her six braids are ~12,000 triangles each
+and her body was not in the top twelve, so the test never saw the thing it was being validated
+against and read 0 everywhere. Ranked by volume it appears immediately: a body piece is 0.0635 m3
+against a hair shell's 0.00002 m3, a factor of three thousand, while their triangle counts are
+within 10x. Triangle count measures how finely a thing was modelled; volume measures whether it is
+a solid.
+
+## WHAT IT DOES WITH A 1-BONE PIECE: nothing, by design
+
+It reports the count and stops. No label is derived here, and "the piece enclosing the most bones"
+is deliberately **not** implemented, for a reason the counts now demonstrate:
+
+* Enclosure identifies "wraps a bone", which is true of a body AND of every tight garment. Batman's
+  boots enclose 3 foot bones each; his cowl encloses 3. A rule admitting a 1-bone piece readmits the
+  cowl on any character whose head is a separate shell.
+* **Jinx's body is not one piece.** Her torso encloses 25 and her hips-and-legs piece encloses 3,
+  separately. A single-piece rule would take her torso and lose her legs. That is a constraint on
+  the decision rule that no amount of care about the count would have revealed.
+
+## Residual defect, stated not buried
+
+Three small open shells on Power Girl (closed 0.481-0.689, 38-76 triangles, near the head) still
+report 3 bones each. The half-extent constraint does not suppress them because they are tall and sit
+beside the neck. Small counts, no longer absurd, and still wrong — an open shell has no inside, so
+anything it reports is an artefact. A piece's closedness is printed beside its count so a reader can
+discount them, which is the same discipline as printing driving-bone names raw.
+
+## STATE
+
+* Enclosure counts reproduce all three solved cases. **No split rule is written from them.**
+* 26 of 26 Unity runs clean.
+* Measurement A still ungraded; measurement B still blocked, and now also no longer confirming a
+  prior figure, since the 51-56 mm claim is withdrawn.
+* Nothing committed. No character, bundle or backup written.
