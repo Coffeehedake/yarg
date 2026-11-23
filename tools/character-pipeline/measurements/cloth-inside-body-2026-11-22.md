@@ -324,3 +324,83 @@ Not built.
 * Batman not run.
 * The `over_non_head` ranking remains withdrawn. The inventory now prints raw driving-bone names
   with no category derived from them, because three derived categories in one evening were wrong.
+
+---
+
+# Part four: the census, and the first passing positive control
+
+## The census
+
+Per character and per bone: cloth vertices that **rest on** bone B (nearest body triangle is driven
+by B or its subtree) and are **not driven by** B. Both terms from skin weights, no push needed, so
+every bone is scored in one pass over the cloth as a bit operation. 65 characters, one editor
+session.
+
+Hair is **not** excluded. It was earlier disqualified for being mislabelled a *garment*, which is a
+different question from what the control needs: non-body geometry that stays while the body moves.
+Hair is ideal for that, never being driven by a limb bone.
+
+    65 characters, 38 produced a control line
+    30  at least one hostable bone
+     8  NO HOSTABLE BONE -- every cloth vertex hangs from the bone it rests on
+    27  UNMEASURED, no separable cloth at all (the same 27 as part two)
+
+Winning bone by character count: **RightShoulder 6, LeftShoulder 4, RightUpperLeg 4, LeftUpperLeg 3,
+LeftUpperArm 3, Head 2, Neck 2.** Shoulders are the most common host, which confirms the prediction
+made before the run: the two conditions are anti-correlated by how clothes are made, so they hold
+together mainly where geometry hangs from one branch of the rig and rests against another — hair and
+scarves on shoulders, driven from head and neck.
+
+The 8 "NO HOSTABLE BONE" characters are the anti-correlation holding absolutely, and they are a
+statement about authoring rather than a failed search.
+
+## The control direction has to be derived too
+
+The top nominee by count was Jinx / LeftUpperLeg, 14,607 hostable — the same character as part two
+but a **different bone** and a direction of `0.028,-0.869,-0.494`, mostly **downward**. The lateral
+X push I chose myself was simply wrong. Power Girl's arm control failed on direction for the same
+reason: her cape rests on her torso beside the arm, so a radial outward push moved the deltoid away
+from it.
+
+## K-2SO / LeftUpperArm: it fires
+
+Nominated on 711 hostable vertices at a 12.5 mm centroid gap, pushed along its own derived
+`-0.191,-0.981,0.044`. RightUpperArm (669 hostable, 12.6 mm) left **unpushed** as an internal
+reference.
+
+| push | guard travel | pushed_on_body | static_near_push | inside_over_push | cloth_over_push | fraction | RightUpperArm |
+|---|---|---|---|---|---|---|---|
+| 0 | — | — | — | — | — | — | 21 |
+| 5 mm | 5.000 / 5.000 | 3,856 | 2,444 | 45 | 901 | 5.0% | 21 |
+| 10 mm | 10.000 / 10.000 | 3,859 | 2,447 | 43 | 896 | 4.8% | 21 |
+| 20 mm | 20.000 / 20.000 | 3,855 | 2,445 | 60 | 874 | 6.9% | 21 |
+| 40 mm | 40.000 / 40.000 | 3,852 | 2,451 | 82 | 790 | **10.4%** | 21 |
+
+Three independent reasons this is a pass and not a trend:
+
+1. **The unpushed arm is constant at 21 across all five runs.** Exact localisation, measured on
+   geometry the control never touched.
+2. **The onset matches a separate measurement.** The census put the gap at 12.5 mm. Nothing happens
+   at 5 or 10 mm; the rise begins between 10 and 20 mm and climbs from there. A response that starts
+   where an independently measured gap says it must is a prediction confirmed.
+3. **The fraction rises faster than the count**, because the denominator shrinks as the arm moves
+   away — 901 → 790 while the numerator nearly doubles.
+
+**READ `inside_over_push`, NOT THE TOTAL, AND NOT THE REGION ROW.** The total moves 228 → 265 with a
+dip, and the LeftUpperArm *region* count **falls** 32 → 33 → 32 → 27 → 19. That is an attribution
+artefact and not a loss of signal: region is assigned by the nearest body triangle, so as the arm
+descends, vertices that were nearest the arm become nearest the shoulder and leave the bucket while
+remaining inside. The bone-scoped count uses the ancestry bitmask and is stable under that motion.
+Anyone reading the region row alone would conclude the control had failed.
+
+## STATE
+
+* **The instrument has a passing positive control**, on K-2SO / LeftUpperArm, with the subject and
+  the direction both chosen by the census rather than by guesswork, the forcing asserted by the
+  guard, and an unpushed internal reference flat across the sweep.
+* 20 of 20 Unity runs clean.
+* Batman is **no longer blocked** by the control. The next step is him on both bundles
+  (`a9b26646` installed against `f7d268e0` backup), read on `inside_over_push` for the shoulder
+  bones, plus the original probe on the same frames — with the clavicle capsules measured at
+  51-56 mm proud, the two should disagree, and the size of that disagreement is a result about
+  every cape number this project has published.

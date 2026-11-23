@@ -228,6 +228,7 @@ public static class YargClothInside
             _weld[k] = i;
             V.Add(p);
             N.Add(Vector3.zero);
+            VMask.Add(0UL);
             return i;
         }
 
@@ -249,8 +250,18 @@ public static class YargClothInside
         /// The bone that drives this triangle, by name-table id. See VertDomBone.
         public readonly List<int> Bone = new List<int>();
 
+        /// WHICH HUMANOID BONES THIS TRIANGLE HANGS FROM, as a bitmask over the humanoid map:
+        /// bit b is set when the triangle's driving bone IS humanoid bone b or sits anywhere
+        /// beneath it in the transform hierarchy. One bitmask per triangle makes "is this driven
+        /// by bone b or its subtree" a single bit test, so the census can score EVERY bone in one
+        /// pass over the cloth instead of one pass per bone.
+        public readonly List<ulong> Mask = new List<ulong>();
+
+        /// The same, per welded vertex: the OR over every triangle meeting there.
+        public readonly List<ulong> VMask = new List<ulong>();
+
         public void AddTriangle(Vector3 a, Vector3 b, Vector3 c, int region, int humanVote, int mat,
-                                int bone = -1)
+                                int bone = -1, ulong mask = 0UL)
         {
             int ia = Add(a), ib = Add(b), ic = Add(c);
             if (ia == ib || ib == ic || ia == ic) return;   // degenerate after welding
@@ -259,6 +270,8 @@ public static class YargClothInside
             HumanVote.Add(humanVote);
             Mat.Add(mat);
             Bone.Add(bone);
+            Mask.Add(mask);
+            VMask[ia] |= mask; VMask[ib] |= mask; VMask[ic] |= mask;
             // Area-weighted: the cross product's LENGTH is twice the area, so accumulating the
             // un-normalised cross product weights each face by its own area without a second
             // pass. Large faces should dominate a vertex normal; a fan of slivers should not.
@@ -289,7 +302,7 @@ public static class YargClothInside
             {
                 if (!keep(t)) continue;
                 s.AddTriangle(V[T[t * 3]], V[T[t * 3 + 1]], V[T[t * 3 + 2]],
-                              Region[t], HumanVote[t], Mat[t], Bone[t]);
+                              Region[t], HumanVote[t], Mat[t], Bone[t], Mask[t]);
             }
             s.Finish();
             return s;
@@ -305,6 +318,26 @@ public static class YargClothInside
                 if (!keep(t)) continue;
                 for (int e = 0; e < 3; e++)
                     if (seen.Add(T[t * 3 + e])) outv.Add(V[T[t * 3 + e]]);
+            }
+            return outv;
+        }
+
+        /// The same, with each vertex's ancestry bitmask alongside it.
+        public List<Vector3> VertsOf(Func<int, bool> keep, out List<ulong> masks)
+        {
+            var seen = new HashSet<int>();
+            var outv = new List<Vector3>();
+            masks = new List<ulong>();
+            for (int t = 0; t < TriCount; t++)
+            {
+                if (!keep(t)) continue;
+                for (int e = 0; e < 3; e++)
+                {
+                    int vi = T[t * 3 + e];
+                    if (!seen.Add(vi)) continue;
+                    outv.Add(V[vi]);
+                    masks.Add(VMask[vi]);
+                }
             }
             return outv;
         }
@@ -715,6 +748,83 @@ public static class YargClothInside
         return res;
     }
 
+    /// WHICH HUMANOID BONES SIT AT OR ABOVE `t`, as a bitmask. The walk goes UP from a weighted
+    /// bone to the root, so "driven by bone b or its subtree" becomes a bit test downstream.
+    ///
+    /// Derived from WEIGHTS, not from measured travel. The travel-based version of this needed a
+    /// push to establish, which would have made the census 65 characters x N bones x a bake; the
+    /// author's own skinning declaration gives the same answer statically. The measured guard then
+    /// runs once, on the single subject this nominates -- census proposes, guard confirms -- which
+    /// is what protects the result if this derivation is wrong.
+    private static ulong HumanAncestry(Transform t, Dictionary<Transform, int> human,
+                                       Dictionary<Transform, ulong> cache)
+    {
+        if (t == null) return 0UL;
+        if (cache.TryGetValue(t, out var got)) return got;
+        ulong m = 0UL;
+        var cur = t;
+        int guard = 0;
+        while (cur != null && guard++ < 200)
+        {
+            if (human.TryGetValue(cur, out var bi) && bi < 64) m |= 1UL << bi;
+            cur = cur.parent;
+        }
+        cache[t] = m;
+        return m;
+    }
+
+    /// Per-vertex ancestry bitmask of the vertex's DOMINANT bone.
+    ///
+    /// `reached` counts how many distinct humanoid bones the walk actually arrived at. THAT IS THE
+    /// CONTROL, and it is not optional: a descendant check that reaches nothing reads identically
+    /// to one that reaches everything and finds nothing driven, and this project has already paid
+    /// for that once -- every spring chain read 0.0 weight, live chains included, because the walk
+    /// never connected. `chain_weight_installed.py` carries the Python form of this control
+    /// (`meshes walked`, `vertices read`, `bones matched` against `bones named`, and a refusal when
+    /// nothing on the character carries weight). It is a Python tool reading a bundle through
+    /// UnityPy and this is C# inside the editor, so the WALK cannot literally be shared; what is
+    /// reused is the control, and the caller below refuses on `reached == 0` exactly as it does.
+    private static ulong[] VertAncestry(SkinnedMeshRenderer smr, Dictionary<Transform, int> human,
+                                        Dictionary<Transform, ulong> cache, ref ulong reachedMask,
+                                        ref int vertsRead)
+    {
+        var mesh = smr.sharedMesh;
+        var res = new ulong[mesh.vertexCount];
+        var bones = smr.bones;
+        if (bones == null || bones.Length == 0) return res;
+        var bm = new ulong[bones.Length];
+        for (int i = 0; i < bones.Length; i++)
+        {
+            bm[i] = HumanAncestry(bones[i], human, cache);
+            reachedMask |= bm[i];
+        }
+        var per = mesh.GetBonesPerVertex();
+        var w = mesh.GetAllBoneWeights();
+        try
+        {
+            int c = 0;
+            for (int v = 0; v < mesh.vertexCount && v < per.Length; v++)
+            {
+                int cnt = per[v];
+                float best = -1f; int bb = -1;
+                for (int k = 0; k < cnt; k++)
+                {
+                    var bw = w[c + k];
+                    if (bw.weight > best) { best = bw.weight; bb = bw.boneIndex; }
+                }
+                c += cnt;
+                vertsRead++;
+                if (bb >= 0 && bb < bm.Length) res[v] = bm[bb];
+            }
+        }
+        finally
+        {
+            if (per.IsCreated) per.Dispose();
+            if (w.IsCreated) w.Dispose();
+        }
+        return res;
+    }
+
     /// Region -1 is real under the component split and is not an error: a body-labelled piece
     /// keeps all of its triangles, and some of those have no humanoid vertex to name them.
     private static string RegionLabel(List<string> names, int r)
@@ -781,6 +891,16 @@ public static class YargClothInside
             // a lower-leg control would have been run against hair and come back flat for a
             // reason indistinguishable from the flat already in hand.
             bool inventory = Arg(args, "-inventory") != null;
+            // CENSUS MODE: score EVERY humanoid bone for whether it could host the displacement
+            // control, and nominate the best. Runs the COMPONENT split only -- the one with a
+            // valid closed surface -- so a 65-character sweep costs one measurement pass each.
+            bool census = Arg(args, "-census") != null;
+            // An explicit push direction, so the direction can come from the census rather than
+            // from a fixed axis. Power Girl's arm control failed on DIRECTION, not magnitude: her
+            // cape rests on her torso beside the arm, and a radial outward push moved the deltoid
+            // away from it. The census prints the unit vector from the bone toward the static
+            // cloth that actually rests on it; pass that back in here.
+            var pushDirArg = Arg(args, "-pushDir");
 
             EditorSceneManager.OpenScene("Assets/Scenes/CharacterSelect.unity", OpenSceneMode.Single);
             var dm = UnityEngine.Object.FindFirstObjectByType<CharacterDisplayManager>();
@@ -970,6 +1090,33 @@ public static class YargClothInside
                                     continue;
                                 }
                                 Vector3 dir;
+                                if (!string.IsNullOrEmpty(pushDirArg))
+                                {
+                                    var bits3 = pushDirArg.Split(',');
+                                    float dx = 0f, dy = 0f, dz = 0f;
+                                    if (bits3.Length == 3
+                                        && float.TryParse(bits3[0], NumberStyles.Float,
+                                                          CultureInfo.InvariantCulture, out dx)
+                                        && float.TryParse(bits3[1], NumberStyles.Float,
+                                                          CultureInfo.InvariantCulture, out dy)
+                                        && float.TryParse(bits3[2], NumberStyles.Float,
+                                                          CultureInfo.InvariantCulture, out dz))
+                                    {
+                                        var d3 = new Vector3(dx, dy, dz);
+                                        if (d3.sqrMagnitude < 1e-12f)
+                                        {
+                                            Debug.LogError($"[INSIDE] {name}: -pushDir is a zero " +
+                                                           "vector -- the control would not move.");
+                                            continue;
+                                        }
+                                        t.position += d3.normalized * pushArm;
+                                        continue;
+                                    }
+                                    Debug.LogError($"[INSIDE] {name}: -pushDir '{pushDirArg}' is not " +
+                                                   "three comma-separated numbers -- the control did " +
+                                                   "NOT move.");
+                                    continue;
+                                }
                                 if (pushAxis == "radial")
                                 {
                                     if (chest == null) continue;
@@ -990,6 +1137,10 @@ public static class YargClothInside
 
                         // Every bone AT OR BENEATH a pushed bone, by name, so a triangle can
                         // be asked whether the body being displaced is what drives it.
+                        var ancCache = new Dictionary<Transform, ulong>();
+                        ulong reachedMask = 0UL;
+                        int ancVertsRead = 0;
+
                         var pushedBoneNames = new HashSet<string>();
                         foreach (var pt in pushTargets)
                             foreach (var tr in pt.GetComponentsInChildren<Transform>())
@@ -1042,6 +1193,8 @@ public static class YargClothInside
                             var bv = baked.vertices;
                             var reg = VertRegion(smr, human);
                             var dom = VertDomBone(smr, boneNames, boneIndex);
+                            var anc = VertAncestry(smr, human, ancCache, ref reachedMask,
+                                                   ref ancVertsRead);
                             var world = new Vector3[bv.Length];
                             for (int i = 0; i < bv.Length; i++) world[i] = toWorld.MultiplyPoint3x4(bv[i]);
 
@@ -1077,7 +1230,8 @@ public static class YargClothInside
                                     int rg = reg[i0] >= 0 ? reg[i0]
                                            : (reg[i1] >= 0 ? reg[i1] : reg[i2]);
                                     surf.AddTriangle(world[i0], world[i1], world[i2], rg, vote,
-                                                     matId, dom[i0]);
+                                                     matId, dom[i0],
+                                                     anc[i0] | anc[i1] | anc[i2]);
                                 }
                             }
                             // The guard's measurement, per renderer.
@@ -1319,6 +1473,8 @@ public static class YargClothInside
                             string splitLabel = splitNames[sp];
                             Surface body;
                             List<Vector3> cloth;
+                            List<ulong> clothMask = null;
+                            if (census && sp == 0) continue;   // COMPONENT only; see -census
                             if (sp == 0)
                             {
                                 body = surf.Subset(t => surf.HumanVote[t] == 3);
@@ -1327,7 +1483,8 @@ public static class YargClothInside
                             else
                             {
                                 body = surf.Subset(t => bodyComp.Contains(surf.Comp[t]));
-                                cloth = surf.VertsOf(t => !bodyComp.Contains(surf.Comp[t]));
+                                cloth = surf.VertsOf(t => !bodyComp.Contains(surf.Comp[t]),
+                                                     out clothMask);
                             }
                             clothVerts = cloth.Count;
 
@@ -1425,6 +1582,14 @@ public static class YargClothInside
                         // is not OVER the leg here, because its nearest body triangle is whatever
                         // it actually rests against. Zero means flat was guaranteed in advance.
                         int clothOverPush = 0, insideOverPush = 0;
+                        // THE CENSUS. For each cloth vertex: the bones its nearest body triangle
+                        // hangs from, MINUS the bones it hangs from itself. Every bone in that
+                        // difference is one that could move the body under this vertex while the
+                        // vertex stays put -- the two conditions at once, as a bit operation, so
+                        // all bones are scored in one pass over the cloth rather than one pass per
+                        // bone.
+                        var censusCount = new int[Math.Max(1, regionName.Count)];
+                        var censusCentroid = new Vector3[Math.Max(1, regionName.Count)];
                         // The same count restricted to vertices whose nearest body triangle lies
                         // in a component with NO boundary edge -- the only vertices on which the
                         // sign means what the docstring says it means.
@@ -1461,6 +1626,22 @@ public static class YargClothInside
                                             && surfRef.Bone[tri] < boneNames.Count
                                             && pushedBoneNames.Contains(boneNames[surfRef.Bone[tri]]);
                             if (overPush) clothOverPush++;
+                            if (clothMask != null && i < clothMask.Count)
+                            {
+                                ulong restsOn = surfRef.Mask[tri];
+                                ulong hangsFrom = clothMask[i];
+                                ulong hostable = restsOn & ~hangsFrom;
+                                while (hostable != 0UL)
+                                {
+                                    int b = 0;
+                                    ulong lowbit = hostable & (~hostable + 1UL);
+                                    while ((lowbit >> b) != 1UL) b++;
+                                    hostable &= hostable - 1UL;
+                                    if (b >= censusCount.Length) continue;
+                                    censusCount[b]++;
+                                    censusCentroid[b] += cloth[i];
+                                }
+                            }
                             int ncomp = surfRef.Comp[tri];
                             nearByComp.TryGetValue(ncomp, out var nbc); nearByComp[ncomp] = nbc + 1;
                             bool onClosed = surfRef.IsClosed(ncomp);
@@ -1529,6 +1710,59 @@ public static class YargClothInside
                                   $"clothVerts={clothVerts} INSIDE={inside} " +
                                   $"frac={F6(clothVerts > 0 ? (double) inside / clothVerts : 0)} " +
                                   $"medDepth={F3(medDepth * 1000)}mm deepest={F3(deepest * 1000)}mm");
+                        if (census)
+                        {
+                            // THE CONTROL FIRST, and this mode REFUSES without it. A descendant
+                            // walk that reaches nothing reads identically to one that reaches
+                            // everything and finds nothing hostable. Same control as
+                            // chain_weight_installed.py: counts that must be nonzero, bones
+                            // REACHED against bones NAMED, and a refusal rather than a zero.
+                            int reached = 0;
+                            for (int b = 0; b < 64; b++) if ((reachedMask & (1UL << b)) != 0UL) reached++;
+                            Debug.Log($"[CENSUS] {name}: CONTROL bones_named={regionName.Count} " +
+                                      $"bones_reached={reached} cloth_verts={clothVerts} " +
+                                      $"vertices_read={ancVertsRead} body_tris={body.TriCount}");
+                            if (reached == 0 || ancVertsRead == 0 || clothVerts == 0)
+                            {
+                                Debug.LogError($"[CENSUS] {name}: REFUSED -- the ancestry walk " +
+                                               "reached no humanoid bone, or nothing was read. A " +
+                                               "zero from this is the walk, not the character.");
+                                perFrame.Add("{\"frame\": " + f + ", \"census\": \"refused\"}");
+                                continue;
+                            }
+                            var order = new List<int>();
+                            for (int b = 0; b < censusCount.Length; b++) if (censusCount[b] > 0) order.Add(b);
+                            order.Sort((x, y) => censusCount[y].CompareTo(censusCount[x]));
+                            if (order.Count == 0)
+                            {
+                                Debug.Log($"[CENSUS] {name}: NO HOSTABLE BONE -- every cloth vertex " +
+                                          "hangs from the same bone it rests on. Not a failed search: " +
+                                          "a statement about how this character is authored.");
+                                perFrame.Add("{\"frame\": " + f + ", \"census\": \"none\"}");
+                                continue;
+                            }
+                            var cj = new StringBuilder();
+                            for (int oi = 0; oi < order.Count && oi < 4; oi++)
+                            {
+                                int b = order[oi];
+                                var cenb = censusCentroid[b] / censusCount[b];
+                                Transform bt = null;
+                                foreach (var hk in human) if (hk.Value == b) { bt = hk.Key; break; }
+                                var dirb = bt != null ? (cenb - bt.position) : Vector3.zero;
+                                var u = dirb.sqrMagnitude > 1e-12f ? dirb.normalized : Vector3.zero;
+                                Debug.Log($"[CENSUS] {name}:   {regionName[b],-18} hostable=" +
+                                          $"{censusCount[b],6}  pushDir={F3(u.x)},{F3(u.y)},{F3(u.z)}" +
+                                          $"  gap={F3(dirb.magnitude * 1000)}mm");
+                                if (oi == 0)
+                                    cj.Append("\"bone\": \"").Append(regionName[b])
+                                      .Append("\", \"hostable\": ").Append(censusCount[b])
+                                      .Append(", \"push_dir\": \"").Append(F3(u.x)).Append(",")
+                                      .Append(F3(u.y)).Append(",").Append(F3(u.z)).Append("\"");
+                            }
+                            perFrame.Add("{\"frame\": " + f + ", \"census\": {" + cj + "}}");
+                            continue;
+                        }
+
                         if (pushedBoneNames.Count > 0)
                         {
                             // With the results rather than with the guard, because it decides what
