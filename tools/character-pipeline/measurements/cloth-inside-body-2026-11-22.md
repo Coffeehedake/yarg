@@ -404,3 +404,86 @@ Anyone reading the region row alone would conclude the control had failed.
   bones, plus the original probe on the same frames — with the clavicle capsules measured at
   51-56 mm proud, the two should disagree, and the size of that disagreement is a result about
   every cape number this project has published.
+
+---
+
+# Part five: the baseline closes, and measurement A is VOID
+
+## The baseline: a measured zero response, not noise
+
+`-pushBones` now builds its bone set independently of the push MAGNITUDE, so the 0 mm row reports
+`inside_over_push` like every other row. K-2SO / LeftUpperArm:
+
+    rest   5mm   10mm   20mm   40mm
+     45     45     43     60     82
+
+At rest it is **45**, and 5 mm is **also 45**. So the flat start is not noise — it is a measured
+**zero response below the gap**, and the census put that gap at 12.5 mm. The response begins between
+10 and 20 mm, exactly where an independent measurement says it must. (10 mm reads 43, two *below*
+rest; a small negative excursion, not perfect flatness, and worth stating as such.)
+
+This cost no extra run. The number was already being computed and had no way to be printed.
+
+## Measurement A is VOID on both bundles
+
+Two bundles, one instrument, no forcing, one pose, both verified by MD5 rather than filename:
+`a9b26646` installed (clavicle yoke) against `f7d268e0` (grav70-5chains-spinecape).
+
+    a9b26646  bodyTris=3486  clothTris=15332  INSIDE=208  medDepth=122.1mm  deepest=249.9mm
+              beyond-cutoff=7478/8677   cloth_over_push=2  inside_over_push=1
+    f7d268e0  bodyTris=3486  clothTris=15332  INSIDE=239  medDepth=132.4mm  deepest=249.7mm
+              beyond-cutoff=7462/8676   cloth_over_push=0  inside_over_push=0
+
+**DO NOT READ 208 AGAINST 239.** It looks like the clavicle build winning by 31 and it is two
+readings taken against a body surface that is Batman's head.
+
+    piece 0  tris=6438  share=0.355  -> cloth   y=0.327..1.601  nearest=Hips@19mm     <- his TORSO AND LEGS
+    piece 2  tris=2045  share=0.515  -> BODY    y=1.478..1.878  nearest=Head@77mm     <- his COWL
+
+His torso and legs, the largest piece in the model, are labelled **cloth** at a humanoid share of
+0.355, because his rig drives the suit from non-humanoid helper bones. The only body-labelled piece
+of any size is his cowl. So the body surface is 3,486 triangles of head, 86% of cloth vertices have
+no body within the 250 mm cutoff, and the 122-250 mm "depths" are distances to his head.
+
+**The controls caught this before I read the numbers.** `beyond-cutoff=7478/8677`, `deepest` within
+0.1 mm of the cutoff, and the cutoff warning fired twice — once per split. That is control B and the
+cutoff guard doing exactly what they were written for.
+
+## Three characters, three different failures of one rule
+
+The component split's "humanoid share > 0.5 per piece" is now wrong on every character it has been
+pointed at, and not in a consistent direction:
+
+| character | share of the big piece | effect |
+|---|---|---|
+| Power Girl | 0.568 | **over**-labels: skin and costume are one fused shell, so the sleeve is swallowed into the body |
+| Jinx | — | **under**-labels: only 15% of her is body |
+| Batman | 0.355 | **under**-labels catastrophically: only the cowl is body |
+
+A majority vote on bone weights cannot identify a body, because weights describe what DRIVES
+geometry and a rig is free to drive a torso from helper bones. Three directions of error rule out
+tuning the 0.5.
+
+**The direction that suggests itself, not built:** the body is the piece that **encloses the
+skeleton**. For each piece, count how many humanoid bone POSITIONS lie inside it — using the
+inside/outside test this file already implements, pointed at itself. A cowl contains one bone; a
+torso shell contains a dozen; a cape contains none. That is geometric, needs no weights, and has no
+threshold to pick.
+
+## Measurement B is blocked by the same defect
+
+Capsules against the mesh surface, one pose, no forcing, same cloth vertices — the only version of
+that comparison that concludes anything — requires the mesh surface to BE the body. On Batman it is
+his head. So B cannot be run on the character whose capsules are the ones measured at 51-56 mm
+proud until the split is fixed. Running it now would compare authored capsules against a cowl and
+return a large disagreement that means nothing.
+
+## STATE
+
+* Baseline closed; the positive control on K-2SO stands and is now a zero-response-then-rise with
+  its onset predicted by an independent gap measurement.
+* **Measurement A void**, for a stated and measured reason, on both bundles. The yoke is ungraded.
+* **Measurement B blocked** by the same defect.
+* 23 of 23 Unity runs clean; two of them announced their own invalidity, which is the system working.
+* Nothing committed by me. No character, bundle or backup written. The `f7d268e0` backup was opened
+  read-only and its MD5 re-verified after the run.

@@ -1037,7 +1037,7 @@ public static class YargClothInside
                         // below this loop for that reason -- do not move it back up.
                         var refWorld = new Dictionary<SkinnedMeshRenderer, Vector3[]>();
                         var pushTargets = new HashSet<Transform>();
-                        if (Math.Abs(pushArm) > 1e-6f && anim != null && anim.isHuman)
+                        if (anim != null && anim.isHuman && Arg(args, "-pushBones") != null)
                         {
                             foreach (var bn in pushBones)
                             {
@@ -1046,6 +1046,9 @@ public static class YargClothInside
                                 var bt = anim.GetBoneTransform(hb2);
                                 if (bt != null) pushTargets.Add(bt);
                             }
+                        }
+                        if (Math.Abs(pushArm) > 1e-6f && anim != null && anim.isHuman)
+                        {
                             foreach (var smr0 in ch.GetComponentsInChildren<SkinnedMeshRenderer>())
                             {
                                 if (!smr0.enabled || smr0.sharedMesh == null) continue;
