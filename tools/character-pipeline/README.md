@@ -12914,3 +12914,48 @@ being pushed**, and that is directly measurable rather than inferred:
 The angular-coverage discriminator (a sleeve wraps its limb through nearly 360°, a braid occupies
 a narrow sector) is a fourth identity heuristic and remains unbuilt. If selection by weight plus
 a did-it-move guard works, identity is not needed to run the control.
+
+#### Both of those were built within the hour, and the answer is sharper than the design
+
+**The guard caught its own ordering bug on its first run.** It refused *both* cases, the one
+built to pass included, reporting `pushed_travel=0.000mm` — the reference bake sat after the push,
+so both bakes were post-push and identical. **A guard tested only against the case it should
+refuse would have looked perfect.** Reordered: 40.000 mm of 40.000 mm asked, on both characters.
+
+| | pushed | travel | on_body | static | moving | cloth_over | inside_over |
+|---|---|---|---|---|---|---|---|
+| Jinx, lower legs | 25,651 | 40.000 mm | 8,164 | 160 | 84 | 10,838 | 237 |
+| Power Girl, arms (WEIGHT) | 5,217 | 40.000 mm | 3,092 | 10,907 | 159 | 2,234 | 746 |
+| Power Girl, arms (COMPONENT) | 5,217 | 40.000 mm | 5,217 | 10,907 | 159 | 104 | 0 |
+
+It then refused neither, **and that is the result.** Two claims made earlier the same evening fall
+to these numbers: that Jinx's legs were not in the body surface at all (8,164 of her lower-leg
+vertices are, and all moved 40 mm), and that the condition was nothing to cross
+(`cloth_over_push=10,838`).
+
+**A rigidly-skinned garment cannot be penetrated by displacing the bone that drives it, at any
+magnitude.** Jinx's 10,838 cloth vertices over those legs are skinned to them, so they travel with
+the push and never change side — static 160 against moving 84 is the whole crossable population
+out of 89,743 cloth vertices. That is why 0 mm and 220 mm both read 4,833, and it is cleaner than
+either withdrawn explanation.
+
+**Power Girl is the opposite shape and also cannot host it.** 10,907 static vertices near her upper
+arm — her spring-driven cape — but only **104** whose *nearest body triangle* is that arm. The cape
+hangs beside the arm and rests on her torso, so a radial push moves the deltoid away from where the
+cape is. **The push direction was wrong for the geometry**, and only the two counts side by side
+say so.
+
+So a bone can host this control where cloth is **not driven** by it and **rests against** it by
+nearest-body attribution. Neither half needs piece identity, and hair is excluded for free — which
+raises the question of whether it should be: the control needs geometry that stays while the body
+moves, and hair is ideal for that, never being driven by a limb bone. Hair was disqualified for
+being mislabelled a garment, which is a different question.
+
+**Open prediction, recorded before the census that will test it.** A garment hangs from the body
+part it rests on, so the two conditions are anti-correlated by how clothes are made. The census of
+static cloth per bone is therefore expected to come back near-empty for garments, with any winners
+being hair- or scarf-like geometry resting on shoulders and upper arms while driven from the head
+and neck — different branches of the rig, the only arrangement in which both conditions hold. If it
+comes back empty even for those, **no positive control exists on this roster for a structural
+reason in how these characters are authored**, which is a result rather than a failure to work
+around.
