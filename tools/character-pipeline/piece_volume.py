@@ -35,6 +35,17 @@ A CONTROL IS PRINTED WHETHER OR NOT IT IS ASKED FOR. The largest piece in the fi
 alongside, because a near-zero solidity means nothing without a piece from the same model that
 is genuinely closed. If the control does not come out solid, this script is measuring wrongly
 and says so rather than letting the suspect's number stand alone.
+
+TWO TRAPS WHEN CARRYING A VERDICT FROM HERE TO A BUNDLE, both hit on Scott Hall:
+
+  * NEVER TRUNCATE THE MATERIAL NAME. Three of his materials begin `Scott_Hall_OGs` -- Mouth,
+    Teeth and Tongue -- so a 14-character column cannot say which piece a verdict is about.
+    That is why the table below prints the name in full and at the end of the row.
+  * BUNDLE MATERIAL SUFFIXES SORT NUMERICALLY, NOT LEXICOGRAPHICALLY. The exporter names them
+    `<Character>_0 .. _N`, and a plain string sort puts `ScottHall_10` between `_1` and `_2`.
+    Mapping those onto the .vrm's material list by position then shifts by an offset that GROWS
+    as the list does, so every name comes out plausible and every one is wrong. Sort on
+    int(suffix). This cost a near-miss: the wrong mapping made a mouth look like a vest.
 """
 import math
 import sys
