@@ -12708,3 +12708,52 @@ What would actually answer it is a per-pixel comparison from the game's own came
 character, render it with the cape hidden, and count pixels where BODY shows through in the
 first but the cape covers that pixel in a cape-only pass. That is an occlusion question and it
 has a yes/no answer per pixel, which "how deep is this vertex inside a capsule" never did.
+
+### An occlusion instrument that failed both its own controls, and why the failure is useful (2026-11-22)
+
+Built to answer the one question the capsule probe cannot — *is body geometry drawing in front of
+cloth that should cover it* — and it does not work. Recorded because the second failure is a
+trap worth knowing about, not because the tool is worth reviving as written.
+
+**The design.** `fault pixel = cloth on this ray AND body on this ray AND body NEARER AND
+gap < drape distance`. Four passes a frame plus two depth passes; body/cloth split by the
+Avatar's humanoid map rather than by name, since "clav" collects 26 bones on Batman of which two
+are the joint. The drape distance is swept at 5/10/20/40/80 mm rather than chosen.
+
+**NEGATIVE CONTROL FAILED.** Power Girl at rest — independently established as clean, by a
+cape-pitch measurement taken before this tool existed — reads 397 fault pixels at 5 mm and 6,419
+at 80 mm, a fraction of 0.67 to 0.90 of draped pixels.
+
+**SYNTHETIC POSITIVE FAILED.** Displacing her upper arm 5, 10, 20 and 40 mm gives 397, 395, 396,
+397, 398. Flat, and the 40 mm column dips. The arm genuinely moved — `motion_px` climbed 155,656
+to 158,660 across the series — so the instrument is blind to a change it rendered.
+
+#### Two defects, and the second was not predictable from the design
+
+1. **The denominator is close to tautological.** `draped_px` is pixels where the body is nearer
+   and the gap is small; `fault_px` is those where the body is also visible. With opaque
+   materials a nearer body IS a visible body, so the ratio approaches 1 by construction. The
+   0.67 measures the ratio, not Power Girl. Only the raw count ever meant anything.
+
+2. **PROXIMITY IS BLIND EXACTLY WHERE THE FAULT IS WORST.** As a limb emerges further through
+   cloth, the gap between the two surfaces GROWS — so those pixels leave the drape window instead
+   of entering it. The condition that correctly excludes a cape hanging behind a chest also
+   excludes a limb that has fully broken through. It catches the instant of emergence and loses
+   the emerged state, which is the only state anyone complains about.
+
+**So the proximity term fixed a false positive and bought a false NEGATIVE that scales with
+severity** — strictly worse, because it fails silently on the bad cases. That trade is the
+finding here, and it would have been invisible without a positive control that varied severity:
+a single synthetic fault at one magnitude would have passed or failed without revealing that the
+response runs the wrong way.
+
+#### The direction this points, not yet built
+
+Screen space was probably the wrong frame entirely. "Are these two surfaces close right now" is
+not the question; **"has this cloth vertex crossed from outside the body to inside it"** is, and
+it is monotone in severity by construction. Against the real body MESH rather than capsules —
+the capsule version is why `fml_un_L_clav` read as 21.7% of all contact when much of that was the
+yoke correctly resting on the collarbone. A fat capsule swallows a yoke; a surface does not.
+
+`YargClothPenetration.cs` and `cape_weight_anchor.py` are committed as the record of what was
+tried. The first does not measure what it claims to.
