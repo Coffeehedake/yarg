@@ -12789,3 +12789,52 @@ to be trusted, on a question where the sign was the whole answer.
 `capsule_overclaim.py`. Body vertices are selected through the Avatar's humanoid map, and a
 capsule with fewer than 20 body vertices near it is reported as SKIPPED rather than as a
 confident zero.
+
+### The skin and the costume are ONE SURFACE, and that makes "cloth inside body" ill-posed (2026-11-22)
+
+The sign-flip instrument works and reports nothing, and chasing why turned up something that
+applies to every garment measurement in this folder.
+
+**The design's central claim holds.** WEIGHT split, arm displaced 0 to 40 mm: INSIDE 6638, 6645,
+6648, 6664, 6681; 35 readings strictly increasing with no reversal, every depth band rising, and
+the rise LOCALISED to the bone that moved — LeftUpperArm +21% against +0.6% globally. Monotone in
+severity and it says where, which is exactly what the proximity version could not do.
+
+**But the split with a valid zero point has no response at all.** Every COMPONENT band above
+10 mm is dead flat across all five magnitudes (1693 and 111, unchanged). One split has a
+response and no zero point; the other has a zero point and nothing to report.
+
+#### Why: her skin and her costume share edges
+
+Measured rather than assumed, and the prediction was wrong in the informative direction. The
+guess was that a fitted garment is skinned to the same humanoid bones as the skin beneath it, so
+its piece would read `humanoid_share` near 1.0 and be mislabelled body. It reads **0.568 and
+0.542** — the two largest connected pieces, 36,076 triangles between them, are each about half
+skin-weighted and half garment-weighted, **fused into one manifold shell**. 161 of 451 pieces sit
+between 0.2 and 0.8.
+
+So:
+
+- **The per-triangle split was not shredding the body out of clumsiness.** Cutting along the
+  weight boundary is the only thing a per-triangle test can do when that boundary runs through
+  the interior of a single surface. The 231 open patches were a faithful report of fused
+  geometry, and were first read as a defect in the split.
+- **"Has this cloth vertex crossed from outside the body to inside it" presupposes TWO
+  SURFACES.** For most of this character there is one. The question is not hard, it is ill-posed,
+  and ill-posed because of how the model was authored. That is why the broken version answered so
+  fluently and so absurdly: 220.44 mm of penetration into a 90 mm arm, identical at all five
+  magnitudes.
+- **The flat response may be a TRUE NEGATIVE and cannot be distinguished from blindness.** If her
+  sleeve is the same shell as her deltoid, displacing the upper arm cannot push anything through
+  anything. The separable pieces — share 0.000 — are cape, hair and boots.
+
+#### What this means for the tools already in this folder
+
+`YargCharParts.cs`, `YargClothPenetration.cs` and the interior-fault sweep all use the
+per-triangle humanoid-weight split. **It does not measure body versus cloth. It measures WHAT
+DRIVES A TRIANGLE**, and on fused skin-and-costume geometry that boundary runs through the middle
+of one surface. Those counts stay valid as counts of dominant-weight classes; what cannot be read
+off them is that the two halves are two surfaces.
+
+Together with the capsule over-read measured the same evening, that is a second and independent
+reason that none of this week's cape numbers is as clean as its table looked.
